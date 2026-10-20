@@ -326,6 +326,8 @@ const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Fantasy"><meta name="theme-color" content="#0b1530">
 <meta name="built" content="${Date.now()}">
+<link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="manifest" href="manifest.json">
 <title>${esc(me.name)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -547,5 +549,11 @@ document.addEventListener('visibilitychange', () => !document.hidden && check(fa
 
 fs.mkdirSync(path.join(dir, 'site'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'site', 'index.html'), html);
+// App icons (Home Screen, browser tab) and the manifest that names the installed app
+fs.cpSync(path.join(dir, 'icons'), path.join(dir, 'site'), { recursive: true });
+fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
+  name: me.name, short_name: 'Fantasy', start_url: '.', display: 'standalone', background_color: '#0b1530', theme_color: '#0b1530',
+  icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
+}));
 console.log(`Wrote site/index.html for ${me.name}, week ${week}. vs ${opp?.name}: ${n(myProj)}-${n(oppProj)}`);
 todo.forEach(([l, t]) => console.log(`[${l}] ${t}`));
