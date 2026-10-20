@@ -55,7 +55,7 @@ function row(p, ratings) {
   const season = stat(p, 0, 0);
   const proj = stat(p, 1, 1);
   return {
-    id: p.id, name: p.fullName, pos: POS[p.defaultPositionId] ?? '?',
+    id: p.id, name: p.fullName, pos: POS[p.defaultPositionId] ?? '?', proTeamId: p.proTeamId,
     team: proAbbr[p.proTeamId] ?? 'FA', teamName: proName[p.proTeamId] ?? 'No team', bye: proBye[p.proTeamId] ?? null,
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, proj: proj?.appliedTotal ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
@@ -341,11 +341,14 @@ function chip(p) {
   return out.join(' ');
 }
 const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new Intl.PluralRules('en-US', { type: 'ordinal' }).select(k)];
-// Name links to the player's ESPN page (latest news); rank = how he compares at his position this season
-const player = (p, extra = '') => `<div class="player">${pic(p)}<div class="who">
-  <div class="name">${p.id > 0 ? `<a href="https://www.espn.com/nfl/player/_/id/${p.id}" target="_blank" rel="noopener">${esc(p.name)}</a>` : esc(p.name)}</div>
-  <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}</div>
-  ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}${chip(p)}${extra}</div></div>`;
+// Tapping a player opens his detail sheet; every player shown is remembered so the sheet data
+// (recent games, news, game time) is fetched for exactly those after the page is built.
+// rank = how he compares at his position this season
+const shown = new Map();
+const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
+  <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
+  <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
+  ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}${chip(p)}${extra}</div></div>`; };
 const big = (v, label, ceiling) => `<div class="big"><b>${n(v)}</b><small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`;
 
 const myRank = [...teams].sort((a, b) => b.w - a.w || b.pf - a.pf).indexOf(me) + 1;
@@ -359,7 +362,7 @@ const fixedProj = best.total;
 const lineupRows = [...me.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
 const levelName = { urgent: 'Do now', week: 'This week', later: 'Plan ahead' };
 
-const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Fantasy"><meta name="theme-color" content="#0b1530">
@@ -413,7 +416,23 @@ section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-
 .slot{flex:none;width:44px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase}
 .big{flex:none;text-align:right}.big b{display:block;font-size:20px;font-weight:800;line-height:1.1}.big small{display:block;font-size:11px;color:var(--muted)}
 .big small.up{color:var(--good);font-weight:600}
-.rank{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.name a{color:inherit;text-decoration:none}
+.rank{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+[data-pid]{cursor:pointer;-webkit-tap-highlight-color:transparent}.more{color:var(--muted);font-weight:400}
+#sheet{position:fixed;inset:0;z-index:20}.sheet-bg{position:absolute;inset:0;background:rgba(5,10,25,.55)}
+.sheet-card{position:absolute;left:0;right:0;bottom:0;max-width:720px;margin:0 auto;max-height:88vh;background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:.4}}
+.sheet-body{overflow-y:auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
+.sheet-x{position:absolute;top:10px;right:12px;width:34px;height:34px;border-radius:50%;border:0;background:var(--chip);color:var(--fg);font-size:22px;line-height:1;cursor:pointer;z-index:1}
+.sh-top{display:flex;gap:14px;align-items:center;margin-bottom:14px;padding-right:40px}.sh-top .pic{width:64px;height:64px}
+.sh-name{font-size:20px;font-weight:800}
+.sh-q{border-radius:14px;padding:12px 14px;margin-bottom:10px;background:var(--card);border:1px solid var(--line)}
+.sh-q small{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.sh-q b{display:block;font-size:16px;margin:2px 0}.sh-q span{font-size:13px;color:var(--muted)}
+.sh-q.yes{border-left:4px solid var(--good)}.sh-q.no{border-left:4px solid var(--bad)}.sh-q.maybe{border-left:4px solid var(--warn)}
+.bars{display:flex;gap:8px;align-items:flex-end;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.bars div{flex:1;text-align:center}.bars i{display:block;background:var(--brand2);border-radius:4px 4px 0 0;margin:0 auto 4px;width:70%}
+.bars b{display:block;font-size:12.5px}.bars small{font-size:10.5px;color:var(--muted)}
+a.news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
+a.news b{display:block;font-size:14px;font-weight:600}a.news small{color:var(--muted);font-size:12px}
 .wp{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}.wp b{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1}
 .live{display:inline-block;background:var(--badbg);color:var(--bad);font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
 .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat div{background:var(--chip);border-radius:12px;padding:10px}.stat b{display:block;font-size:20px;font-weight:800}.stat small{color:var(--muted);font-size:12px}
@@ -421,7 +440,7 @@ section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-
 .list .card{margin-bottom:0;border-radius:0;border-bottom:none}.list .card:first-child{border-radius:16px 16px 0 0}.list .card:last-child{border-radius:0 0 16px 16px;border-bottom:1px solid var(--line)}
 .list .card:only-child{border-radius:16px}
 .group{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px}
-.swap{display:grid;grid-template-columns:1fr;gap:10px}
+.swap{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.row{min-width:0}
 .arrow{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase}
 .arrow::after{content:"";flex:1;height:1px;background:var(--line)}
 .gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
@@ -435,6 +454,8 @@ details summary::after{content:"+";color:var(--muted);font-weight:400;font-size:
 details[open] summary{margin-bottom:8px}
 dl{margin:0}dt{font-weight:700;margin-top:12px}dd{margin:2px 0 0;color:var(--muted);font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:18px}
+.worder{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}.worder span{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.worder span.ahead{color:var(--fg)}.worder span.me{background:var(--brand2);color:#fff;font-weight:700}
 .vhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
 [class^=verdict-]{flex:none;font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px}
 .verdict-good{background:var(--goodbg);color:var(--good)}.verdict-bad{background:var(--badbg);color:var(--bad)}.verdict-meh{background:var(--chip);color:var(--muted)}
@@ -475,7 +496,7 @@ ${!live && fixedProj + weekPlanGain > myProj + 0.5 ? ` Doing the to-do list belo
 ${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
-<section id="lineup"><h2>My team</h2><p class="sub">Big number = points ESPN expects him to score this week. Green "up to" = his score if he has a great game. Tap a name for his latest news on ESPN.</p>
+<section id="lineup"><h2>My team</h2><p class="sub">Big number = points ESPN expects him to score this week. Green "up to" = his score if he has a great game. Tap any player to see if he plays, when, his last games and news.</p>
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
   const ps = lineupRows.filter(f);
   return ps.length ? `<div class="group">${label}</div><div class="list">${ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p)}${big(weekValue(p), 'expected', weekValue(p) > 0 ? p.ceiling : null)}</div>`).join('')}</div>` : '';
@@ -483,6 +504,9 @@ ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.sl
 </section>
 
 <section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. In ESPN: Players &rarr; find him &rarr; Add.</p>
+<div class="card"><div class="vhead"><span class="group" style="margin:0">Waiver order</span><span class="verdict-meh">You pick ${ordinal(me.waiver)} of ${teams.length}</span></div>
+<div class="worder">${[...teams].sort((a, b) => a.waiver - b.waiver).map(t => `<span class="${t === me ? 'me' : t.waiver < me.waiver ? 'ahead' : ''}">${t.waiver}. ${esc(t.name)}</span>`).join('')}</div>
+<p class="tag" style="margin-bottom:0">When two teams claim the same player, the one higher on this list gets him. ${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'} Free agents (not on waivers) go to whoever adds them first.</p></div>
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
   <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'helps this week' : 'helps rest of season'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : s.add.avg, wk ? 'expected' : 'per game')}</div>
@@ -583,6 +607,8 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 5 minutes &middot; this page checks for it every minute</footer>
 </div>
+<div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
+<script type="application/json" id="pdata">__PDATA__</script>
 <script>
 // Load the newest build when there is one: on the button, every minute, and when you come back to the app.
 // GitHub caches pages ~10 min, so a timestamped URL is used to skip the cache.
@@ -620,7 +646,105 @@ try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.remove
 btn.onclick = () => check(true);
 showAgo(); setInterval(showAgo, 1000);
 document.addEventListener('visibilitychange', () => !document.hidden && check(false));
+
+// Player sheet: tap any player to see, in plain English, if he plays, when, how he's been doing, and news.
+const P = JSON.parse(document.getElementById('pdata').textContent);
+const sheet = document.getElementById('sheet'), body = sheet.querySelector('.sheet-body');
+const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function render(p) {
+  const max = Math.max(1, ...p.games.map(g => g.pts ?? 0));
+  return '<div class="sh-top">' + (document.querySelector('[data-pid="' + p.id + '"] .pic')?.outerHTML ?? '') +
+    '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
+    '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
+    (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
+    '<div class="stat">' +
+      '<div><b>' + e(p.proj) + '</b><small>expected this week' + (p.ceiling ? ' (up to ' + e(p.ceiling) + ')' : '') + '</small></div>' +
+      '<div><b>' + e(p.avg) + '</b><small>points per game this season</small></div>' +
+      '<div><b>' + e(p.rank) + '</b><small>rank at his position</small></div>' +
+      '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
+    (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
+    (p.games.length ? '<div class="group">Last games (fantasy points)</div><div class="bars">' + p.games.map(g =>
+      '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' : '') +
+    '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
+    (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b><small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
+    (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '');
+}
+function openSheet(id) { const p = P[id]; if (!p) return; body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function closeSheet() { sheet.hidden = true; document.body.style.overflow = ''; }
+document.addEventListener('click', ev => {
+  if (ev.target.closest('[data-close]')) return closeSheet();
+  const el = !ev.target.closest('.sheet-body') && ev.target.closest('[data-pid]');
+  if (el) openSheet(el.dataset.pid);
+});
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') closeSheet();
+  if (ev.key === 'Enter' && ev.target.dataset?.pid) openSheet(ev.target.dataset.pid);
+});
 </script></body></html>`;
+
+// --- Player sheet data, for every player the page shows
+const ids = [...shown.keys()];
+const card = new Map();
+for (let i = 0; i < ids.length; i += 50) {
+  const d = await get(`${LEAGUE}?view=kona_playercard&scoringPeriodId=${week}`, {
+    players: { filterIds: { value: ids.slice(i, i + 50) }, filterStatsForTopScoringPeriodIds: { value: week, additionalValue: [`00${SEASON}`] } },
+  });
+  for (const x of d.players) card.set(x.player.id, x.player);
+}
+const news = new Map(await Promise.all(ids.filter(id => id > 0).map(async id => {
+  try {
+    const r = await fetch(`https://site.api.espn.com/apis/fantasy/v2/games/ffl/news/players?limit=6&playerId=${id}`);
+    const last = (shown.get(id).name.split(' ').filter(w => !/^(jr|sr|ii|iii|iv)\.?$/i.test(w)).pop() ?? '').toLowerCase();
+    // player notes (his name in the headline) before general articles that only mention him
+    const items = ((await r.json()).feed ?? []).filter(x => x.headline && (x.headline + ' ' + (x.story ?? '')).toLowerCase().includes(last))
+      .sort((a, b) => b.headline.toLowerCase().includes(last) - a.headline.toLowerCase().includes(last)).slice(0, 2);
+    return [id, items.map(x => ({ h: x.headline, url: x.links?.web?.href || `https://www.espn.com/nfl/player/_/id/${id}`, when: new Date(x.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }))];
+  } catch { return [id, []]; }
+})));
+const owner = new Map(teams.flatMap(t => t.roster.map(p => [p.id, t])));
+const gameText = p => {
+  const g = pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[week]?.[0];
+  if (!g) return '';
+  const home = g.homeProTeamId === p.proTeamId;
+  return `${home ? 'Home vs' : 'Away at'} ${proName[home ? g.awayProTeamId : g.homeProTeamId]}, ${new Date(g.date).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit' })} ET. Your lineup locks for him when that game starts.`;
+};
+const pdata = {};
+for (const [id, p] of shown) {
+  const c = card.get(id), inj = p.inj ?? (c?.injuryDetails && { type: c.injuryDetails.type, season: c.injuryDetails.outForSeason, back: c.injuryDetails.expectedReturnDate && new Date(c.injuryDetails.expectedReturnDate[0], c.injuryDetails.expectedReturnDate[1] - 1, c.injuryDetails.expectedReturnDate[2]) });
+  const hurtType = inj?.type && inj.type !== 'Undisclosed' ? ` (${inj.type.toLowerCase()})` : '';
+  const back = inj?.back && inj.back > Date.now() ? ` Expected back around ${dateStr(inj.back)}.` : '';
+  const play = inj?.season ? ['no', `No. He's out for the season${hurtType}.`]
+    : p.bye === week ? ['no', 'No. His team has no game this week (bye week).']
+    : ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(p.status) ? ['no', `No. ${STATUS[p.status][0]}${hurtType}.${back}`]
+    : p.status === 'DOUBTFUL' ? ['no', `Probably not${hurtType}. Plan to bench him.`]
+    : p.status === 'QUESTIONABLE' ? ['maybe', `Maybe, about 50/50${hurtType}. Teams say who's out about 90 minutes before kickoff, so check then.`]
+    : ['yes', 'Yes, he\'s expected to play.'];
+  const t = owner.get(id), mine = t === me;
+  const advice = !mine ? null : inj?.season ? ['no', 'Drop him. He won\'t play again this season, so he\'s wasting a roster spot.'] : p.slot === 'IR' ? ['maybe', 'He\'s in your IR spot, so he doesn\'t use a bench spot. Leave him there until he\'s healthy.']
+    : bestIds.has(id) ? (p.slot === 'Bench' ? ['yes', 'Start him. He\'s one of your best options this week.'] : ['yes', 'Keep him in your lineup.'])
+    : p.slot !== 'Bench' ? ['no', 'Bench him. Someone on your team is expected to score more.'] : ['maybe', 'Keep him on the bench this week.'];
+  const games = [];
+  for (let wk = Math.max(1, week - 5); wk < week; wk++) {
+    const s = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk);
+    games.push({ wk, pts: s?.appliedTotal ?? null, note: p.bye === wk ? 'bye' : '–' });
+  }
+  const played = games.filter(g => g.pts != null).slice(-3);
+  const recent = played.length ? played.reduce((s, g) => s + g.pts, 0) / played.length : null;
+  const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`
+    : recent < p.avg * 0.75 ? `Cold: ${n(recent)} per game over his last ${played.length} games, worse than his season average.` : '';
+  pdata[id] = {
+    id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: p.teamName,
+    owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
+    play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
+    avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
+    trend, games, news: news.get(id) ?? [],
+    byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
+  };
+  // a defense is a whole team: "they", not "he"
+  if (p.pos === 'D/ST') for (const k of ['play', 'advice']) if (pdata[id][k]) pdata[id][k] = [pdata[id][k][0], pdata[id][k][1].replace(/\bhe's\b/gi, 'they\'re').replace(/\bHe\b/g, 'They').replace(/\bhim\b/g, 'them')];
+  if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
+}
+html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
 
 fs.mkdirSync(path.join(dir, 'site'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'site', 'index.html'), html);
