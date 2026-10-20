@@ -512,9 +512,18 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 const built = +document.querySelector('meta[name=built]').content;
 const btn = document.getElementById('refresh'), ago = document.getElementById('ago');
 const fresh = () => location.pathname + '?t=' + Date.now();
+// GitHub starts a run on each 5-minute mark and it takes ~90s to publish, so the next
+// update is the mark after the one that made this build, plus 90s. GitHub can run late; then "any moment".
+const STEP = 5 * 60000, PUBLISH = 90000;
+const nextAt = Math.floor(built / STEP) * STEP + STEP + PUBLISH;
+let lastCheck = 0;
 function showAgo() {
   const m = Math.round((Date.now() - built) / 60000);
-  ago.textContent = m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago';
+  const left = Math.ceil((nextAt - Date.now()) / 1000);
+  const next = left > 0 ? 'next in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : 'next any moment';
+  ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next;
+  // once the countdown is over, look for the new version every 15s instead of every minute
+  if (left <= 0 && !document.hidden && Date.now() - lastCheck > 15000) { lastCheck = Date.now(); check(false); }
 }
 async function check(clicked) {
   if (clicked) btn.classList.add('spin');
@@ -532,8 +541,7 @@ async function check(clicked) {
 }
 try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.removeItem('scroll'); scrollTo(0, +y); } } catch {}
 btn.onclick = () => check(true);
-showAgo(); setInterval(showAgo, 30000);
-setInterval(() => !document.hidden && check(false), 60000);
+showAgo(); setInterval(showAgo, 1000);
 document.addEventListener('visibilitychange', () => !document.hidden && check(false));
 </script></body></html>`;
 
