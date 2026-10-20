@@ -398,7 +398,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Where these tips come from</dt><dd>This page does the math on ESPN's projections and season stats. It doesn't know about news ESPN hasn't added yet, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
 
-<footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; refreshes every 3 hours</footer>
+<footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; refreshes about every 15 minutes</footer>
 </div></body></html>`;
 
 fs.mkdirSync(path.join(dir, 'site'), { recursive: true });

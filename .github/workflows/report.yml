@@ -2,7 +2,7 @@ name: Fantasy report
 
 on:
   schedule:
-    - cron: "0 */3 * * *" # every 3 hours
+    - cron: "*/15 * * * *" # every 15 minutes (GitHub sometimes runs these a few minutes late)
   workflow_dispatch: # "Run workflow" button on the Actions tab
   push:
     branches: [main] # rebuild right away when the code changes
