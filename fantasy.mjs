@@ -226,13 +226,15 @@ for (const tr of trades) {
 
 // --- Adds / drops / trades around the league, last 3 weeks. Also my pending claims and trade
 // offers, and other teams' offers and claims that didn't happen (ESPN's app hides those).
-const moves = [], pendingTx = new Map(), intel = new Map();
+const moves = [], pendingTx = new Map(), intel = new Map(), othersPending = new Map();
 const involvesMe = tx => tx.items.some(i => i.toTeamId === me.id || i.fromTeamId === me.id);
 for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
   const d = await get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${wk}`);
   for (const tx of d.transactions ?? []) {
     // old weeks keep stale "PENDING" rows; only this week's with isPending are real
     if (wk === week && tx.isPending && tx.status === 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && involvesMe(tx)) pendingTx.set(tx.id, tx);
+    // trades between two other teams that are waiting (offered, or accepted and in league review)
+    else if (wk === week && tx.isPending && tx.type.startsWith('TRADE') && !involvesMe(tx) && tx.items.some(i => i.type === 'TRADE')) othersPending.set(tx.id, tx);
     else if (tx.status !== 'EXECUTED' && tx.status !== 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && !involvesMe(tx)) intel.set(tx.id, tx);
     if (tx.status !== 'EXECUTED' || !['FREEAGENT', 'WAIVER', 'TRADE_ACCEPT'].includes(tx.type)) continue;
     for (const it of tx.items) if (['ADD', 'DROP', 'TRADE'].includes(it.type)) moves.push({ date: tx.processDate ?? tx.proposedDate, type: it.type, playerId: it.playerId, team: it.type === 'DROP' ? it.fromTeamId : it.toTeamId, from: it.fromTeamId });
@@ -240,7 +242,7 @@ for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
 }
 // Full player rows for everyone mentioned (rostered, free agents, or looked up)
 const byId = new Map([...teams.flatMap(t => t.roster), ...allFa].map(p => [p.id, p]));
-const txIds = [...pendingTx.values(), ...intel.values()].flatMap(tx => tx.items.map(i => i.playerId));
+const txIds = [...pendingTx.values(), ...intel.values(), ...othersPending.values()].flatMap(tx => tx.items.map(i => i.playerId));
 const missing = [...new Set([...moves.map(m => m.playerId), ...txIds])].filter(id => !byId.has(id));
 if (missing.length) {
   const d = await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: missing } } });
@@ -261,6 +263,28 @@ const pending = [...pendingTx.values()].map(tx => {
   const take = tx.items.filter(i => i.toTeamId === me.id).map(i => them.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
   return { kind: 'trade', mineOffer: tx.teamId === me.id, them, give, take, ...judge(give, take, them) };
 });
+
+// --- Trade partners: what each team is short on and has extra of.
+// "Short" = their worst starter at a position is below the league's typical (median) starter there.
+// "Extra" = a bench player at a position who'd be a decent starter (85% of that median or better).
+const TRADE_POS = ['QB', 'RB', 'WR', 'TE'];
+const lineups = new Map(teams.map(t => [t, bestLineup(t.roster, seasonValue).lineup]));
+const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+// only the position's own slots count (a TE playing FLEX is not the team's TE)
+const typical = Object.fromEntries(TRADE_POS.map(pos => [pos, median([...lineups.values()].flat().filter(x => x.slot === pos).map(x => x.player.avg ?? 0))]));
+const depth = t => {
+  const starters = lineups.get(t).map(x => x.player);
+  const short = TRADE_POS.filter(pos => { const s = lineups.get(t).filter(x => x.slot === pos).map(x => x.player); return !s.length || Math.min(...s.map(p => p.avg ?? 0)) < typical[pos]; });
+  const extra = TRADE_POS.map(pos => [pos, t.roster.filter(p => p.pos === pos && playable(p) && !starters.includes(p) && (p.avg ?? 0) >= 0.85 * typical[pos])]).filter(([, ps]) => ps.length);
+  const count = Object.fromEntries(['QB', 'RB', 'WR', 'TE', 'K', 'D/ST'].map(pos => [pos, t.roster.filter(p => p.pos === pos && p.slot !== 'IR').length]));
+  return { t, short, extra, count };
+};
+const myDepth = depth(me);
+const partners = teams.filter(t => t !== me).map(depth).map(d => ({
+  ...d,
+  theyHave: d.extra.filter(([pos]) => myDepth.short.includes(pos)), // what they can give you
+  youHave: myDepth.extra.filter(([pos]) => d.short.includes(pos)), // what you can give them
+})).sort((a, b) => (b.theyHave.length && b.youHave.length) - (a.theyHave.length && a.youHave.length) || b.theyHave.length - a.theyHave.length);
 
 // --- Luck check: "all-play" record = your record if you'd played every team every week
 const weekly = {}; // week -> { teamId: points }
@@ -349,6 +373,8 @@ const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="play
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
   ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}${chip(p)}${extra}</div></div>`; };
+// a tappable player name in running text
+const lnk = p => { shown.set(p.id, p); return `<span data-pid="${p.id}" class="lnk">${esc(p.name)}</span>`; };
 const big = (v, label, ceiling) => `<div class="big"><b>${n(v)}</b><small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`;
 
 const myRank = [...teams].sort((a, b) => b.w - a.w || b.pf - a.pf).indexOf(me) + 1;
@@ -361,6 +387,27 @@ const oppProj = opp ? lineupProj(opp) : 0;
 const fixedProj = best.total;
 const lineupRows = [...me.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
 const levelName = { urgent: 'Do now', week: 'This week', later: 'Plan ahead' };
+
+// Plain status words, shared by the "what changed" snapshot and the Claude facts
+const statusWords = p => p.inj?.season ? 'out for the season' : p.bye === week ? 'on bye this week' : (STATUS[p.status] ? STATUS[p.status][0][0].toLowerCase() + STATUS[p.status][0].slice(1) : 'healthy');
+// Snapshot of my roster; the page compares it with what you last marked as seen (kept in your browser)
+const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: statusWords(p), slot: p.slot === 'Bench' ? 'bench' : p.slot === 'IR' ? 'IR' : 'starting', pr: Math.round((p.proj ?? 0) * 10) / 10 }]));
+
+// Everything Claude needs to answer questions about this team, as plain text to paste
+const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week, ${n(p.avg)} per game, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`;
+const facts = [
+  `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. Facts from ESPN as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
+  `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
+  opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, ESPN win chance ${Math.round((mySide?.winProbability ?? 0) * 100)}%.` : '',
+  `Starters:\n${starters(me).map(p => `- ${p.slot}: ${line(p)}`).join('\n')}`,
+  `Bench:\n${me.roster.filter(p => p.slot === 'Bench').map(p => `- ${line(p)}`).join('\n')}`,
+  me.roster.some(p => p.slot === 'IR') ? `IR:\n${me.roster.filter(p => p.slot === 'IR').map(p => `- ${line(p)}`).join('\n')}` : '',
+  pending.length ? `Pending moves:\n${pending.map(m => m.kind === 'waiver' ? `- Waiver claim: add ${m.add.map(p => p.name).join(', ')}, drop ${m.drop.map(p => p.name).join(', ')}`
+    : `- Trade ${m.mineOffer ? 'I offered' : 'offered to me by'} ${m.them.name}: I give ${m.give.map(p => `${p.name} (${p.pos}, ${n(p.avg)}/g)`).join(', ')}; I get ${m.take.map(p => `${p.name} (${p.pos}, ${n(p.avg)}/g)`).join(', ')}`).join('\n')}` : '',
+  `Best free agents (points per game, expected this week):\n${Object.entries(fa).map(([pos, list]) => `- ${pos}: ${[...list].filter(p => !HURT.includes(p.status)).sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)).slice(0, 4).map(p => `${p.name} ${n(p.avg)}/g, ${n(p.proj)} exp`).join('; ')}`).join('\n')}`,
+  ahead.length ? `My remaining schedule: ${ahead.map(g => `wk ${g.week} ${g.t.name} (${g.t.w}-${g.t.l}, ${n(g.avg)} pts/wk)`).join('; ')}.` : '',
+  'Explain things simply, I\'m new to football. My question:',
+].filter(Boolean).join('\n\n');
 
 let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -417,6 +464,11 @@ section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-
 .big{flex:none;text-align:right}.big b{display:block;font-size:20px;font-weight:800;line-height:1.1}.big small{display:block;font-size:11px;color:var(--muted)}
 .big small.up{color:var(--good);font-weight:600}
 .rank{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{background:var(--brand2);color:#fff;border:0;border-radius:12px;padding:11px 16px;font:700 14px Inter,system-ui,sans-serif;cursor:pointer;width:100%;margin-top:10px}
+.ask{display:grid;gap:2px}
+.chg{padding:8px 10px;border-radius:10px;margin-bottom:6px;font-size:14px;font-weight:600;background:var(--chip)}
+.chg.good{background:var(--goodbg);color:var(--good)}.chg.bad{background:var(--badbg);color:var(--bad)}
+.lnk{text-decoration:underline dotted;text-underline-offset:3px;color:var(--fg)}
 [data-pid]{cursor:pointer;-webkit-tap-highlight-color:transparent}.more{color:var(--muted);font-weight:400}
 #sheet{position:fixed;inset:0;z-index:20}.sheet-bg{position:absolute;inset:0;background:rgba(5,10,25,.55)}
 .sheet-card{position:absolute;left:0;right:0;bottom:0;max-width:720px;margin:0 auto;max-height:88vh;background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;animation:up .22s ease-out}
@@ -490,7 +542,13 @@ ${!live && fixedProj + weekPlanGain > myProj + 0.5 ? ` Doing the to-do list belo
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>`;
 })() : ''}
 
-<nav><a href="#todo">To-do</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#trades">Trades</a><a href="#season">Season</a><a href="#league">League</a><a href="#help">How it works</a></nav>
+<nav><a href="#todo">To-do</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#partners">Partners</a><a href="#trades">Trades</a><a href="#season">Season</a><a href="#league">League</a><a href="#help">How it works</a></nav>
+
+<section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
+<div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
+
+<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Copies all your team's facts. Paste them into Claude, then type your question.</p></div>
+<button type="button" id="askbtn" class="btn">Copy facts &amp; open Claude</button></div></section>
 
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
 ${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
@@ -541,6 +599,16 @@ ${pending.length ? pending.map(m => {
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
 
+<section id="partners"><h2>Trade partners</h2><p class="sub">Who's short at a position and who has extra. The best trades are with teams that have extra of what you're short on, and are short on what you have extra of.</p>
+<div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
+<p class="why" style="margin:0">Short on: <b>${myDepth.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}</b>. Extra: <b>${myDepth.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(p => esc(p.name)).join(', ')})`).join('; ') || 'nothing'}</b>.</p></div>
+<div class="list">${partners.map(d => `<div class="card"><div class="vhead"><b>${esc(d.t.name)}</b>${d.theyHave.length && d.youHave.length ? '<span class="verdict-good">Good match</span>' : d.theyHave.length ? '<span class="verdict-meh">Has what you need</span>' : ''}</div>
+  <div class="worder" style="margin:0 0 6px">${Object.entries(d.count).map(([pos, k]) => `<span>${pos} ${k}</span>`).join('')}</div>
+  <p class="tag" style="margin:0">Short on: ${d.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}.
+  ${d.extra.length ? `Extra: ${d.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(lnk).join(', ')})`).join('; ')}.` : 'No extra starters.'}
+  ${d.theyHave.length && d.youHave.length ? `<br><b style="color:var(--good)">Pitch:</b> your extra ${d.youHave.map(([pos]) => POS_NAME[pos].toLowerCase()).join('/')} for their extra ${d.theyHave.map(([pos]) => POS_NAME[pos].toLowerCase()).join('/')}.` : ''}</p></div>`).join('')}</div>
+</section>
+
 <section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
 ${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
   <div class="row">${player(t.give, '')}${big(t.give.avg, 'per game')}</div>
@@ -567,9 +635,9 @@ ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
 ${standings.map((t, i) => `<tr class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
-${intel.size ? `<div class="card"><details open><summary>Behind the scenes: offers and claims that didn't happen</summary>
+${intel.size || othersPending.size ? `<div class="card"><details open><summary>Behind the scenes: offers and claims that didn't happen</summary>
 <p class="tag" style="margin-top:0">The ESPN app doesn't show these. A team that offered a player in a trade is shopping him; a team that tried to claim someone needs that position.</p><table>
-${[...intel.values()].sort((a, b) => b.proposedDate - a.proposedDate).slice(0, 20).map(tx => {
+${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDate - a.proposedDate)].slice(0, 20).map(tx => {
   const nm = id => esc(byId.get(id)?.name ?? names[id] ?? 'someone');
   const date = new Date(tx.proposedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   if (tx.type === 'WAIVER') {
@@ -609,6 +677,8 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 </div>
 <div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
 <script type="application/json" id="pdata">__PDATA__</script>
+<script type="application/json" id="snap">${JSON.stringify(snap).replace(/</g, '\\u003c')}</script>
+<script type="application/json" id="facts">${JSON.stringify(facts).replace(/</g, '\\u003c')}</script>
 <script>
 // Load the newest build when there is one: on the button, every minute, and when you come back to the app.
 // GitHub caches pages ~10 min, so a timestamped URL is used to skip the cache.
@@ -671,6 +741,39 @@ function render(p) {
 }
 function openSheet(id) { const p = P[id]; if (!p) return; body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 function closeSheet() { sheet.hidden = true; document.body.style.overflow = ''; }
+
+// What changed since you last tapped "Got it". The last-seen copy lives only in this browser.
+const SNAP = JSON.parse(document.getElementById('snap').textContent);
+let seenSnap = null;
+try { seenSnap = JSON.parse(localStorage.getItem('seenSnap')); } catch {}
+const saveSeen = () => { try { localStorage.setItem('seenSnap', JSON.stringify(SNAP)); } catch {} };
+if (!seenSnap) saveSeen();
+else {
+  const out = [];
+  for (const [id, now] of Object.entries(SNAP)) {
+    const was = seenSnap[id];
+    if (!was) { out.push(['good', now.n + ' joined your team']); continue; }
+    if (was.s !== now.s) out.push([now.s === 'healthy' ? 'good' : 'bad', now.n + ': ' + was.s + ' → ' + now.s]);
+    if (was.slot !== now.slot) out.push(['meh', now.n + ': ' + was.slot + ' → ' + now.slot]);
+    if (Math.abs(was.pr - now.pr) >= 3) out.push([now.pr > was.pr ? 'good' : 'bad', now.n + ': expected points ' + was.pr + ' → ' + now.pr]);
+  }
+  for (const [id, was] of Object.entries(seenSnap)) if (!SNAP[id]) out.push(['meh', was.n + ' left your team']);
+  if (out.length) {
+    document.getElementById('changelist').innerHTML = out.map(([k, t]) => '<div class="chg ' + k + '">' + e(t) + '</div>').join('');
+    document.getElementById('changes').hidden = false;
+  }
+}
+document.getElementById('seen').onclick = () => { saveSeen(); document.getElementById('changes').hidden = true; };
+
+// Ask Claude: copy the facts, then open Claude to paste them
+document.getElementById('askbtn').onclick = async () => {
+  const facts = JSON.parse(document.getElementById('facts').textContent);
+  const b = document.getElementById('askbtn');
+  try { await navigator.clipboard.writeText(facts); b.textContent = '✓ Copied! Paste it in Claude'; }
+  catch { prompt('Copy this, then paste it into Claude:', facts); }
+  window.open('https://claude.ai/new', '_blank', 'noopener');
+  setTimeout(() => (b.innerHTML = 'Copy facts &amp; open Claude'), 4000);
+};
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-close]')) return closeSheet();
   const el = !ev.target.closest('.sheet-body') && ev.target.closest('[data-pid]');
