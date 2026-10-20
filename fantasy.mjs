@@ -184,21 +184,37 @@ const plan = [];
 }
 const weekPlanGain = plan.filter(s => s.kind === 'week').reduce((t, s) => t + s.gain, 0);
 
-// --- Trade ideas: 1-for-1 swaps that raise my best-lineup average, roughly fair on
-// season average (managers judge by that), and barely hurt or help their lineup.
-// ponytail: 1-for-1 on season average only; add 2-for-1 / rest-of-season projections if this gets used a lot.
+// --- Trades. Managers judge a player by "value over replacement": how much better he is than the
+// best player free on waivers at his position. A great tight end is rare, so he's worth more than
+// his raw points say; raw points alone made swapping an elite TE for a RB look fair when it isn't.
+const healthyFa = pos => (fa[pos] ?? []).filter(p => !HURT.includes(p.status)).map(p => p.avg ?? 0).sort((a, b) => b - a);
+const repl = Object.fromEntries(Object.keys(FA_SLOT).map(pos => [pos, healthyFa(pos)[1] ?? healthyFa(pos)[0] ?? 0]));
+const vor = p => Math.max(0, (p.avg ?? 0) - (repl[p.pos] ?? 0));
+// Who would start at a position (best by season average) in a roster
+const starterAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map(x => x.player).filter(p => p.pos === pos).sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0))[0];
+// Effect of a trade on both teams. give = players I send, take = players I get.
+function judge(give, take, them) {
+  const mineAfter = [...me.roster.filter(p => !give.includes(p)), ...take];
+  const theirsAfter = [...them.roster.filter(p => !take.includes(p)), ...give];
+  return {
+    mine: score(mineAfter, seasonValue) - score(me.roster, seasonValue),
+    mineWeek: score(mineAfter, weekValue) - score(me.roster, weekValue),
+    theirs: score(theirsAfter, seasonValue) - score(them.roster, seasonValue),
+    vorGive: give.reduce((s, p) => s + vor(p), 0), vorTake: take.reduce((s, p) => s + vor(p), 0),
+    after: mineAfter,
+  };
+}
+
+// Trade ideas: 1-for-1, worth 2+ points a week to me, and fair to them on value over replacement.
+// ponytail: 1-for-1 only; add 2-for-1 if this gets used a lot.
 const tradeable = p => playable(p) && !['K', 'D/ST'].includes(p.pos) && (p.avg ?? 0) > 0;
-const myBase = score(me.roster, seasonValue);
 const trades = [];
 for (const t of teams) {
   if (t === me) continue;
-  const theirBase = score(t.roster, seasonValue);
   for (const give of me.roster.filter(tradeable)) for (const take of t.roster.filter(tradeable)) {
-    if (give.avg < take.avg * 0.85) continue;
-    const mine = score([...me.roster.filter(p => p !== give), take], seasonValue) - myBase;
-    if (mine < 0.5) continue;
-    const theirs = score([...t.roster.filter(p => p !== take), give], seasonValue) - theirBase;
-    if (theirs >= -0.5) trades.push({ team: t.name, give, take, mine, theirs });
+    if (vor(give) < vor(take) * 0.85) continue;
+    const j = judge([give], [take], t);
+    if (j.mine >= 2 && j.theirs >= -0.5) trades.push({ team: t, give, take, ...j });
   }
 }
 trades.sort((a, b) => b.mine + b.theirs - (a.mine + a.theirs));
@@ -208,21 +224,43 @@ for (const tr of trades) {
   if (topTrades.filter(x => x.give === tr.give).length < 2 && topTrades.length < 6) topTrades.push(tr);
 }
 
-// --- Adds / drops / trades around the league, last 3 weeks
-const moves = [];
+// --- Adds / drops / trades around the league, last 3 weeks. Also my pending claims and trade
+// offers, and other teams' offers and claims that didn't happen (ESPN's app hides those).
+const moves = [], pendingTx = new Map(), intel = new Map();
+const involvesMe = tx => tx.items.some(i => i.toTeamId === me.id || i.fromTeamId === me.id);
 for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
   const d = await get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${wk}`);
   for (const tx of d.transactions ?? []) {
+    // old weeks keep stale "PENDING" rows; only this week's with isPending are real
+    if (wk === week && tx.isPending && tx.status === 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && involvesMe(tx)) pendingTx.set(tx.id, tx);
+    else if (tx.status !== 'EXECUTED' && tx.status !== 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && !involvesMe(tx)) intel.set(tx.id, tx);
     if (tx.status !== 'EXECUTED' || !['FREEAGENT', 'WAIVER', 'TRADE_ACCEPT'].includes(tx.type)) continue;
     for (const it of tx.items) if (['ADD', 'DROP', 'TRADE'].includes(it.type)) moves.push({ date: tx.processDate ?? tx.proposedDate, type: it.type, playerId: it.playerId, team: it.type === 'DROP' ? it.fromTeamId : it.toTeamId, from: it.fromTeamId });
   }
 }
-const missing = [...new Set(moves.map(m => m.playerId))].filter(id => !names[id]);
+// Full player rows for everyone mentioned (rostered, free agents, or looked up)
+const byId = new Map([...teams.flatMap(t => t.roster), ...allFa].map(p => [p.id, p]));
+const txIds = [...pendingTx.values(), ...intel.values()].flatMap(tx => tx.items.map(i => i.playerId));
+const missing = [...new Set([...moves.map(m => m.playerId), ...txIds])].filter(id => !byId.has(id));
 if (missing.length) {
-  const d = await get(`${LEAGUE}?view=kona_player_info`, { players: { filterIds: { value: missing } } });
-  for (const x of d.players) names[x.player.id] = x.player.fullName;
+  const d = await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: missing } } });
+  for (const x of d.players) { names[x.player.id] = x.player.fullName; byId.set(x.player.id, { ...row(x.player, x.ratings), slot: 'FA' }); }
 }
 moves.sort((a, b) => b.date - a.date);
+
+// My pending moves, judged with the same math as everything else
+const pending = [...pendingTx.values()].map(tx => {
+  const p = id => byId.get(id) ?? { id, name: names[id] ?? 'Unknown', pos: '?', teamName: '', avg: 0, proj: 0 };
+  if (tx.type === 'WAIVER') {
+    const add = tx.items.filter(i => i.type === 'ADD').map(i => p(i.playerId)), drop = tx.items.filter(i => i.type === 'DROP').map(i => p(i.playerId));
+    const after = [...me.roster.filter(r => !drop.some(d => d.id === r.id)), ...add.map(a => ({ ...a, slot: 'Bench' }))];
+    return { kind: 'waiver', add, drop, week: score(after, weekValue) - score(me.roster, weekValue), season: score(after, seasonValue) - score(me.roster, seasonValue) };
+  }
+  const them = teams.find(t => t.id === tx.items.map(i => (i.fromTeamId === me.id ? i.toTeamId : i.fromTeamId)).find(id => id !== me.id));
+  const give = tx.items.filter(i => i.fromTeamId === me.id).map(i => me.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
+  const take = tx.items.filter(i => i.toTeamId === me.id).map(i => them.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
+  return { kind: 'trade', mineOffer: tx.teamId === me.id, them, give, take, ...judge(give, take, them) };
+});
 
 // --- Luck check: "all-play" record = your record if you'd played every team every week
 const weekly = {}; // week -> { teamId: points }
@@ -397,6 +435,9 @@ details summary::after{content:"+";color:var(--muted);font-weight:400;font-size:
 details[open] summary{margin-bottom:8px}
 dl{margin:0}dt{font-weight:700;margin-top:12px}dd{margin:2px 0 0;color:var(--muted);font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:18px}
+.vhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+[class^=verdict-]{flex:none;font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px}
+.verdict-good{background:var(--goodbg);color:var(--good)}.verdict-bad{background:var(--badbg);color:var(--bad)}.verdict-meh{background:var(--chip);color:var(--muted)}
 footer{color:var(--muted);font-size:12px;text-align:center;margin-top:32px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 #refresh{flex:none;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:6px 12px;font:600 12.5px Inter,system-ui,sans-serif;cursor:pointer}
@@ -428,7 +469,7 @@ ${!live && fixedProj + weekPlanGain > myProj + 0.5 ? ` Doing the to-do list belo
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>`;
 })() : ''}
 
-<nav><a href="#todo">To-do</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#trades">Trades</a><a href="#season">Season</a><a href="#league">League</a><a href="#help">How it works</a></nav>
+<nav><a href="#todo">To-do</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#trades">Trades</a><a href="#season">Season</a><a href="#league">League</a><a href="#help">How it works</a></nav>
 
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
 ${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
@@ -456,12 +497,33 @@ ${trending.length ? `<div class="group">Trending: being picked up fast in other 
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 </section>
 
-<section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps that make your team better and look fair to the other team, so they might say yes. Offer them in ESPN under Trade.</p>
-${topTrades.length ? topTrades.map(t => `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team)}</b></div><div class="swap">
+<section id="pending"><h2>Your pending moves</h2><p class="sub">Waiver claims and trade offers that haven't gone through yet, checked with the same math as everything else.</p>
+${pending.length ? pending.map(m => {
+  if (m.kind === 'waiver') {
+    const v = m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : ['meh', 'Barely matters'];
+    return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
+    <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}</div>
+    <p class="why">This week: <b>${m.week >= 0 ? '+' : ''}${n(m.week)}</b> points. Rest of season: <b>${m.season >= 0 ? '+' : ''}${n(m.season)}</b> per week.</p></div>`;
+  }
+  const v = m.mine >= 1 ? ['good', m.mineOffer ? 'Good offer' : 'Accept'] : m.mine <= -1 ? ['bad', m.mineOffer ? 'Bad for you, cancel it' : 'Decline'] : ['meh', 'About even'];
+  const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = starterAt(m.after, pos); return s && !m.give.includes(s) ? `your ${POS_NAME[pos]?.toLowerCase()} would be ${esc(s.name)} (${n(s.avg)})` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
+  return `<div class="card"><div class="vhead"><span class="tag">${m.mineOffer ? 'You offered' : 'Offered to you by'} <b>${esc(m.them.name)}</b></span><span class="verdict-${v[0]}">${v[1]}</span></div>
+  <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}
+  <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}</div>
+  <p class="why">Rest of season: <b>${m.mine >= 0 ? '+' : ''}${n(m.mine)}</b> points per week for you, ${m.theirs >= 0 ? '+' : ''}${n(m.theirs)} for them. This week: ${m.mineWeek >= 0 ? '+' : ''}${n(m.mineWeek)}.
+  ${m.mineWeek > 2 && m.mine < -1 ? '<br><b>Trap:</b> it only helps this week (your players are on bye or hurt). After that you\'re worse off.' : ''}
+  ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
+  ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p></div>`;
+}).join('') : '<div class="card empty">Nothing pending right now.</div>'}
+</section>
+
+<section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
+${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
   <div class="row">${player(t.give, '')}${big(t.give.avg, 'per game')}</div>
   <div class="arrow">for</div>
   <div class="row">${player(t.take, '')}${big(t.take.avg, 'per game')}</div></div>
-  <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.</p></div>`).join('') : '<div class="card empty">No fair trades that help you right now.</div>'}
+  <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
+  <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(s.avg)} per game)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
 </section>
 
 <section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
@@ -481,6 +543,19 @@ ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
 ${standings.map((t, i) => `<tr class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
+${intel.size ? `<div class="card"><details open><summary>Behind the scenes: offers and claims that didn't happen</summary>
+<p class="tag" style="margin-top:0">The ESPN app doesn't show these. A team that offered a player in a trade is shopping him; a team that tried to claim someone needs that position.</p><table>
+${[...intel.values()].sort((a, b) => b.proposedDate - a.proposedDate).slice(0, 20).map(tx => {
+  const nm = id => esc(byId.get(id)?.name ?? names[id] ?? 'someone');
+  const date = new Date(tx.proposedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (tx.type === 'WAIVER') {
+    const add = tx.items.filter(i => i.type === 'ADD').map(i => nm(i.playerId)).join(', '), drop = tx.items.filter(i => i.type === 'DROP').map(i => nm(i.playerId)).join(', ');
+    return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> tried to claim ${add}${drop ? ` (dropping ${drop})` : ''} <span class="tag">(${tx.status === 'CANCELED' ? 'they canceled it' : 'didn\'t go through'})</span></td></tr>`;
+  }
+  const other = tx.items.map(i => (i.fromTeamId === tx.teamId ? i.toTeamId : i.fromTeamId)).find(id => id !== tx.teamId);
+  const gave = tx.items.filter(i => i.fromTeamId === tx.teamId).map(i => nm(i.playerId)).join(', '), got = tx.items.filter(i => i.toTeamId === tx.teamId).map(i => nm(i.playerId)).join(', ');
+  return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> offered ${gave} to ${esc(teamName[other] ?? '')} for ${got} <span class="tag">(${tx.status.toLowerCase().replace(/_/g, ' ')})</span></td></tr>`;
+}).join('')}</table></details></div>` : ''}
 <div class="card"><details><summary>Recent moves around the league</summary><table>
 ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>${esc(teamName[m.team] ?? '')}</td><td>${m.type === 'ADD' ? '<b style="color:var(--good)">added</b>' : m.type === 'DROP' ? '<span style="color:var(--bad)">dropped</span>' : `traded with ${esc(teamName[m.from])}`} ${esc(names[m.playerId] ?? '')}</td></tr>`).join('')}</table></details></div>
 </section>
