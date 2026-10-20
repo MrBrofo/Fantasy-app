@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "0 */3 * * *" # every 3 hours
   workflow_dispatch: # "Run workflow" button on the Actions tab
+  push:
+    branches: [main] # rebuild right away when the code changes
 
 permissions:
   contents: write # only for the keep-alive commit
