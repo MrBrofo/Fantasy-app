@@ -76,6 +76,16 @@ const teams = league.teams.map(t => {
 const teamName = Object.fromEntries(teams.map(t => [t.id, t.name]));
 const me = teams.find(t => t.owners?.includes(SWID));
 
+// Injury details (type, expected return, out for season) for my hurt players; only the player card view has them
+const hurtIds = me.roster.filter(p => p.status).map(p => p.id);
+if (hurtIds.length) {
+  const d = await get(`${LEAGUE}?view=kona_playercard&scoringPeriodId=${week}`, { players: { filterIds: { value: hurtIds } } });
+  for (const x of d.players) {
+    const i = x.player.injuryDetails, p = me.roster.find(r => r.id === x.player.id);
+    if (i && p) p.inj = { type: i.type, back: i.expectedReturnDate && new Date(i.expectedReturnDate[0], i.expectedReturnDate[1] - 1, i.expectedReturnDate[2]), season: i.outForSeason };
+  }
+}
+
 // Best lineup for a set of players. Single-position slots fill first, then the
 // flex-type slots, narrowest first; with ESPN's slot shapes that greedy fill is optimal.
 // value(p) = points we expect from p; players who can't play should get 0.
@@ -123,12 +133,13 @@ const benchIn = best.lineup.map(x => x.player).filter(p => !starters(me).include
 const sitOut = starters(me).filter(p => !bestIds.has(p.id));
 
 // --- Waiver pickups: add each free agent, drop whichever player hurts least.
-// Injured players are never suggested as drops (they come back). A this-week pickup
-// also pays for any season-long points it costs, so a star on bye is never the drop.
+// Injured players are never suggested as drops (they come back), unless out for the season.
+// A this-week pickup also pays for any season-long points it costs, so a star on bye is never the drop.
+const weakness = p => (p.inj?.season ? -1 : p.avg ?? 0); // tie-break: drop out-for-season players first
 function bestSwap(roster, value, used = new Set()) {
   const base = score(roster, value);
   const seasonBase = score(roster, seasonValue);
-  const drops = roster.filter(p => p.slot !== 'IR' && !HURT.includes(p.status) && !used.has(p.id));
+  const drops = roster.filter(p => p.slot !== 'IR' && (!HURT.includes(p.status) || p.inj?.season) && !used.has(p.id));
   const out = [];
   for (const add of allFa) {
     if (value(add) <= 0 || used.has(add.id)) continue;
@@ -137,7 +148,7 @@ function bestSwap(roster, value, used = new Set()) {
       const next = [...roster.filter(p => p !== drop), add];
       const gain = score(next, value) - base + (value === seasonValue ? 0 : Math.min(0, score(next, seasonValue) - seasonBase));
       // on a tie, drop the weaker player
-      if (!top || gain > top.gain + 0.05 || (gain > top.gain - 0.05 && (drop.avg ?? 0) < (top.drop.avg ?? 0))) top = { add, drop, gain };
+      if (!top || gain > top.gain + 0.05 || (gain > top.gain - 0.05 && weakness(drop) < weakness(top.drop))) top = { add, drop, gain };
     }
     if (top && top.gain >= 1) out.push(top); // under a point isn't worth a roster move
   }
@@ -256,8 +267,11 @@ for (const [i, s] of plan.entries()) {
     s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`]);
 }
 const irUsed = me.roster.filter(p => p.slot === 'IR').length;
+const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 for (const p of me.roster) {
   if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.']);
+  if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`]);
+  if (p.slot === 'IR' && p.inj?.back && p.inj.back - Date.now() < 8 * 864e5 && !p.inj.season) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, 'When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you\'d drop.']);
 }
 // Bye gaps, counting the players the plan adds (so a planned pickup that covers it hides the warning)
 const afterPlan = [...me.roster.filter(p => !plan.some(s => s.drop === p)), ...plan.map(s => s.add)];
@@ -275,11 +289,19 @@ const initials = name => esc(name.split(' ').map(w => w[0]).join('').slice(0, 2)
 const pic = p => p.id < 0 || p.pos === 'D/ST'
   ? `<span class="pic logo"><img loading="lazy" src="https://a.espncdn.com/i/teamlogos/nfl/500/${esc(p.team.toLowerCase())}.png" alt=""></span>`
   : `<span class="pic" data-i="${initials(p.name)}"><img loading="lazy" src="https://a.espncdn.com/i/headshots/nfl/players/full/${p.id}.png" alt="" onerror="this.remove()"></span>`;
-const chip = p => {
-  if (p.bye === week) return '<span class="chip bad">No game this week</span>';
+// Injury chip, with what's wrong and when he's expected back when ESPN knows
+function chip(p) {
+  const out = [];
+  if (p.bye === week && !p.inj?.season) out.push('<span class="chip bad">No game this week</span>');
   const s = STATUS[p.status];
-  return s ? `<span class="chip ${s[1]}">${s[0]}</span>` : '';
-};
+  if (p.inj?.season) out.push(`<span class="chip bad">Out for the season${p.inj.type ? ` (${esc(p.inj.type.toLowerCase())})` : ''}</span>`);
+  else if (s) {
+    const wks = p.inj?.back ? Math.ceil((p.inj.back - Date.now()) / (7 * 864e5)) : 0;
+    const when = p.inj?.back && wks > 0 ? ` &middot; back ~${dateStr(p.inj.back)}${wks > 1 ? ` (${wks} wks)` : ''}` : '';
+    out.push(`<span class="chip ${s[1]}">${s[0]}${p.inj?.type && p.inj.type !== 'Undisclosed' ? ` (${esc(p.inj.type.toLowerCase())})` : ''}${p.status === 'QUESTIONABLE' ? '' : when}</span>`);
+  }
+  return out.join(' ');
+}
 const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new Intl.PluralRules('en-US', { type: 'ordinal' }).select(k)];
 // Name links to the player's ESPN page (latest news); rank = how he compares at his position this season
 const player = (p, extra = '') => `<div class="player">${pic(p)}<div class="who">
