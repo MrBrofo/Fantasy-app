@@ -673,7 +673,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Where these tips come from</dt><dd>This page does the math on ESPN's projections and season stats. It doesn't know about news ESPN hasn't added yet, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
 
-<footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 5 minutes &middot; this page checks for it every minute</footer>
+<footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
 <div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
 <script type="application/json" id="pdata">__PDATA__</script>
@@ -685,9 +685,9 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 const built = +document.querySelector('meta[name=built]').content;
 const btn = document.getElementById('refresh'), ago = document.getElementById('ago');
 const fresh = () => location.pathname + '?t=' + Date.now();
-// GitHub starts a run on each 5-minute mark and it takes ~90s to publish, so the next
+// cron-job.org starts a run on each 3-minute mark and it takes ~90s to publish, so the next
 // update is the mark after the one that made this build, plus 90s. GitHub can run late; then "any moment".
-const STEP = 5 * 60000, PUBLISH = 90000;
+const STEP = 3 * 60000, PUBLISH = 90000;
 const nextAt = Math.floor(built / STEP) * STEP + STEP + PUBLISH;
 let lastCheck = 0;
 function showAgo() {

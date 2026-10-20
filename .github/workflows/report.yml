@@ -3,7 +3,7 @@ name: Fantasy report
 on:
   schedule:
     - cron: "*/5 * * * *" # every 5 minutes, the fastest GitHub allows (it sometimes runs these late)
-  workflow_dispatch: # "Run workflow" button on the Actions tab
+  workflow_dispatch: # "Run workflow" button, and cron-job.org every 3 minutes
   push:
     branches: [main] # rebuild right away when the code changes
 
@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false # wait in line, so a slow run still finishes and publishes
 
 jobs:
   report:
