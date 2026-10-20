@@ -117,13 +117,13 @@ const sitOut = starters(me).filter(p => !bestIds.has(p.id));
 // --- Waiver pickups: add each free agent, drop whichever player hurts least.
 // Injured players are never suggested as drops (they come back). A this-week pickup
 // also pays for any season-long points it costs, so a star on bye is never the drop.
-function bestSwap(roster, value) {
+function bestSwap(roster, value, used = new Set()) {
   const base = score(roster, value);
   const seasonBase = score(roster, seasonValue);
-  const drops = roster.filter(p => p.slot !== 'IR' && !HURT.includes(p.status));
+  const drops = roster.filter(p => p.slot !== 'IR' && !HURT.includes(p.status) && !used.has(p.id));
   const out = [];
   for (const add of allFa) {
-    if (value(add) <= 0) continue;
+    if (value(add) <= 0 || used.has(add.id)) continue;
     let top = null;
     for (const drop of drops) {
       const next = [...roster.filter(p => p !== drop), add];
@@ -131,12 +131,39 @@ function bestSwap(roster, value) {
       // on a tie, drop the weaker player
       if (!top || gain > top.gain + 0.05 || (gain > top.gain - 0.05 && (drop.avg ?? 0) < (top.drop.avg ?? 0))) top = { add, drop, gain };
     }
-    if (top && top.gain > 0.3) out.push(top);
+    if (top && top.gain >= 1) out.push(top); // under a point isn't worth a roster move
   }
   return out.sort((a, b) => b.gain - a.gain).slice(0, 5);
 }
-const pickupsWeek = bestSwap(me.roster, weekValue);
-const pickupsSeason = bestSwap(me.roster, seasonValue).filter(s => !pickupsWeek.slice(0, 1).some(w => w.add === s.add));
+// One plan, done in order: each step is applied before picking the next, so every step
+// drops a different player and players added earlier in the plan are never dropped.
+const plan = [];
+{
+  let roster = [...me.roster];
+  const used = new Set();
+  for (const [kind, value] of [['week', weekValue], ['season', seasonValue]]) {
+    while (plan.length < 5) {
+      const opts = bestSwap(roster, value, used);
+      if (!opts.length) break;
+      const s = opts[0];
+      plan.push({ ...s, kind, alts: opts.slice(1).filter(o => o.add.pos === s.add.pos).slice(0, 2) });
+      used.add(s.add.id);
+      roster = [...roster.filter(p => p !== s.drop), { ...s.add, slot: 'Bench' }];
+    }
+  }
+  // Same set of drops, but paired with a same-position add where possible so steps read
+  // naturally (defense for defense), then each step's gain is recounted in that order.
+  const drops = plan.map(s => s.drop);
+  for (const s of plan) { const k = drops.findIndex(d => d.pos === s.add.pos); s.drop = drops.splice(Math.max(k, 0), 1)[0]; }
+  roster = [...me.roster];
+  for (const s of plan) {
+    const value = s.kind === 'week' ? weekValue : seasonValue;
+    const next = [...roster.filter(p => p !== s.drop), { ...s.add, slot: 'Bench' }];
+    s.gain = score(next, value) - score(roster, value);
+    roster = next;
+  }
+}
+const weekPlanGain = plan.filter(s => s.kind === 'week').reduce((t, s) => t + s.gain, 0);
 
 // --- Trade ideas: 1-for-1 swaps that raise my best-lineup average, roughly fair on
 // season average (managers judge by that), and barely hurt or help their lineup.
@@ -186,17 +213,19 @@ for (const p of starters(me)) {
   else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`]);
 }
 for (const [i, p] of benchIn.entries()) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(p.proj)}${sitOut[i] ? `, more than ${sitOut[i].name} (${n(weekValue(sitOut[i]))})` : ''}.`]);
-if (pickupsWeek[0]) {
-  const s = pickupsWeek[0];
-  todo.push([sitOut.length > benchIn.length ? 'urgent' : 'week', `Pick up ${s.add.name}, drop ${s.drop.name}`, `Adds about ${n(s.gain)} points to your score this week. ${s.drop.name} is the least useful player on your bench.`]);
+for (const [i, s] of plan.entries()) {
+  todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
+    s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`]);
 }
 const irUsed = me.roster.filter(p => p.slot === 'IR').length;
 for (const p of me.roster) {
   if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.']);
 }
+// Bye gaps, counting the players the plan adds (so a planned pickup that covers it hides the warning)
+const afterPlan = [...me.roster.filter(p => !plan.some(s => s.drop === p)), ...plan.map(s => s.add)];
 for (let wk = week + 1; wk <= lastWeek; wk++) {
   for (const pos of ['QB', 'TE', 'K', 'D/ST']) {
-    if (me.roster.some(p => p.pos === pos && playable(p) && p.bye !== wk)) continue;
+    if (afterPlan.some(p => p.pos === pos && !HURT.includes(p.status) && p.slot !== 'IR' && p.bye !== wk)) continue;
     const sub = fa[pos].filter(p => p.bye !== wk && !HURT.includes(p.status)).sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0))[0];
     todo.push(['later', `Week ${wk}: get a ${POS_NAME[pos].toLowerCase()}`, `None of yours play that week.${sub ? ` Best one available: ${sub.name} (${sub.teamName}, ${n(sub.avg)} points per game).` : ''}`]);
   }
@@ -309,7 +338,7 @@ ${opp ? `<div class="match"><h3>This week's matchup</h3><div class="vs">
   <div class="t">You</div><div class="p">${n(myProj)}</div><div class="bar"><i style="width:${Math.min(100, myProj / Math.max(myProj, oppProj, 1) * 100)}%;background:var(--brand2)"></i></div>
   <div class="t">${esc(opp.name)}</div><div class="p">${n(oppProj)}</div><div class="bar"><i style="width:${Math.min(100, oppProj / Math.max(myProj, oppProj, 1) * 100)}%;background:var(--muted)"></i></div>
 </div><div class="verdict">${myProj >= oppProj ? `<b style="color:var(--good)">You're expected to win</b> by ${n(myProj - oppProj)} points.` : `<b style="color:var(--bad)">You're expected to lose</b> by ${n(oppProj - myProj)} points.`}
-${fixedProj > myProj + 0.5 ? ` Doing the to-do list below gets you to about <b>${n(fixedProj + (pickupsWeek[0]?.gain ?? 0))}</b>.` : ''}</div>
+${fixedProj + weekPlanGain > myProj + 0.5 ? ` Doing the to-do list below gets you to about <b>${n(fixedProj + weekPlanGain)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>` : ''}
 
 <nav><a href="#todo">To-do</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#trades">Trades</a><a href="#league">League</a><a href="#help">How it works</a></nav>
@@ -325,11 +354,14 @@ ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.sl
 }).join('')}
 </section>
 
-<section id="pickups"><h2>Pickups</h2><p class="sub">Players nobody in your league has. Add them in ESPN under Players &rarr; Add.</p>
-${[['For this week (pick one)', pickupsWeek, 'more points this week', true], ['For the rest of the season', pickupsSeason, 'more points per week', false]].map(([label, list, unit, wk]) => `<div class="group">${label}</div>${list.length ? list.slice(0, 3).map(s => `<div class="card">
+<section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. In ESPN: Players &rarr; find him &rarr; Add.</p>
+${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
+  <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'helps this week' : 'helps rest of season'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : s.add.avg, wk ? 'expected' : 'per game')}</div>
-  <p class="why"><span class="gain">+${n(s.gain)}</span> ${unit}. Drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : s.drop.avg)} ${wk ? 'expected' : 'per game'}) to make room.<br>
-  <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span></p></div>`).join('') : '<div class="card empty">Nobody out there beats what you have.</div>'}`).join('')}
+  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : s.drop.avg)} ${wk ? 'expected' : 'per game'}).<br>
+  <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
+  ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : a.add.avg)})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
+  : '<div class="card empty">Nobody out there beats what you have.</div>'}
 </section>
 
 <section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps that make your team better and look fair to the other team, so they might say yes. Offer them in ESPN under Trade.</p>
