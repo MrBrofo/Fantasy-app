@@ -325,6 +325,7 @@ const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Fantasy"><meta name="theme-color" content="#0b1530">
+<meta name="built" content="${Date.now()}">
 <title>${esc(me.name)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -395,10 +396,15 @@ details[open] summary{margin-bottom:8px}
 dl{margin:0}dt{font-weight:700;margin-top:12px}dd{margin:2px 0 0;color:var(--muted);font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:18px}
 footer{color:var(--muted);font-size:12px;text-align:center;margin-top:32px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#refresh{flex:none;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:6px 12px;font:600 12.5px Inter,system-ui,sans-serif;cursor:pointer}
+#refresh:active{background:rgba(255,255,255,.28)}#refresh.spin span{display:inline-block;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
 
 <header><div class="wrap">
-  <div class="league">${esc(league.settings.name)} &middot; Week ${week}</div>
+  <div class="top"><div class="league">${esc(league.settings.name)} &middot; Week ${week} &middot; <span id="ago">just updated</span></div>
+  <button id="refresh" type="button"><span>&#8635;</span> Refresh</button></div>
   <h1>${esc(me.name)}</h1>
   <div class="record">${me.w}-${me.l} record &middot; ${ordinal(myRank)} of ${teams.length}</div>
 </div></header>
@@ -498,8 +504,38 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Where these tips come from</dt><dd>This page does the math on ESPN's projections and season stats. It doesn't know about news ESPN hasn't added yet, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
 
-<footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; refreshes about every 15 minutes</footer>
-</div></body></html>`;
+<footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 15 minutes &middot; this page checks for it every minute</footer>
+</div>
+<script>
+// Load the newest build when there is one: on the button, every minute, and when you come back to the app.
+// GitHub caches pages ~10 min, so a timestamped URL is used to skip the cache.
+const built = +document.querySelector('meta[name=built]').content;
+const btn = document.getElementById('refresh'), ago = document.getElementById('ago');
+const fresh = () => location.pathname + '?t=' + Date.now();
+function showAgo() {
+  const m = Math.round((Date.now() - built) / 60000);
+  ago.textContent = m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago';
+}
+async function check(clicked) {
+  if (clicked) btn.classList.add('spin');
+  try {
+    const html = await (await fetch(fresh(), { cache: 'no-store' })).text();
+    const next = +(html.match(/name="built" content="(\\d+)"/) || [])[1];
+    if (next > built) {
+      try { sessionStorage.setItem('scroll', scrollY); } catch {}
+      return location.replace(fresh() + location.hash);
+    }
+    if (clicked) btn.innerHTML = '&#10003; Up to date';
+  } catch { if (clicked) btn.textContent = 'Offline'; }
+  btn.classList.remove('spin');
+  if (clicked) setTimeout(() => (btn.innerHTML = '<span>&#8635;</span> Refresh'), 2500);
+}
+try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.removeItem('scroll'); scrollTo(0, +y); } } catch {}
+btn.onclick = () => check(true);
+showAgo(); setInterval(showAgo, 30000);
+setInterval(() => !document.hidden && check(false), 60000);
+document.addEventListener('visibilitychange', () => !document.hidden && check(false));
+</script></body></html>`;
 
 fs.mkdirSync(path.join(dir, 'site'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'site', 'index.html'), html);
