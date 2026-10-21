@@ -1482,6 +1482,11 @@ body.ls::before{display:none}
 #bad{margin:16px 0 0;font-size:11px;letter-spacing:.25em;color:#ffffffcc}
 .shake{animation:shake .4s}
 @keyframes shake{20%,60%{translate:-7px}40%,80%{translate:7px}}
+body.ls::after{content:'';position:fixed;inset:0;background:radial-gradient(circle,#ff2a2a55,#ff2a2a22 70%);opacity:0;pointer-events:none}
+body.flash::after{animation:flash .7s ease-out}
+@keyframes flash{0%,30%{opacity:1}100%{opacity:0}}
+.denied .ttl,.denied #bad,.denied .row span{color:#ff3b3b;text-shadow:0 0 12px #ff3b3b88}
+.denied .row{border-color:#ff3b3b}
 .fade{transition:opacity .6s}
 .hide{opacity:0}
 .granted .fade,.granted .row span.fade{opacity:0}
@@ -1547,7 +1552,7 @@ body.auto .ring,body.auto .corner,body.auto #field{display:none}
   }
   // stars for what's typed, then the blinking underscore
   const showMask = () => { $('mask').innerHTML = '*'.repeat(pw.value.length) + '<span class="cur">_</span>'; };
-  pw.addEventListener('input', showMask);
+  pw.addEventListener('input', () => { showMask(); form.classList.remove('denied'); });
   async function start() {
     document.body.classList.remove('auto');
     form.hidden = false;
@@ -1604,7 +1609,9 @@ body.auto .ring,body.auto .corner,body.auto #field{display:none}
     ev.preventDefault();
     unlock(pw.value, true).catch(() => {
       $('bad').hidden = false; pw.value = ''; showMask();
-      form.classList.remove('shake'); void form.offsetWidth; form.classList.add('shake');
+      // red flash over the screen; title, prompt and line stay red until you type again
+      form.classList.remove('shake'); document.body.classList.remove('flash'); void form.offsetWidth;
+      form.classList.add('shake', 'denied'); document.body.classList.add('flash');
       scramble('ACCESS DENIED', 400);
     });
   });
