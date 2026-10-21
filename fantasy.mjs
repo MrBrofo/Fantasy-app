@@ -1,6 +1,7 @@
 // ESPN fantasy league report. Run: node fantasy.mjs  ->  writes site/index.html next to this file.
 // Login comes from env ESPN_S2 / SWID / LEAGUE_ID (GitHub Actions) or league-config.json (local).
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -1435,8 +1436,42 @@ for (const [id, p] of shown) {
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
 
+// Site password (GitHub secret SITE_PASSWORD): the published page is the real page encrypted
+// (AES-GCM, key from the password via PBKDF2), plus a small unlock screen. The page is public on
+// GitHub, so a plain "enter password" screen would only hide it; encrypted, it can't be read without
+// the password. The phone keeps the password, so it's asked once. The head stays readable (no team
+// data in it) so the update check can still read the build time.
+async function lockPage(page, password) {
+  const { subtle } = crypto.webcrypto, salt = crypto.randomBytes(16), iv = crypto.randomBytes(12);
+  const base = await subtle.importKey('raw', Buffer.from(password), 'PBKDF2', false, ['deriveKey']);
+  const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const data = Buffer.from(await subtle.encrypt({ name: 'AES-GCM', iv }, key, Buffer.from(page))).toString('base64');
+  return page.slice(0, page.indexOf('</head>')) + `</head><body>
+<section style="max-width:380px;margin:18vh auto 0;padding:0 16px"><h2>Locked</h2><p class="sub">Enter your site password. This phone remembers it.</p>
+<form id="lock" class="card" hidden><input id="pw" type="password" autocomplete="current-password" aria-label="Site password" style="width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #8886;background:transparent;color:inherit;font:16px Inter,system-ui,sans-serif">
+<button class="btn">Unlock</button><p id="bad" class="sub" hidden style="color:var(--bad)">Wrong password.</p></form></section>
+<script>
+(() => {
+  const LOCK = { salt: '${salt.toString('base64')}', iv: '${iv.toString('base64')}', data: '${data}' };
+  const bytes = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const form = document.getElementById('lock');
+  async function unlock(pw) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(LOCK.salt), iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const page = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(LOCK.iv) }, key, bytes(LOCK.data)));
+    try { localStorage.setItem('sitePw', pw); } catch {}
+    document.open(); document.write(page); document.close();
+  }
+  let saved = null;
+  try { saved = localStorage.getItem('sitePw'); } catch {}
+  if (saved) unlock(saved).catch(() => { try { localStorage.removeItem('sitePw'); } catch {} form.hidden = false; });
+  else form.hidden = false;
+  form.addEventListener('submit', ev => { ev.preventDefault(); unlock(document.getElementById('pw').value).catch(() => { document.getElementById('bad').hidden = false; }); });
+})();
+</script></body></html>`;
+}
 fs.mkdirSync(path.join(dir, 'site'), { recursive: true });
-fs.writeFileSync(path.join(dir, 'site', 'index.html'), html);
+fs.writeFileSync(path.join(dir, 'site', 'index.html'), process.env.SITE_PASSWORD ? await lockPage(html, process.env.SITE_PASSWORD) : html);
 // App icons (Home Screen, browser tab) and the manifest that names the installed app
 fs.cpSync(path.join(dir, 'icons'), path.join(dir, 'site'), { recursive: true });
 if (cbsSaved) fs.writeFileSync(path.join(dir, 'site', 'cbs.json'), JSON.stringify(cbsSaved));

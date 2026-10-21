@@ -2,6 +2,7 @@
 // players and a fake clock. Run: node check.mjs (no ESPN login needed). Prints "ok" or throws.
 import fs from 'fs';
 import assert from 'assert/strict';
+import crypto from 'crypto';
 
 const src = fs.readFileSync(new URL('./fantasy.mjs', import.meta.url), 'utf8');
 const cut = (from, to) => { const i = src.indexOf(from), j = src.indexOf(to, i); assert(i >= 0 && j > i, `code moved: ${from}`); return src.slice(i, j + to.length); };
@@ -99,3 +100,15 @@ for (const t of [r, early]) {
 assert.equal(r.bestMove, null, 'nothing to move on Sunday: the low starters are locked');
 assert.equal(early.bestMove.items.length, 4, 'two in, two out');
 console.log('ok');
+
+// site lock: the published page can't be read without the password, and the password opens it
+{
+  const lockPage = new Function('crypto', 'Buffer', cut('async function lockPage(', "</script></body></html>`;\n}") + '\nreturn lockPage;')(crypto, Buffer);
+  const page = '<html><head><meta name="built" content="1"></head><body>my roster ✓</body></html>', out = await lockPage(page, 'pw');
+  assert(!out.includes('my roster') && out.includes('name="built" content="1"'), 'page hidden, build time readable');
+  const [salt, iv, data] = ['salt', 'iv', 'data'].map(k => Buffer.from(out.match(new RegExp(k + ": '([^']+)'"))[1], 'base64'));
+  const { subtle } = crypto.webcrypto, base = await subtle.importKey('raw', Buffer.from('pw'), 'PBKDF2', false, ['deriveKey']);
+  const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  assert.equal(Buffer.from(await subtle.decrypt({ name: 'AES-GCM', iv }, key, data)).toString(), page);
+  console.log('lock ok');
+}

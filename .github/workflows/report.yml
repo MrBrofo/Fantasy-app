@@ -46,6 +46,7 @@ jobs:
           LEAGUE_ID: ${{ secrets.LEAGUE_ID }}
           PUSH_SUB: ${{ secrets.PUSH_SUB }} # phone alerts: code from the app's "Turn on alerts"
           VAPID_PRIVATE: ${{ secrets.VAPID_PRIVATE }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }} # unlocks the site; not set = site not locked
           SEASON: "2026"
 
       # Saved right after the build (before deploy), so a failed deploy never forgets alerts already sent
