@@ -1050,6 +1050,11 @@ for (const [k, t] of Object.entries(memo.sent)) if (Date.now() - t > 21 * 864e5)
 fs.writeFileSync(path.join(dir, 'site', 'alerts.json'), JSON.stringify(memo));
 fs.mkdirSync(path.dirname(memoFile), { recursive: true });
 fs.writeFileSync(memoFile, JSON.stringify(memo));
+// Small summary for the iPhone Home Screen widget (Scriptable).
+fs.writeFileSync(path.join(dir, 'site', 'widget.json'), JSON.stringify({
+  week, me: me.name, opp: opp?.name ?? null, myProj: n(myProj), oppProj: n(oppProj), updated: Date.now(),
+  todo: todo.map(([lvl, title]) => ({ lvl, title })),
+}));
 fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
   name: me.name, short_name: 'Fantasy', start_url: '.', display: 'standalone', background_color: '#0b1530', theme_color: '#0b1530',
   icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
