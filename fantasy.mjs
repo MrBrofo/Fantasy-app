@@ -17,9 +17,27 @@ const H = { Cookie: `espn_s2=${ESPN_S2}; SWID=${SWID}` };
 const BASE = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${SEASON}`;
 const LEAGUE = `${BASE}/segments/0/leagues/${LEAGUE_ID}`;
 
+const VAPID_PUBLIC = 'BARgoktdqvKVCNGSMWSNgihh0VeG29ic9R9phwQIM2C0cb5tzZj6CQfoeigkrXC0-7rQ9BXE6IHjN_ua-akcKEw';
+// If ESPN rejects the login (the espn_s2 / SWID cookies expire), every update fails and the normal alerts never
+// get to run, so tell the phone right here, at most once a day (remembered in the same state file as other alerts).
+async function loginAlert() {
+  if (!process.env.PUSH_SUB || !process.env.VAPID_PRIVATE) return;
+  const f = path.join(dir, 'state', 'alerts.json');
+  const memo = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {};
+  memo.sent ??= {};
+  if (Date.now() - (memo.sent['espn-login'] ?? 0) < 864e5) return;
+  const { default: webpush } = await import('web-push');
+  webpush.setVapidDetails('https://mrbrofo.github.io/Fantasy-app/', VAPID_PUBLIC, process.env.VAPID_PRIVATE);
+  await webpush.sendNotification(JSON.parse(process.env.PUSH_SUB), JSON.stringify({ title: 'Your fantasy app stopped updating', body: 'ESPN rejected the login, so it probably expired. Ask Claude to help you copy new espn_s2 and SWID cookies into GitHub.', tag: 'espn-login' }));
+  memo.sent['espn-login'] = Date.now();
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify(memo));
+}
+
 async function get(url, filter) {
   const headers = filter ? { ...H, 'x-fantasy-filter': JSON.stringify(filter) } : H;
   const r = await fetch(url, { headers });
+  if ((r.status === 401 || r.status === 403) && !get.warned) { get.warned = true; await loginAlert().catch(err => console.warn('Login alert not sent:', err.message)); }
   if (!r.ok) throw new Error(`${r.status} from ESPN: ${(await r.text()).slice(0, 200)}${r.status === 401 ? ' (cookies expired? re-copy espn_s2/SWID)' : ''}`);
   return r.json();
 }
@@ -496,6 +514,13 @@ const rivalsFor = (add, value) => teams.filter(t => t !== me && t.waiver < me.wa
 
 // --- To-do list, most urgent first. Each item: [level, title, why]
 const n = v => (v == null ? '-' : v.toFixed(1));
+const cap = d => d[0] + d.slice(1).toLowerCase();
+const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+const procDays = new Set(league.settings.acquisitionSettings?.waiverProcessDays ?? ['WEDNESDAY']);
+const waiverDay = [2, 3, 4, 5, 6, 0, 1].map(i => DAYS[i]).find(d => procDays.has(d)) ?? 'WEDNESDAY';
+const waiverEve = cap(DAYS[(DAYS.indexOf(waiverDay) + 6) % 7]).slice(0, 3); // 'Tue', like etDay
+const noProc = DAYS.filter(d => !procDays.has(d));
+const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day except ${noProc.map(cap).join(' and ')}` : `on ${[...procDays].map(cap).join(', ')}`;
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
 const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
 const todo = [];
@@ -529,7 +554,6 @@ for (let wk = week + 1; wk <= lastWeek; wk++) {
 // workflow carries from run to run (Actions cache), so the every-minute runs don't repeat them. The published
 // site's copy is only a fallback: GitHub's CDN can serve it up to 10 minutes stale, which once re-sent everything.
 // Urgent alerts also go out during quiet hours (11pm-8am ET).
-const VAPID_PUBLIC = 'BARgoktdqvKVCNGSMWSNgihh0VeG29ic9R9phwQIM2C0cb5tzZj6CQfoeigkrXC0-7rQ9BXE6IHjN_ua-akcKEw';
 const etNow = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(new Date());
 const etHour = Number(etNow.find(x => x.type === 'hour').value), etDay = etNow.find(x => x.type === 'weekday').value;
 const notStarted = p => kickoff(p) > Date.now();
@@ -544,6 +568,23 @@ else try {
   else if (r.ok) { memo = { ...memo, ...await r.json() }; memoOk = true; }
 } catch {}
 const alerts = []; // [key, title, body, urgent]
+// --- Last week's recap from ESPN's box score: what my lineup scored vs the best lineup I could have set (hindsight),
+// and, once there's a saved one, what the site's suggested lineup would have scored
+let recap = null;
+if (week > 1) try {
+  const bx = await get(`${LEAGUE}?view=mBoxscore&view=mMatchupScore&scoringPeriodId=${week - 1}`);
+  const g = bx.schedule.find(x => x.matchupPeriodId === week - 1 && (x.home?.teamId === me.id || x.away?.teamId === me.id));
+  const [mine, theirs] = g.home.teamId === me.id ? [g.home, g.away] : [g.away, g.home];
+  const ps = mine.rosterForMatchupPeriod.entries.map(e => ({ id: e.playerId, name: e.playerPoolEntry.player.fullName, pos: POS[e.playerPoolEntry.player.defaultPositionId], pts: e.playerPoolEntry.appliedStatTotal ?? 0, slot: SLOT[e.lineupSlotId] }));
+  const started = ps.filter(p => p.slot !== 'Bench' && p.slot !== 'IR'), got = started.reduce((t, p) => t + p.pts, 0);
+  const bestL = bestLineup(ps.filter(p => p.slot !== 'IR'), p => p.pts);
+  const shouldIn = bestL.lineup.map(x => x.player).filter(p => !started.includes(p)).sort((a, b) => b.pts - a.pts);
+  const shouldOut = started.filter(p => !bestL.lineup.some(x => x.player === p)).sort((a, b) => a.pts - b.pts);
+  const advised = memo.advice?.[week - 1];
+  recap = { wk: week - 1, got, opp: theirs?.totalPoints ?? null, oppName: teamName[theirs?.teamId] ?? '', best: bestL.total, misses: shouldIn.slice(0, 2).map((p, i) => [p, shouldOut[i]]).filter(([, o]) => o),
+    site: advised ? ps.filter(p => advised.includes(p.id)).reduce((t, p) => t + p.pts, 0) : null };
+} catch (err) { console.warn('Recap skipped:', err.message); }
+memo.advice = { ...Object.fromEntries(Object.entries(memo.advice ?? {}).filter(([wk]) => +wk >= week - 2)), [week]: [...bestIds] };
 if (process.env.PUSH_SUB) alerts.push([`hello:${JSON.parse(process.env.PUSH_SUB).endpoint.slice(-16)}`, 'Alerts are on', 'You\'ll get a notification when something on your team needs you.', true]);
 // A questionable player's status gets decided about 90 minutes before kickoff
 const decided = new Set();
@@ -582,11 +623,12 @@ for (const tx of myFailed) {
   const add = tx.items.find(i => i.type === 'ADD');
   alerts.push([`wfail:${tx.id}`, 'Waiver claim didn\'t go through', `You didn't get ${names[add?.playerId] ?? byId.get(add?.playerId)?.name ?? 'the player you claimed'}. Open the app for other pickups.`, false]);
 }
-// Waiver reminder Tuesday evening, before claims process overnight
+// Waiver reminder the evening before the week's first processing day after Monday's games (from the league's
+// settings: this league processes every day except Tuesday, so that's Wednesday)
 const wplan = plan.find(x => x.add.wa);
-if (etDay === 'Tue' && etHour >= 18 && wplan) {
+if (etDay === waiverEve && etHour >= 18 && wplan) {
   const s = wplan;
-  alerts.push([`wrem:${week}`, 'Waivers run tonight', `Claim ${s.add.name} and drop ${s.drop.name}: ${s.kind === 'week' ? `about ${n(s.gain)} more points this week` : `about ${n(s.gain)} more points per week`}. More ideas in the app.`, false]);
+  alerts.push([`wrem:${week}`, `Waivers run ${cap(waiverDay)}`, `Claim ${s.add.name} and drop ${s.drop.name}: ${s.kind === 'week' ? `about ${n(s.gain)} more points this week` : `about ${n(s.gain)} more points per week`}. More ideas in the app.`, false]);
 }
 // A source that's been down for 6+ hours (one alert per outage)
 for (const src of Object.keys(memo.downSince)) if (!down.includes(src)) delete memo.downSince[src];
@@ -716,6 +758,39 @@ const spread = t => starters(t).reduce((s, p) => s + (0.65 * weekValue(p)) ** 2,
 const isLive = !!opp && (mySide.totalPointsLive > 0 || oppSide.totalPointsLive > 0);
 const winPct = !opp ? 0 : isLive ? Math.round((mySide.winProbability ?? 0) * 100)
   : Math.round(50 * (1 + erf((myProj - oppProj) / Math.sqrt(2 * (spread(me) + spread(opp) || 1)))));
+// --- Playoff odds: play out the rest of the regular season 10,000 times. Each team's weekly score is a bell curve
+// around its projected lineup (this week: lineup as set, or ESPN's live projection once games start; later weeks:
+// best rest-of-season lineup), spread like the win chance. Seeding is wins, then total points (league rule).
+// Fixed random seed per week, so the number doesn't jitter between updates.
+// ponytail: rosters frozen as they are now (no future pickups or trades); weeks independent.
+let seed = week * 7919;
+const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI * rnd());
+const futLine = new Map(teams.map(t => [t.id, bestLineup(t.roster, seasonValue).lineup.map(x => seasonValue(x.player))]));
+const futMean = id => futLine.get(id).reduce((a, b) => a + b, 0), futSd = id => Math.sqrt(futLine.get(id).reduce((a, v) => a + (0.65 * v) ** 2, 0)) || 15;
+const byId_ = new Map(teams.map(t => [t.id, t]));
+const left = (league.schedule ?? []).filter(g => g.away && g.matchupPeriodId >= week && g.matchupPeriodId <= lastWeek);
+const SIMS = 10000, byRecord = {};
+let made = 0;
+for (let k = 0; k < SIMS; k++) {
+  const w = new Map(teams.map(t => [t.id, t.w])), pf = new Map(teams.map(t => [t.id, t.pf]));
+  for (const g of left) {
+    const [a, b] = [g.home, g.away].map(side => {
+      const t = byId_.get(side.teamId), now = g.matchupPeriodId === week;
+      const mean = now ? (isLive && side.totalProjectedPointsLive > 0 ? side.totalProjectedPointsLive : lineupProj(t)) : futMean(t.id);
+      return mean + gauss() * (now ? Math.sqrt(spread(t)) || 15 : futSd(t.id));
+    });
+    pf.set(g.home.teamId, pf.get(g.home.teamId) + a); pf.set(g.away.teamId, pf.get(g.away.teamId) + b);
+    const winner = a >= b ? g.home.teamId : g.away.teamId;
+    w.set(winner, w.get(winner) + 1);
+  }
+  const inP = [...teams].sort((x, y) => w.get(y.id) - w.get(x.id) || pf.get(y.id) - pf.get(x.id)).indexOf(me) < playoffTeams;
+  made += inP;
+  const r = (byRecord[w.get(me.id)] ??= [0, 0]); r[0] += inP; r[1]++;
+}
+const playoffPct = Math.round(made / SIMS * 100);
+// records that happen in at least 5% of seasons, with how often each one got in
+const recordOdds = Object.entries(byRecord).filter(([, [, c]]) => c >= SIMS * 0.05).map(([wins, [m, c]]) => [+wins, Math.round(m / c * 100)]).sort((a, b) => b[0] - a[0]);
 const fixedProj = best.total;
 // projected score after pending claims and the to-do list (best lineup from that roster)
 const planProj = score(baseRoster, weekValue) + weekPlanGain;
@@ -733,6 +808,7 @@ const facts = [
   `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's, Rotowire's and CBS Sports' projections. Facts from ESPN, Sleeper (Rotowire), CBS Sports and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
   `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
   opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, win chance ${winPct}%${isLive ? ' (ESPN live estimate)' : ''}.` : '',
+  `Playoff chance: ${playoffPct}% (top ${playoffTeams} of ${teams.length}, simulated).${recap ? ` Last week (wk ${recap.wk}) I scored ${n(recap.got)}${recap.opp != null ? ` vs ${n(recap.opp)}` : ''}; best possible lineup was ${n(recap.best)}.` : ''}`,
   `Starters:\n${starters(me).map(p => `- ${p.slot}: ${line(p)}`).join('\n')}`,
   `Bench:\n${me.roster.filter(p => p.slot === 'Bench').map(p => `- ${line(p)}`).join('\n')}`,
   me.roster.some(p => p.slot === 'IR') ? `IR:\n${me.roster.filter(p => p.slot === 'IR').map(p => `- ${line(p)}`).join('\n')}` : '',
@@ -880,6 +956,7 @@ ${opp ? (() => {
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>`;
 })() : ''}
+<div id="stale" class="card" hidden style="background:var(--badbg);border-color:var(--bad)"><b style="color:var(--bad)">&#9888; This page stopped updating</b><div class="tag" id="staletext"></div></div>
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
@@ -972,6 +1049,16 @@ ${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.po
 </section>
 
 <section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
+<div class="card"><div class="group" style="margin:0 0 10px">Playoff chances</div><div class="stat">
+  <div><b style="color:var(--${playoffPct >= 50 ? 'good' : 'bad'})">${playoffPct}%</b><small>chance you make the playoffs (top ${playoffTeams})</small></div>
+  <div><b>${me.w}-${me.l}</b><small>now, with ${lastWeek - week + 1} games left</small></div></div>
+  <p class="why">From playing out the rest of the season 10,000 times with everyone's projected lineups. What it takes:</p>
+  <div class="worder" style="margin:0">${recordOdds.map(([wins, pct]) => `<span class="${pct >= 50 ? 'me' : ''}">${wins}-${lastWeek - wins}: ${pct}% get in</span>`).join('')}</div></div>
+${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last week (week ${recap.wk})</div><div class="stat">
+  <div><b style="color:var(--${recap.opp == null || recap.got >= recap.opp ? 'good' : 'bad'})">${n(recap.got)}</b><small>you scored${recap.opp != null ? ` (${esc(recap.oppName)}: ${n(recap.opp)})` : ''}</small></div>
+  <div><b>${n(recap.best)}</b><small>best lineup you could have set (in hindsight)</small></div></div>
+  <p class="why">${recap.best - recap.got < 1 ? 'You started the best possible lineup.' : `${n(recap.best - recap.got)} points sat on your bench${recap.opp != null && recap.got < recap.opp && recap.best > recap.opp ? ', enough to have won' : ''}.${recap.misses.length ? ` Biggest miss: ${recap.misses.map(([i, o]) => `starting ${esc(o.name)} (${n(o.pts)}) over ${esc(i.name)} (${n(i.pts)})`).join('; ')}.` : ''}`}
+  ${recap.site != null ? ` The site's suggested lineup scored ${n(recap.site)}.` : ''} Hindsight is easy: a good start can still have a bad week.</p></div>` : ''}
 <div class="card"><div class="group" style="margin:0 0 10px">Luck check</div><div class="stat">
   <div><b>${me.w}-${me.l}</b><small>your real record</small></div>
   <div><b>${apW} of ${apW + apL}</b><small>matchups you'd have won if you played every team every week</small></div>
@@ -1023,7 +1110,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Per game, rest of season</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
 <dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. The % on each player uses his practices this week from the official NFL injury report: 86% play after a full practice, 71% after a limited one, 29% after none. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' count of QB, RB, WR and TE injury reports, 2017 to 2024.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
-<dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
+<dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
@@ -1047,6 +1134,10 @@ const nextAt = Math.floor(built / STEP) * STEP + STEP + PUBLISH;
 let lastCheck = 0;
 function showAgo() {
   const m = Math.round((Date.now() - built) / 60000);
+  // updates normally land every few minutes; 30+ minutes means they're failing
+  const stale = document.getElementById('stale');
+  stale.hidden = m < 30;
+  if (m >= 30) document.getElementById('staletext').textContent = 'The last update was ' + (m < 120 ? m + ' minutes' : Math.round(m / 60) + ' hours') + ' ago, so the advice below may be out of date. If it lasts, ask Claude to check the GitHub runs (the ESPN login may have expired).';
   const left = Math.ceil((nextAt - Date.now()) / 1000);
   const next = left > 0 ? 'next in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : 'next any moment';
   ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next;
@@ -1301,18 +1392,6 @@ for (const [k, t] of Object.entries(memo.sent)) if (Date.now() - t > 21 * 864e5)
 fs.writeFileSync(path.join(dir, 'site', 'alerts.json'), JSON.stringify(memo));
 fs.mkdirSync(path.dirname(memoFile), { recursive: true });
 fs.writeFileSync(memoFile, JSON.stringify(memo));
-// TEMP: league settings and last week's box score shape, to build the waiver reminder and weekly recap. Remove after.
-try {
-  const bx = await get(`${LEAGUE}?view=mBoxscore&view=mMatchupScore&scoringPeriodId=${week - 1}`);
-  const g = bx.schedule.find(x => x.matchupPeriodId === week - 1 && (x.home?.teamId === me.id || x.away?.teamId === me.id));
-  const side = g && (g.home.teamId === me.id ? g.home : g.away);
-  fs.writeFileSync(path.join(dir, 'site', 'debug.json'), JSON.stringify({
-    acq: league.settings.acquisitionSettings, sched: league.settings.scheduleSettings,
-    sideKeys: side && Object.keys(side), rosterKeys: side && Object.keys(side).filter(k => /roster/i.test(k)).map(k => [k, Object.keys(side[k] ?? {})]),
-    entries: side && (side.rosterForCurrentScoringPeriod ?? side.rosterForMatchupPeriod)?.entries?.slice(0, 3).map(e => ({ slot: e.lineupSlotId, keys: Object.keys(e), ppeKeys: Object.keys(e.playerPoolEntry ?? {}), applied: e.playerPoolEntry?.appliedStatTotal, name: e.playerPoolEntry?.player?.fullName, pos: e.playerPoolEntry?.player?.defaultPositionId })),
-    total: side?.totalPoints,
-  }));
-} catch (err) { fs.writeFileSync(path.join(dir, 'site', 'debug.json'), JSON.stringify({ err: err.message })); }
 // Small summary for the iPhone Home Screen widget (Scriptable).
 fs.writeFileSync(path.join(dir, 'site', 'widget.json'), JSON.stringify({
   week, me: me.name, opp: opp?.name ?? null, myProj: n(myProj), oppProj: n(oppProj), win: winPct, live: isLive, updated: Date.now(),

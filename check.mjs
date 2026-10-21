@@ -71,4 +71,11 @@ for (const [h, want] of [
   ['Cook rushes for 120 yards in win', undefined],
 ]) assert.equal(newsTag(h)?.[0], want, h);
 
+// playoff simulation randomness: bell curve with mean 0 and spread 1, and the same numbers every run for a week
+const sim = () => new Function('week', cut('let seed = week * 7919;', 'Math.cos(2 * Math.PI * rnd());') + '\nreturn gauss;')(7);
+const draws = (g => Array.from({ length: 20000 }, g))(sim());
+const mean = draws.reduce((a, b) => a + b, 0) / draws.length, sd = Math.sqrt(draws.reduce((a, b) => a + (b - mean) ** 2, 0) / draws.length);
+assert(Math.abs(mean) < 0.03 && Math.abs(sd - 1) < 0.03, `bell curve off: mean ${mean}, sd ${sd}`);
+assert.equal(sim()(), sim()(), 'same week, same numbers');
+
 console.log('ok');
