@@ -459,7 +459,7 @@ while (rosterSpots - baseRoster.filter(p => p.slot !== 'IR').length > 0 && fills
   const best = allFa.filter(c => !taken.has(c.id) && !locked(c) && playable(c)).map(c => {
     const r = [...baseRoster, { ...c, slot: 'Bench' }];
     return { add: c, week: weekScore(r) - weekScore(baseRoster), season: score(r, seasonValue) - score(baseRoster, seasonValue), rest: byeScore(r) - before,
-      worth: weekScore(r) - weekScore(baseRoster) + byeScore(r) - before + (['RB', 'WR', 'TE'].includes(c.pos) ? 0.5 * rate(c) : 0) };
+      worth: weekScore(r) - weekScore(baseRoster) + byeScore(r) - before + (['RB', 'WR', 'TE'].includes(c.pos) ? 0.5 * rate(c) : 0) - (c.wa ? 1 : 0) }; // waiver claims can be lost: -1
   }).sort((a, b) => b.worth - a.worth)[0];
   if (!best) break;
   fills.push(best);
@@ -669,7 +669,7 @@ for (const p of starters(me)) {
 for (const [i, p] of benchIn.entries()) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(p.proj)}${sitOut[i] ? `, more than ${sitOut[i].name} (${n(weekValue(sitOut[i]))})` : ''}.`, bestMove]);
 const fillMove = f => ({ label: `Add ${f.add.name} on ESPN`, type: f.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: f.add.id }] });
 for (const f of fills) todo.push([f.week >= 1 ? 'urgent' : 'week', `Add ${f.add.name} (empty roster spot)`,
-  `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''} He's expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup he adds about ${Math.round(f.rest)} points over the next two weeks by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ' He\'s on waivers, so this is a claim.' : ''}`, fillMove(f)]);
+  `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''} ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup ${f.add.pos === 'D/ST' ? 'they add' : 'he adds'} about ${Math.round(f.rest)} points over the next two weeks by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ` ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} on waivers, so this is a claim.` : ''}`, fillMove(f)]);
 for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
     s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`, locked(s.add) || locked(s.drop) ? null : pickupMove(s)]);
@@ -679,7 +679,7 @@ const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numer
 for (const p of me.roster) {
   if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.', locked(p) ? null : { label: 'Move him to IR on ESPN', type: 'ROSTER', items: [{ type: 'LINEUP', playerId: p.id, from: SLOT_ID[p.slot], to: SLOT_ID.IR }] }]);
   if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }]);
-  if (p.slot === 'IR' && p.inj?.back && p.inj.back - Date.now() < 8 * 864e5 && !p.inj.season) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, 'When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you\'d drop.']);
+  if (p.slot === 'IR' && p.inj?.back && p.inj.back - Date.now() < 8 * 864e5 && !p.inj.season) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, 'When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you\'d drop.' + (([w]) => w ? ` Easiest: ${w === p ? 'drop him' : `drop ${w.name}`} (expected ${n(rate(w))} a game the rest of the season).` : '')([p, ...baseRoster.filter(x => x.slot === 'Bench')].sort((a, b) => rate(a) - rate(b)))]);
 }
 // Bye gaps, counting the players the plan adds (so a planned pickup that covers it hides the warning)
 const afterPlan = [...baseRoster.filter(p => !plan.some(s => s.drop === p)), ...plan.map(s => s.add)];
@@ -1175,7 +1175,7 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
   ${notes(s.add).map(t => `<br><span class="tag">&#9432; ${esc(t)}</span>`).join('')}
   ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
   : `<div class="card empty">Nobody out there beats what you have${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
-${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
+${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><div class="list">${fills.map(f => `<div class="card"><div class="row">${player(f.add)}${big(rate(f.add), 'per game, rest of season', null, f.add, 'season')}</div>
   <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the next two weeks covering your starters' bye weeks.` : ' A backup for injuries.'}</p>
