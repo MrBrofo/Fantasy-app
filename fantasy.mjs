@@ -784,8 +784,10 @@ const benchCheck = baseRoster.filter(p => p.slot === 'Bench').map(p => {
 // they start now, this week's projection, injury tags, bye weeks, and which spots each team is short or
 // deep at. Only the framing is salesy. Returns null when there's no honest, believable pitch, so an
 // obviously lopsided trade (worse player by every number they can see) never makes the list.
-// Brody's texting voice, from his own trade text: short and plain, normal capitals, "bro" now and then
-const VOICE = `short and plain, normal capitalization, little slang (I sometimes say "bro"). Example of how I text: "I'm thin at running back and need one, would you do Washington for Pollard?"`;
+// Brody's texting voice, from his own iMessages: short, first letter capitalized, no period at the end,
+// "?" on questions; casual slang (bro, deadass, tho, cuz, hella, kinda, rn, lmao, wtf); joins thoughts with "and"/"but"
+// instead of new sentences; an occasional 😭 or 😢; hedges like "I'm pretty sure" / "I'm not saying it's bad but".
+const VOICE = `short and casual, first letter capitalized, no period at the end of a message, "?" on questions. Slang I use: bro, deadass, tho, cuz, hella, kinda, rn, lmao, wtf (not every message). I join thoughts with "and" or "but" instead of new sentences, sometimes hedge ("I'm pretty sure", "I'm not saying it's bad but"), and rarely add 😭 or 😢. No "lmk", no "fair", nothing that sounds formal. Real examples of mine: "Bro deadass", "I haven't looked into it tho", "I gotta do my college stuff this week", "Lightroom is not the best but it's really good and it's used because it's good for editing", "Yeah Freiermuth is a no go. What would you want with Diggs for Jefferson?"`;
 function pitches(f) {
   const { give, take, d } = f, g = give[0], two = give.length > 1;
   const last = p => (p.pos === 'D/ST' ? p.name : p.name.replace(/ (Jr\.|Sr\.|II|III|IV|V)$/, '').split(' ').slice(-1)[0]);
@@ -793,31 +795,31 @@ function pitches(f) {
   const startable = p => (p.avg ?? 0) >= 0.8 * (typical[p.pos] ?? 0);
   const facts = []; // [how convincing, text]
   const weak = (lineups.get(d.t) ?? []).map(x => x.player).filter(p => p.pos === g.pos && p !== take).sort((a, b) => (a.avg ?? 0) - (b.avg ?? 0))[0];
-  if (weak && (g.avg ?? 0) >= (weak.avg ?? 0) + 2) facts.push([3, `you're starting ${weak.name} at ${posName(g.pos)} right now and ${last(g)} is putting up ${f1(g.avg)} a game`]);
-  if (two && give.every(startable)) facts.push([3, sum > (take.avg ?? 0) ? `that's two guys you can actually start, ${f1(sum)} points a game combined` : `that's two guys you can actually start for one`]);
-  if (!two && +f1(g.avg) > +f1(take.avg)) facts.push([3, `${last(g)} has outscored ${last(take)} so far this year (${f1(g.avg)} vs ${f1(take.avg)} a game)`]);
-  if (f.theirWeek >= 2) facts.push([2, `it'd get you about ${Math.round(f.theirWeek)} more points this week too`]);
+  if (weak && (g.avg ?? 0) >= (weak.avg ?? 0) + 2) facts.push([3, `you're starting ${weak.name} at ${posName(g.pos)} rn and ${last(g)} is putting up ${f1(g.avg)} a game`]);
+  if (two && give.every(startable)) facts.push([3, sum > (take.avg ?? 0) ? `that's 2 guys you can actually start, like ${f1(sum)} a game combined` : `that's 2 guys you can actually start for 1`]);
+  if (!two && +f1(g.avg) > +f1(take.avg)) facts.push([3, `${last(g)} has been outscoring ${last(take)} this year tho (${f1(g.avg)} vs ${f1(take.avg)})`]);
+  if (f.theirWeek >= 2) facts.push([2, `it'd get you like ${Math.round(f.theirWeek)} more points this week too`]);
   const hurt = ['QUESTIONABLE', 'DOUBTFUL', 'OUT', 'INJURY_RESERVE'].includes(take.status);
-  if (take.bye > week && take.bye <= week + 2) facts.push([1, `${last(take)} has his bye in week ${take.bye}`]);
-  const reason = myDepth.short.includes(take.pos) ? `I'm thin at ${posName(take.pos)} and need one` : myDepth.extra.some(([pos]) => give.some(p => p.pos === pos)) ? `I've got more ${posName(g.pos)}s than I can start` : '';
+  if (take.bye > week && take.bye <= week + 2) facts.push([1, `${last(take)} has his bye week ${take.bye} btw`]);
+  const reason = myDepth.short.includes(take.pos) ? `I'm thin at ${posName(take.pos)} rn and need one` : myDepth.extra.some(([pos]) => give.some(p => p.pos === pos)) ? `I got more ${posName(g.pos)}s than I can start` : '';
   const strength = facts.reduce((s, [k]) => s + k, 0) + (hurt ? 2 : 0) + (reason ? 1 : 0);
   if (strength < 2 || !facts.length) return null; // 4+ passes the normal check; 2+ only the looser one
   const top = facts.sort((a, b) => b[0] - a[0]).slice(0, 2).map(([, t]) => t);
   const cap = t => t[0].toUpperCase() + t.slice(1), say = (...parts) => parts.filter(Boolean).map(cap).join(' ');
-  const T = last(take), [s1, s2] = top.map(t => t + '.');
+  const T = last(take), [s1] = top, all = top.join(' and ');
   const out = [
-    say(`would you do ${both} for ${T}?`, s1, s2),
-    reason ? say(`${reason}, would you do ${both} for ${T}?`, s1) : say(`would you be open to ${both} for ${T}?`, s1),
-    hurt ? say(`this is kind of risky for me since ${T} is hurt, but I'd do ${both} for him.`, s1) : say(`what do you think about ${both} for ${T}?`, s1, s2),
-    say(s1, `would you do ${both} for ${T}?`),
-    say(`trade idea bro: ${both} for ${T}.`, s1),
-    say(`what would it take to get ${T}? I'd do ${both}.`, s1),
-    say(`${both} for ${T}?`, s2 ?? s1, 'let me know'),
+    say(`would you do ${both} for ${T}?`, all),
+    reason ? say(`${reason}, would you do ${both} for ${T}?`, s1) : say(`yo would you do ${both} for ${T}?`, s1),
+    hurt ? say(`deadass this is hella risky for me cuz ${T} is hurt but I'd still do ${both} for him 😭`) : say(`thoughts on ${both} for ${T}?`, all),
+    say(`${s1} so would you do ${both} for ${T}?`),
+    say(`bro ${both} for ${T}?`, s1),
+    say(`what would it take to get ${T}? I'd do ${both}`),
+    say(`${both} for ${T}?`, top[top.length - 1]),
   ];
   return { texts: [...new Set(out)], strength };
 }
 // what Claude needs to write its own version: the trade and only true facts
-const claudePrompt = f => `Write a short text (1-3 sentences) in my voice to my fantasy football league mate proposing this trade. My voice: ${VOICE} I give: ${f.give.map(p => `${p.name} (${p.pos})`).join(' and ')}. I get: ${f.take.name} (${f.take.pos}). Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: ${[
+const claudePrompt = f => `Write a short text (1-2 sentences) in my voice to my fantasy football league mate proposing this trade. My voice: ${VOICE} I give: ${f.give.map(p => `${p.name} (${p.pos})`).join(' and ')}. I get: ${f.take.name} (${f.take.pos}). Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: ${[
   ...f.give.map(p => `${p.name} averages ${f1(p.avg)} points a game this season${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`),
   `${f.take.name} averages ${f1(f.take.avg)} a game${f.take.status && STATUS[f.take.status] ? ` and is listed as "${STATUS[f.take.status][0].toLowerCase()}"` : ''}${f.take.bye > week ? `, bye in week ${f.take.bye}` : ''}`,
   f.d.short.length ? `their team is short at ${f.d.short.map(p => POS_NAME[p].toLowerCase()).join(', ')}` : '',
@@ -2062,23 +2064,23 @@ function addHim(p) {
   function tcTexts(give, take, team, theirWeek) {
     const both = give.map(last).join(' and '), ask = both + ' for ' + take.map(last).join(' and '), facts = [];
     const fills = give.filter(p => (team.short || []).includes(p.pos));
-    if (fills.length) facts.push('you look thin at ' + [...new Set(fills.map(p => posWord(p.pos)))].join(' and ') + ' and ' + fills.map(last).join(' and ') + (fills.length > 1 ? ' fill that' : ' fills that'));
-    if (give.length > take.length) facts.push("that's " + give.length + ' guys for ' + take.length + ', ' + avgSum(give).toFixed(1) + ' points a game combined');
-    else if (avgSum(give) > avgSum(take)) facts.push(both + (give.length > 1 ? ' have' : ' has') + ' outscored ' + take.map(last).join(' and ') + ' so far this year (' + avgSum(give).toFixed(1) + ' vs ' + avgSum(take).toFixed(1) + ' a game)');
-    if (theirWeek >= 2) facts.push("it'd get you about " + Math.round(theirWeek) + ' more points this week too');
+    if (fills.length) facts.push("you're kinda thin at " + [...new Set(fills.map(p => posWord(p.pos)))].join(' and ') + ' rn');
+    if (give.length > take.length) facts.push("that's " + give.length + ' guys for ' + take.length + ', like ' + avgSum(give).toFixed(1) + ' a game combined');
+    else if (avgSum(give) > avgSum(take)) facts.push(both + (give.length > 1 ? ' have' : ' has') + ' been outscoring ' + take.map(last).join(' and ') + ' this year tho (' + avgSum(give).toFixed(1) + ' vs ' + avgSum(take).toFixed(1) + ')');
+    if (theirWeek >= 2) facts.push("it'd get you like " + Math.round(theirWeek) + ' more points this week too');
     const top = facts.slice(0, 2), cap = t => t[0].toUpperCase() + t.slice(1), say = (...parts) => parts.filter(Boolean).map(cap).join(' ');
-    const T = take.map(last).join(' and '), s1 = top[0] && top[0] + '.', s2 = top[1] && top[1] + '.';
+    const T = take.map(last).join(' and '), s1 = top[0], all = top.join(' and ');
     return [...new Set([
-      say('would you do ' + ask + '?', s1, s2),
-      say('would you be open to ' + ask + '?', s1),
-      say('what do you think about ' + ask + '?', s1, s2),
-      s1 ? say(s1, 'would you do ' + ask + '?') : '',
-      say('trade idea bro: ' + ask + '.', s1),
-      say('what would it take to get ' + T + "? I'd do " + both + '.', s1),
-      say(ask + '?', s2 || s1, 'let me know'),
+      say('would you do ' + ask + '?', all),
+      say('yo would you do ' + ask + '?', s1),
+      say('thoughts on ' + ask + '?', all),
+      s1 ? say(s1 + ' so would you do ' + ask + '?') : '',
+      say('bro ' + ask + '?', s1),
+      say('what would it take to get ' + T + "? I'd do " + both),
+      say(ask + '?', top[top.length - 1]),
     ].filter(Boolean))];
   }
-  const tcPrompt = (give, take, team, theirWeek) => "Write a short text (1-3 sentences) in my voice to my fantasy football league mate proposing this trade. My voice: " + R.voice + " I give: " +
+  const tcPrompt = (give, take, team, theirWeek) => "Write a short text (1-2 sentences) in my voice to my fantasy football league mate proposing this trade. My voice: " + R.voice + " I give: " +
     give.map(p => p.name + ' (' + p.pos + ')').join(' and ') + '. I get: ' + take.map(p => p.name + ' (' + p.pos + ')').join(' and ') + ". Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: " +
     [...give, ...take].map(p => p.name + ' averages ' + (p.avg || 0).toFixed(1) + ' points a game this season' + (p.rank ? ', ranked ' + p.rank + ' at ' + p.pos : ''))
       .concat((team.short || []).length ? ['their team is short at ' + team.short.map(posWord).join(', ')] : [], theirWeek >= 1 ? ['it would add about ' + Math.round(theirWeek) + ' projected points to their lineup this week'] : [])
