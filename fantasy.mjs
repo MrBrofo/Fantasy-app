@@ -1446,27 +1446,114 @@ async function lockPage(page, password) {
   const base = await subtle.importKey('raw', Buffer.from(password), 'PBKDF2', false, ['deriveKey']);
   const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
   const data = Buffer.from(await subtle.encrypt({ name: 'AES-GCM', iv }, key, Buffer.from(page))).toString('base64');
-  return page.slice(0, page.indexOf('</head>')) + `</head><body>
-<section style="max-width:380px;margin:18vh auto 0;padding:0 16px"><h2>Locked</h2><p class="sub">Enter your site password. This phone remembers it.</p>
-<form id="lock" class="card" hidden><input id="pw" type="password" autocomplete="current-password" aria-label="Site password" style="width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #8886;background:transparent;color:inherit;font:16px Inter,system-ui,sans-serif">
-<button class="btn">Unlock</button><p id="bad" class="sub" hidden style="color:var(--bad)">Wrong password.</p></form></section>
+  return page.slice(0, page.indexOf('</head>')) + `<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body.ls{margin:0;min-height:100dvh;background:#000;color:#fff;font:14px 'JetBrains Mono',ui-monospace,Menlo,monospace;overflow:hidden;-webkit-font-smoothing:antialiased}
+body.ls::before{display:none}
+#field{position:fixed;inset:0;width:100%;height:100%}
+.ring{position:fixed;left:50%;top:50%;width:min(130vw,640px);aspect-ratio:1;translate:-50% -50%;border:1px dashed #ffffff26;border-radius:50%;animation:spin 120s linear infinite;pointer-events:none}
+.ring.r2{width:min(92vw,440px);border:1px solid #ffffff14;animation-duration:40s;animation-direction:reverse}
+.ring.r2::after{content:'';position:absolute;top:-3px;left:50%;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 14px #fff}
+@keyframes spin{to{rotate:360deg}}
+.corner{position:fixed;font-size:10px;letter-spacing:.18em;color:#ffffff66;pointer-events:none}
+.wrap{position:relative;min-height:100dvh;display:grid;place-items:center;padding:0 24px}
+#lock{width:100%;max-width:330px}
+.ttl{font-size:21px;font-weight:700;letter-spacing:.16em;margin:0 0 8px;white-space:nowrap}
+.sub{color:#ffffff88;font-size:12px;letter-spacing:.1em;margin:0 0 30px}
+.sub::after{content:'_';animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.row{display:flex;align-items:center;gap:12px;border-bottom:1px solid #ffffff55;padding:10px 0;transition:border-color .3s}
+.row:focus-within{border-color:#fff}
+.row span{color:#ffffff99}
+#pw{flex:1;min-width:0;background:none;border:0;outline:0;color:#fff;font:16px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.3em;caret-color:#fff}
+.go{margin-top:24px;width:100%;padding:14px;background:none;border:1px solid #fff;color:#fff;font:700 13px 'JetBrains Mono',ui-monospace,Menlo,monospace;letter-spacing:.35em;cursor:pointer;transition:background .2s,color .2s}
+.go:hover,.go:active{background:#fff;color:#000}
+#bad{margin:16px 0 0;font-size:11px;letter-spacing:.25em;color:#ffffffcc}
+.shake{animation:shake .4s}
+@keyframes shake{20%,60%{translate:-7px}40%,80%{translate:7px}}
+body.auto .ring,body.auto .corner,body.auto #field{display:none}
+@media (prefers-reduced-motion:reduce){.ring,.sub::after{animation:none}}
+</style></head><body class="ls auto">
+<canvas id="field" aria-hidden="true"></canvas><div class="ring"></div><div class="ring r2"></div>
+<div class="corner" style="top:max(16px,env(safe-area-inset-top));left:16px">FANTASY // SECURE</div>
+<div class="corner" id="clock" style="top:max(16px,env(safe-area-inset-top));right:16px"></div>
+<div class="corner" style="bottom:max(16px,env(safe-area-inset-bottom));left:16px">AES-256 &middot; LOCKED</div>
+<div class="corner" id="sig" style="bottom:max(16px,env(safe-area-inset-bottom));right:16px"></div>
+<div class="wrap"><form id="lock" hidden>
+<p class="ttl" id="ttl">ACCESS RESTRICTED</p><p class="sub">enter password</p>
+<label class="row"><span>&gt;</span><input id="pw" type="password" autocomplete="current-password" aria-label="Site password"></label>
+<button class="go">ENTER</button><p id="bad" hidden>ACCESS DENIED. TRY AGAIN</p>
+</form></div>
 <script>
 (() => {
   const LOCK = { salt: '${salt.toString('base64')}', iv: '${iv.toString('base64')}', data: '${data}' };
   const bytes = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-  const form = document.getElementById('lock');
-  async function unlock(pw) {
+  const $ = id => document.getElementById(id), form = $('lock'), ttl = $('ttl');
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches, timers = [];
+  let alive = true;
+  // text that "decodes" from random characters, left to right
+  const scramble = (text, ms) => new Promise(done => {
+    const chars = 'ABCDEF0123456789#%&*+=<>', t0 = performance.now();
+    const step = now => {
+      const k = still ? 1 : Math.min(1, (now - t0) / ms), n = Math.floor(k * text.length);
+      ttl.textContent = text.slice(0, n) + [...text.slice(n)].map(c => (c === ' ' ? ' ' : chars[Math.floor(Math.random() * chars.length)])).join('');
+      if (k < 1) requestAnimationFrame(step); else done();
+    };
+    requestAnimationFrame(step);
+  });
+  // dot grid with slow rings of light rolling out from the middle
+  function field() {
+    const cv = $('field'), cx = cv.getContext('2d'), dpr = Math.min(2, devicePixelRatio || 1);
+    const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; };
+    size(); addEventListener('resize', size);
+    let last = 0;
+    const draw = now => {
+      if (!alive) return;
+      if (now - last > 33) {
+        last = now;
+        const w = cv.width, h = cv.height, gap = 26 * dpr, t = now / 1000;
+        cx.clearRect(0, 0, w, h);
+        for (let y = gap / 2; y < h; y += gap) for (let x = gap / 2; x < w; x += gap) {
+          const wave = Math.max(0, Math.sin(Math.hypot(x - w / 2, y - h / 2) / dpr / 70 - t * 0.8));
+          cx.fillStyle = 'rgba(255,255,255,' + (0.07 + 0.45 * wave ** 14) + ')';
+          cx.fillRect(x, y, 1.5 * dpr, 1.5 * dpr);
+        }
+      }
+      if (!still) requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+  }
+  function start() {
+    document.body.classList.remove('auto');
+    form.hidden = false;
+    field();
+    const tick = () => { $('clock').textContent = new Date().toLocaleTimeString('en-GB'); };
+    const sig = () => { $('sig').textContent = 'SIG ' + crypto.getRandomValues(new Uint32Array(1))[0].toString(16).toUpperCase().padStart(8, '0'); };
+    tick(); sig(); timers.push(setInterval(tick, 1000), setInterval(sig, 2600));
+    scramble('ACCESS RESTRICTED', 900);
+    $('pw').focus();
+  }
+  async function unlock(pw, show) {
     const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
     const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(LOCK.salt), iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
     const page = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(LOCK.iv) }, key, bytes(LOCK.data)));
     try { localStorage.setItem('sitePw', pw); } catch {}
+    if (show) await scramble('ACCESS GRANTED', 500);
+    alive = false; timers.forEach(clearInterval);
     document.open(); document.write(page); document.close();
   }
   let saved = null;
   try { saved = localStorage.getItem('sitePw'); } catch {}
-  if (saved) unlock(saved).catch(() => { try { localStorage.removeItem('sitePw'); } catch {} form.hidden = false; });
-  else form.hidden = false;
-  form.addEventListener('submit', ev => { ev.preventDefault(); unlock(document.getElementById('pw').value).catch(() => { document.getElementById('bad').hidden = false; }); });
+  if (saved) unlock(saved).catch(() => { try { localStorage.removeItem('sitePw'); } catch {} start(); });
+  else start();
+  form.addEventListener('submit', ev => {
+    ev.preventDefault();
+    unlock($('pw').value, true).catch(() => {
+      $('bad').hidden = false; $('pw').value = '';
+      form.classList.remove('shake'); void form.offsetWidth; form.classList.add('shake');
+      scramble('ACCESS DENIED', 400);
+    });
+  });
 })();
 </script></body></html>`;
 }
