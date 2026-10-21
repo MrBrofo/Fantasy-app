@@ -312,7 +312,7 @@ const allFa = Object.values(fa).flat();
 // Next week's projection, for picking bye-week fill-ins. Only ESPN projects that far ahead, so this one is ESPN alone.
 const nextProj = new Map();
 if (week < lastWeek) {
-  const d = await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week + 1}`, { players: { filterIds: { value: [...me.roster, ...allFa].map(p => p.id) }, limit: me.roster.length + allFa.length } });
+  const d = await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week + 1}`, { players: { filterIds: { value: [...me.roster, ...allFa].map(p => p.id) } } });
   for (const x of d.players) {
     const s = x.player.stats?.find(s => s.seasonId === SEASON && s.statSourceId === 1 && s.statSplitTypeId === 1 && s.scoringPeriodId === week + 1);
     if (s) nextProj.set(x.player.id, s.appliedTotal);
