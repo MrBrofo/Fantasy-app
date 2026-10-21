@@ -1185,7 +1185,7 @@ header .wrap{padding-bottom:0}
 h1{font-size:28px;font-weight:700;margin:6px 0 2px;letter-spacing:-.025em;line-height:1.1}
 .record{font-size:14px;color:var(--muted)}
 .match{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:20px;padding:16px;margin:-40px 0 16px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
-.match h3{margin:0 0 10px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.match h2{margin:0 0 10px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .vs{display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center}
 .vs .t{font-weight:600;overflow-wrap:anywhere}.vs .p{font:600 18px var(--num);text-align:right}
 .bar{grid-column:1/-1;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;margin-bottom:6px}.bar i{display:block;height:100%;border-radius:3px}
@@ -1237,10 +1237,12 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .lnk{text-decoration:underline dotted;text-underline-offset:3px;color:var(--fg)}
 [data-pid]{cursor:pointer;-webkit-tap-highlight-color:transparent}.more{color:var(--muted);font-weight:400}
 #sheet{position:fixed;inset:0;z-index:20}.sheet-bg{position:absolute;inset:0;background:rgba(5,10,25,.55)}
-.sheet-card{position:absolute;left:0;right:0;bottom:0;max-width:720px;margin:0 auto;max-height:88vh;background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;animation:up .22s ease-out}
-@keyframes up{from{transform:translateY(40px);opacity:.4}}
+.sheet-card{position:absolute;left:0;right:0;bottom:0;max-width:720px;margin:0 auto;max-height:88vh;max-height:88dvh;background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;animation:up .35s cubic-bezier(.32,.72,0,1)}
+.sheet-card.closing{animation:down .2s cubic-bezier(.4,0,1,1) forwards}
+@keyframes up{from{transform:translateY(100%)}}@keyframes down{to{transform:translateY(100%)}}
 .sheet-body{overflow-y:auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
 .sheet-x{position:absolute;top:10px;right:12px;width:34px;height:34px;border-radius:50%;border:0;background:var(--chip);color:var(--fg);font-size:22px;line-height:1;cursor:pointer;z-index:1}
+.sheet-x::after{content:'';position:absolute;inset:-5px}/* 44px tap area around the 34px close button */
 .sh-top{display:flex;gap:14px;align-items:center;margin-bottom:14px;padding-right:40px}.sh-top .pic{width:64px;height:64px}
 .sh-name{font-size:20px;font-weight:800}
 .sh-q{border-radius:14px;padding:12px 14px;margin-bottom:10px;background:var(--card);border:1px solid var(--line)}
@@ -1327,7 +1329,7 @@ ${opp ? (() => {
   const live = isLive;
   const [a, b] = live ? [mySide.totalProjectedPointsLive, oppSide.totalProjectedPointsLive] : [myProj, oppProj];
   const wp = winPct;
-  return `<div class="match"><h3>This week vs ${esc(opp.name)}${live ? '<span class="live">LIVE</span>' : ''}</h3>
+  return `<div class="match"><h2>This week vs ${esc(opp.name)}${live ? '<span class="live">LIVE</span>' : ''}</h2>
   <div class="wp"><b style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
   ${live ? `<div class="tag" style="margin-bottom:8px">Score right now: <b>${n(mySide.totalPointsLive)}</b> to <b>${n(oppSide.totalPointsLive)}</b>. Final guess below.</div>` : ''}
   <div class="vs">
@@ -1357,7 +1359,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <p class="tag" style="margin:2px 0 0">Get a notification when a starter won't play, a hurt player's status is decided before kickoff, a trade offer comes in, and more.</p>
 <button type="button" id="alertbtn" class="btn">Turn on alerts</button>
 <div id="alertcode" hidden><p class="tag">Last step: copy this code, then in GitHub open your Fantasy-app repo &rsaquo; Settings &rsaquo; Secrets and variables &rsaquo; Actions &rsaquo; New repository secret. Name it <b>PUSH_SUB</b> and paste the code. You'll get an "Alerts are on" notification within a few minutes.</p>
-<textarea id="alerttext" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
+<textarea id="alerttext" aria-label="Alert setup code" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
 <button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
 
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
@@ -1542,7 +1544,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 ${process.env.SITE_PASSWORD ? '<button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button>' : ''}
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
-<div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
+<div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
 <script type="application/json" id="pdata">__PDATA__</script>
 <script type="application/json" id="rdata">__RDATA__</script>
 <script type="application/json" id="snap">${JSON.stringify(snap).replace(/</g, '\\u003c')}</script>
@@ -1614,9 +1616,16 @@ function render(p) {
     (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b><small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
-function openSheet(id) { const p = P[id]; if (!p) return; body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+let closeTimer;
+function openSheet(id) { const p = P[id]; if (!p) return; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
-function closeSheet() { sheet.hidden = true; document.body.style.overflow = ''; }
+function closeSheet() {
+  if (sheet.hidden || closeTimer) return;
+  const done = () => { sheet.hidden = true; closeTimer = null; document.body.style.overflow = ''; };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
+  sheet.querySelector('.sheet-card').classList.add('closing');
+  closeTimer = setTimeout(done, 200);
+}
 
 // What changed since you last tapped "Got it". The last-seen copy lives only in this browser.
 const SNAP = JSON.parse(document.getElementById('snap').textContent);
