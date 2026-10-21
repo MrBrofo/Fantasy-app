@@ -921,8 +921,8 @@ if ('serviceWorker' in navigator && 'PushManager' in window) {
   const btn = document.getElementById('alertbtn');
   const show = sub => { document.getElementById('alerttext').value = JSON.stringify(sub); document.getElementById('alertcode').hidden = false; };
   navigator.serviceWorker.register('sw.js');
-  document.getElementById('alerts').hidden = false;
-  navigator.serviceWorker.ready.then(r => r.pushManager.getSubscription()).then(s => { if (s) { btn.textContent = 'Alerts allowed. Show my code again'; btn.onclick = () => show(s); } });
+  // the card only shows until this phone is signed up (it comes back by itself if the app is reinstalled)
+  navigator.serviceWorker.ready.then(r => r.pushManager.getSubscription()).then(s => { if (!s) document.getElementById('alerts').hidden = false; });
   btn.onclick = async () => {
     if (await Notification.requestPermission() !== 'granted') { btn.textContent = 'Alerts are blocked. Turn them on in iPhone Settings > Notifications'; return; }
     const key = Uint8Array.from(atob('${VAPID_PUBLIC}'.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
