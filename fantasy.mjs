@@ -286,10 +286,12 @@ const playable = p => p.slot !== 'IR' && !HURT.includes(p.status);
 const kickoff = p => pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[week]?.[0]?.date ?? null;
 const locked = p => { const k = kickoff(p); return k != null && k <= Date.now(); };
 const isStarter = p => p.slot !== 'Bench' && p.slot !== 'IR' && p.slot !== 'FA';
-const weekValue = p => (playable(p) && !(locked(p) && !isStarter(p)) ? p.proj ?? 0 : 0);
+// expected points this week, times his chance to play when he's questionable or doubtful (71% plays = 71% of his points)
+const weekValue = p => (playable(p) && !(locked(p) && !isStarter(p)) ? (p.proj ?? 0) * ((playOdds(p, p.inj?.type)?.pct ?? 100) / 100) : 0);
 // Long-term value: rest-of-season points per game (average of the sources), else his average so far
 const rate = p => p.ros ?? p.avg ?? 0;
-const seasonValue = p => (playable(p) ? rate(p) : 0);
+// out this week isn't out for the season: only IR or out-for-season takes him to 0 (his rest-of-season projection covers the rest)
+const seasonValue = p => (p.slot !== 'IR' && p.status !== 'INJURY_RESERVE' && !p.inj?.season ? rate(p) : 0);
 const score = (players, value) => bestLineup(players, value).total;
 const starters = t => t.roster.filter(p => p.slot !== 'Bench' && p.slot !== 'IR');
 const lineupProj = t => starters(t).reduce((s, p) => s + weekValue(p), 0);
@@ -332,6 +334,16 @@ best.total = best.lineup.reduce((t, x) => t + weekValue(x.player), 0);
 const bestIds = new Set(best.lineup.map(x => x.player.id));
 const benchIn = best.lineup.map(x => x.player).filter(p => !starters(me).includes(p));
 const sitOut = starters(me).filter(p => !bestIds.has(p.id));
+// who each new starter replaces: the benched starter from the same lineup spot, else same position
+const replaces = new Map();
+{
+  const left = [...sitOut];
+  for (const p of benchIn) {
+    const slot = best.lineup.find(x => x.player === p).slot;
+    const k = [left.findIndex(o => o.slot === slot), left.findIndex(o => o.pos === p.pos), 0].find(i => i >= 0 && i < left.length);
+    if (k != null) replaces.set(p, left.splice(k, 1)[0]);
+  }
+}
 // This week's best total with game locks: locked starters stay in, everyone else counts as weekValue says
 const weekScore = players => bestLineup(players, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0)).lineup.reduce((t, x) => t + weekValue(x.player), 0);
 
@@ -546,15 +558,20 @@ const plan = [];
   }
   // Same set of drops, but paired with a same-position add where possible so steps read
   // naturally (defense for defense), then each step's gain is recounted in that order.
-  const drops = plan.map(s => s.drop);
+  // If the re-pairing leaves any step under a point, keep the original pairing (every step was 1+ there).
+  const original = plan.map(s => s.drop), drops = [...original];
   for (const s of plan) { const k = drops.findIndex(d => d.pos === s.add.pos); s.drop = drops.splice(Math.max(k, 0), 1)[0]; }
-  roster = [...baseRoster];
-  for (const s of plan) {
-    const value = s.kind === 'week' ? weekValue : seasonValue;
-    const next = [...roster.filter(p => p !== s.drop), { ...s.add, slot: 'Bench' }];
-    s.gain = (value === weekValue ? weekScore(next) - weekScore(roster) : score(next, value) - score(roster, value));
-    roster = next;
-  }
+  const recount = () => {
+    roster = [...baseRoster];
+    for (const s of plan) {
+      const value = s.kind === 'week' ? weekValue : seasonValue;
+      const next = [...roster.filter(p => p !== s.drop), { ...s.add, slot: 'Bench' }];
+      s.gain = (value === weekValue ? weekScore(next) - weekScore(roster) : score(next, value) - score(roster, value));
+      roster = next;
+    }
+  };
+  recount();
+  if (plan.some(s => s.gain < 1)) { plan.forEach((s, i) => { s.drop = original[i]; }); recount(); }
 }
 const weekPlanGain = plan.filter(s => s.kind === 'week').reduce((t, s) => t + s.gain, 0);
 
@@ -731,7 +748,7 @@ for (const p of starters(me)) {
   if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`, bestMove]);
   else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`, bestMove]);
 }
-for (const [i, p] of benchIn.entries()) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(p.proj)}${sitOut[i] ? `, more than ${sitOut[i].name} (${n(weekValue(sitOut[i]))})` : ''}.`, bestMove]);
+for (const p of benchIn) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(weekValue(p))}${replaces.get(p) ? `, more than ${replaces.get(p).name} (${n(weekValue(replaces.get(p)))})` : ''}.`, bestMove]);
 const fillMove = f => ({ label: `Add ${f.add.name} on ESPN`, type: f.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: f.add.id }] });
 for (const f of fills) todo.push([f.week >= 1 ? 'urgent' : 'week', f.byeFor.length ? `Add ${f.add.name} now for week ${week + 1} (${f.byeFor.map(p => p.name).join(' and ')} on bye)` : `Add ${f.add.name} (empty roster spot)`,
   `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${byeText(f)} ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup ${f.add.pos === 'D/ST' ? 'they add' : 'he adds'} about ${Math.round(f.rest)} points over the next two weeks by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ` ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} on waivers, so this is a claim.` : ''}${f.claim ? ` You also have a claim in for ${f.claim.add[0].name}. Keep trying for him, but make that claim drop ${f.add.name} (steps under Pending): win it and ${f.claim.add[0].name} replaces ${they(f.add) === 'they' ? 'them' : 'him'}, lose it and you still have ${f.add.name}.` : ''}`, fillMove(f)]);
@@ -815,12 +832,12 @@ for (const p of starters(me)) {
   alerts.push([`out:${week}:${p.id}`, `Bench ${p.name}`, `${bye ? 'His team has no game this week, so he\'d score 0.' : `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`} Your to-do list shows who to start instead.`, !bye && soon(p, 3)]);
 }
 // Better lineup, within 2.5 hours of kickoff, when both players can still be moved
-for (const [i, p] of benchIn.entries()) {
-  const out = sitOut[i];
+for (const p of benchIn) {
+  const out = replaces.get(p);
   if ((out && !playable(out)) || decided.has(p.id)) continue; // the alerts above already cover it
   if (!notStarted(p) || (out && !notStarted(out)) || !(soon(p, 2.5) || (out && soon(out, 2.5)))) continue;
-  if (p.proj - (out ? weekValue(out) : 0) < 2) continue;
-  alerts.push([`start:${week}:${p.id}:${out?.id}`, `Start ${p.name}`, out ? `He's expected to score ${n(p.proj)}, more than ${out.name} (${n(weekValue(out))}). Games start soon.` : `You have an empty lineup spot. He's expected to score ${n(p.proj)}.`, true]);
+  if (weekValue(p) - (out ? weekValue(out) : 0) < 2) continue;
+  alerts.push([`start:${week}:${p.id}:${out?.id}`, `Start ${p.name}`, out ? `He's expected to score ${n(weekValue(p))}, more than ${out.name} (${n(weekValue(out))}). Games start soon.` : `You have an empty lineup spot. He's expected to score ${n(weekValue(p))}.`, true]);
 }
 // Trade offers to me
 [...pendingTx.values()].forEach((tx, i) => {
@@ -1268,7 +1285,7 @@ ${pending.length ? pending.map(m => {
     <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
     <p class="why"><b>${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? `Neither of them makes your starting lineup right now, so your score doesn't change. But ${esc(m.add[0].name)} is a much better backup (${n(rate(m.add[0]))} vs ${n(rate(m.drop[0]))} a game) for bye weeks and injuries.` : ''}${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? '' : Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}${Math.abs(m.nextGain) >= 0.5 ? ` Next week (week ${week + 1}): ${m.nextGain > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.nextGain))}.` : ''}</b>${nextRun ? ` It goes through ${nextRun}.` : ''}</p>
     ${covers ? `<p class="why">${esc(m.byeFor.map(p => p.name).join(' and '))} ${m.byeFor.length > 1 ? 'are' : 'is'} on bye in week ${week + 1}; ${esc(m.add[0].name)} is expected ${n(m.nextPts)} that week (ESPN's projection).</p>` : ''}
-    ${m.likelyLost ? `<p class="why" style="color:var(--bad)"><b>${esc(m.likelyLost.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', '))} ${m.likelyLost.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${m.likelyLost.length > 1 ? 'need' : 'needs'} a ${POS_NAME[m.add[0].pos].toLowerCase()} in week ${week + 1}, so they'll likely take him first.</b>${m.backupFill ? '' : ' Your to-do list has a free agent you can add right now.'}</p>` : ''}
+    ${m.likelyLost ? `<p class="why" style="color:var(--bad)"><b>${esc(m.likelyLost.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', '))} ${m.likelyLost.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${m.likelyLost.length > 1 ? 'need' : 'needs'} a ${POS_NAME[m.add[0].pos].toLowerCase()} in week ${week + 1}, so they'll likely take him first.</b>${m.backupFill ? '' : m.drop.some(d => d.pos === m.add[0].pos) ? ` That's fine: if you lose it, you keep ${esc(m.drop.find(d => d.pos === m.add[0].pos).name)}.` : ' Your to-do list has a free agent you can add right now.'}</p>` : ''}
     ${m.backupFill ? `<p class="why"><b>Don't just cancel it. Do this, in order:</b><br>1. Add ${esc(m.backupFill.name)} now (free agent, see your to-do list).<br>2. Put in a new claim for ${esc(m.add[0].name)} that drops ${esc(m.backupFill.name)} (button below).<br>3. Cancel this claim: it has no drop, so once your roster is full ESPN would turn it down.<br>Win the new claim and ${esc(m.add[0].name)} replaces ${esc(m.backupFill.name)}. Lose it and you still have ${esc(m.backupFill.name)}.</p>
     ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Claim ${m.add[0].name}, drop ${m.backupFill.name}`, type: 'WAIVER', items: [{ type: 'ADD', playerId: m.add[0].id }, { type: 'DROP', playerId: m.backupFill.id }], week: league.scoringPeriodId }))}">Claim ${esc(m.add[0].name)}, drop ${esc(m.backupFill.name)} (after step 1)</button>` : ''}` : ''}
     ${m.better ? `<p class="why" style="color:var(--warn)"><b>Better option:</b> ${lnk(m.better.c)} (${m.better.c.wa ? 'on waivers' : 'free agent, no waiting'}) would add about ${n(m.better.season)} a week instead of ${n(m.season)}, dropping the same player. To switch: cancel this claim, then tap him and use Add him.</p>` : ''}

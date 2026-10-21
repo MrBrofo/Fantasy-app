@@ -12,7 +12,7 @@ const code = cut('function bestLineup(', 'const lineupProj = t => starters(t).re
   + '\n' + cut('function judge(', '    after: mineAfter,\n  };\n}')
   + '\n' + cut('const weakness = ', '  return out.sort((a, b) => b.gain - a.gain).slice(0, 5);\n}')
   + '\n' + cut('const SLOT_ID = ', 'const bestMove = lineupMove();')
-  + '\nreturn { weekValue, locked, best, benchIn, sitOut, judge, bestSwap, bestMove };';
+  + '\nreturn { weekValue, seasonValue, locked, best, benchIn, sitOut, judge, bestSwap, bestMove };';
 
 const HOUR = 3600e3, NOW = Date.UTC(2026, 9, 25, 18); // a Sunday afternoon
 // team 1 played Thursday (locked), team 2 kicks off in an hour, team 3 is on bye
@@ -22,7 +22,7 @@ const consts = {
   slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 },
   SLOT: { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 23: 'FLEX', 20: 'Bench', 21: 'IR' },
   SLOT_POS: { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'], 23: ['RB', 'WR', 'TE'] },
-  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, pro, vor: () => 0,
+  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, playOdds: p => ({ DOUBTFUL: { pct: 7 }, QUESTIONABLE: { pct: 71 } })[p.status] ?? null, pro, vor: () => 0,
   allFa: [pl(30, 'RB', 'FA', 30, 1), pl(31, 'RB', 'FA', 20, 2)], // 30 already played (locked), 31 plays later
 };
 const run = roster => new Function(...Object.keys(consts), 'me', 'Date', code)(...Object.values(consts), { roster }, { now: () => NOW });
@@ -111,6 +111,18 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   const one = run([me, ahead, fine], [loop, smack, mcl]);
   assert(one(loop, new Set()) && !one(smack, new Set()) && !one(mcl, new Set()), 'one rival takes the top waiver kicker; free agents are never lost');
   assert(!run([me, fine], [loop])(loop, new Set()), 'no rival short at kicker: claim is safe');
+}
+
+// injuries and close calls in the lineup
+{
+  const qb = [pl(1, 'QB', 'QB', 18, 2), pl(2, 'RB', 'RB', 10, 2, 'DOUBTFUL'), pl(3, 'RB', 'RB', 9, 2), pl(4, 'RB', 'Bench', 8, 2),
+    pl(5, 'WR', 'WR', 8.5, 2), pl(6, 'WR', 'WR', 8, 2), pl(7, 'WR', 'Bench', 8.6, 2), pl(8, 'TE', 'TE', 6, 2), pl(9, 'WR', 'FLEX', 8.4, 2)];
+  const t = run(qb);
+  assert(Math.abs(t.weekValue(qb[1]) - 0.7) < 1e-9, 'doubtful counts his 7% chance to play');
+  assert(t.benchIn.some(p => p.id === 4) && t.sitOut.some(p => p.id === 2), 'healthy 8 replaces the doubtful 10');
+  assert(!t.benchIn.some(p => p.id === 7), '8.6 on the bench vs WRs at 8.5, 8.4 and 8 is a coin flip: no swap');
+  assert.equal(t.seasonValue({ ...pl(20, 'WR', 'WR', 0, 2, 'OUT'), ros: 12 }), 12, 'out this week keeps his rest-of-season value');
+  assert.equal(t.seasonValue({ ...pl(21, 'WR', 'IR', 0, 2, 'INJURY_RESERVE'), ros: 12 }), 0, 'IR is worth 0');
 }
 console.log('ok');
 
