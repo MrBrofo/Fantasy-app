@@ -326,7 +326,8 @@ const trending = (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${w
 
 // --- Start / sit: best lineup by this week's projections vs what's set now
 // locked starters can't be moved, so they always stay in the best lineup
-const best = bestLineup(me.roster, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0));
+// a starter keeps his spot unless someone beats him by a full point: smaller gaps are coin flips, not moves
+const best = bestLineup(me.roster, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0) + (isStarter(p) && weekValue(p) > 0 ? 0.99 : 0));
 best.total = best.lineup.reduce((t, x) => t + weekValue(x.player), 0);
 const bestIds = new Set(best.lineup.map(x => x.player.id));
 const benchIn = best.lineup.map(x => x.player).filter(p => !starters(me).includes(p));
@@ -472,9 +473,12 @@ for (const m of claims) {
   const a = m.add.length === 1 ? allFa.find(c => c.id === m.add[0].id) ?? m.add[0] : null;
   if (!a) continue;
   m.likelyLost = lostOnWaivers(a, new Set()) ? shortNextWeek(a.pos) : null;
-  m.byeFor = me.roster.filter(p => p.pos === a.pos && p.slot !== 'IR' && p.bye === week + 1 && !m.drop.includes(p));
+  m.byeFor = me.roster.filter(p => p.pos === a.pos && p.slot !== 'IR' && p.bye === week + 1 && !m.drop.some(d => d.id === p.id));
   m.nextPts = nextProj.get(a.id) ?? null;
 }
+// what each claim does to next week's lineup (byes out, next week's projections)
+const nextScore = r => score(r.filter(p => p.bye !== week + 1), nextValue);
+for (const m of claims) m.nextGain = nextProj.size ? nextScore([...me.roster.filter(p => !m.drop.some(d => d.id === p.id)), ...m.add.map(a => ({ ...a, slot: 'Bench' }))]) - nextScore(me.roster) : 0;
 // a claim I'll likely lose doesn't count: the plan should still fill that hole
 const sureClaims = claims.filter(m => !m.likelyLost);
 const baseRoster = [...me.roster.filter(p => !sureClaims.some(m => m.drop.some(d => d.id === p.id))), ...sureClaims.flatMap(m => m.add.map(a => ({ ...a, slot: 'Bench' })))];
@@ -499,6 +503,9 @@ while (rosterSpots - baseRoster.filter(p => p.slot !== 'IR').length > 0 && fills
   // the better player we skipped because a team ahead of me on waivers will likely take him
   const lost = scored.find(s => s.add.pos === best.add.pos && s.worth > best.worth && lostOnWaivers(s.add, taken));
   if (lost) best.lost = { p: lost.add, rivals: shortNextWeek(lost.add.pos) };
+  // a runner-up within half a point is a coin flip: say so instead of pretending one is clearly best
+  const close = scored.find(s => s !== best && s.add.pos === best.add.pos && best.worth - s.worth < 0.5 && !lostOnWaivers(s.add, taken));
+  if (close) best.close = close.add;
   best.byeFor = baseRoster.filter(p => p.pos === best.add.pos && p.slot !== 'IR' && p.bye === week + 1);
   fills.push(best);
   baseRoster.push({ ...best.add, slot: 'Bench' });
@@ -512,7 +519,15 @@ for (const m of claims) if (m.likelyLost && !m.drop.length) {
 const they = p => (p.pos === 'D/ST' ? 'they' : 'he'), They = p => (p.pos === 'D/ST' ? 'They' : 'He');
 // "Dominic Zvada is on bye in week 8. Expected 9.2 that week (ESPN)." + who we skipped and why
 const byeText = f => (f.byeFor.length && nextProj.has(f.add.id) ? ` ${f.byeFor.map(p => p.name).join(' and ')} ${f.byeFor.length > 1 ? 'are' : 'is'} on bye in week ${week + 1}. ${They(f.add)}'${f.add.pos === 'D/ST' ? 're' : 's'} expected ${n(nextProj.get(f.add.id))} that week (ESPN's projection).` : '')
-  + (f.lost ? ` ${f.lost.p.name} is expected ${n(nextValue(f.lost.p))}, but ${they(f.lost.p)}'${f.lost.p.pos === 'D/ST' ? 're' : 's'} on waivers and ${f.lost.rivals.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', ')} ${f.lost.rivals.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${f.lost.rivals.length > 1 ? 'need' : 'needs'} a ${POS_NAME[f.add.pos].toLowerCase()} that week, so you'd likely lose that claim.` : '');
+  + (f.lost ? ` ${f.lost.p.name} is expected ${n(nextValue(f.lost.p))}, but ${they(f.lost.p)}'${f.lost.p.pos === 'D/ST' ? 're' : 's'} on waivers and ${f.lost.rivals.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', ')} ${f.lost.rivals.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${f.lost.rivals.length > 1 ? 'need' : 'needs'} a ${POS_NAME[f.add.pos].toLowerCase()} that week, so you'd likely lose that claim.` : '')
+  + (f.close ? ` Close call: ${f.close.name}${nextProj.has(f.close.id) && f.byeFor.length ? ` (${n(nextProj.get(f.close.id))} that week)` : ''} is about as good${f.close.wa ? ', but on waivers' : ''}, so either is fine.` : '');
+// Better backups: a free player 2+ a game better (rest of season) than one of my bench players at the same spot.
+// Info, not a to-do: a backup only scores when a starter is out, so the gain is small.
+const seasonStarterIds = new Set(bestLineup(baseRoster, seasonValue).lineup.map(x => x.player.id));
+const benchTaken = new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]);
+const benchUps = baseRoster.filter(p => !seasonStarterIds.has(p.id) && p.slot !== 'IR' && ['QB', 'RB', 'WR', 'TE'].includes(p.pos))
+  .map(p => ({ drop: p, add: allFa.filter(c => c.pos === p.pos && playable(c) && !locked(c) && !benchTaken.has(c.id)).sort((a, b) => rate(b) - rate(a))[0] }))
+  .filter(x => x.add && rate(x.add) - rate(x.drop) >= 2).sort((a, b) => rate(b.add) - rate(b.drop) - (rate(a.add) - rate(a.drop)));
 // One plan, done in order: each step is applied before picking the next, so every step
 // drops a different player and players added earlier in the plan are never dropped.
 const plan = [];
@@ -829,6 +844,8 @@ if (etDay === waiverEve && etHour >= 18 && wplan) {
 // Someone available beats a player you have, or fills an empty spot: tell me once per player per week, as soon as it shows up
 for (const s of plan) alerts.push([`pickup:${week}:${s.add.id}`, `${s.add.name} is better than ${s.drop.name}`,
   `${s.kind === 'week' ? `About ${n(s.gain)} more points this week` : `About ${n(s.gain)} more points per week`}. ${s.add.wa ? 'On waivers, so put in a claim' : 'Free agent, so you can add him now'}.`, s.kind === 'week']);
+for (const x of benchUps) alerts.push([`bench:${week}:${x.add.id}`, `Better backup: ${x.add.name}`,
+  `${n(rate(x.add))} a game vs ${x.drop.name}'s ${n(rate(x.drop))}, rest of season. ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'} Small upgrade; details in Pickups.`, false]);
 for (const m of claims) if (m.likelyLost) alerts.push([`claimrisk:${week}:${m.id}`, `You'll likely lose your ${m.add[0].name} claim`,
   `${m.likelyLost.map(t => t.name).join(', ')} pick${m.likelyLost.length > 1 ? '' : 's'} before you and also need${m.likelyLost.length > 1 ? '' : 's'} a ${POS_NAME[m.add[0].pos].toLowerCase()} in week ${week + 1}. Open the app for a free agent you can add now.`, false]);
 for (const f of fills) alerts.push([`fill:${week}:${f.add.id}`, `Add ${f.add.name} (empty roster spot)`,
@@ -1231,7 +1248,10 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
     : '<br><span class="tag" style="color:var(--good)">No team that picks before you needs him, so you\'ll probably get him.</span>'; })() : ''}
   ${notes(s.add).map(t => `<br><span class="tag">&#9432; ${esc(t)}</span>`).join('')}
   ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
-  : `<div class="card empty">Nobody out there beats what you have${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
+  : `<div class="card empty">Nobody out there would make your starting lineup better${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
+${benchUps.length ? `<div class="group">Better backups available</div><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
+  <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}</p>
+  ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div>` : ''}
 ${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><div class="list">${fills.map(f => `<div class="card"><div class="row">${player(f.add)}${big(rate(f.add), 'per game, rest of season', null, f.add, 'season')}</div>
@@ -1243,10 +1263,10 @@ ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
     const backup = m.add.length === 1 && m.drop.length === 1 && rate(m.add[0]) - rate(m.drop[0]) >= 2;
     const covers = m.byeFor?.length && m.nextPts > 0;
-    const v = m.likelyLost ? ['bad', 'You\'ll likely lose this claim'] : covers ? ['good', `Covers your week ${week + 1} bye`] : m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : ['meh', 'Barely matters'];
+    const v = m.likelyLost ? ['bad', 'You\'ll likely lose this claim'] : covers ? ['good', `Covers your week ${week + 1} bye`] : m.week >= 1 || m.nextGain >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : ['meh', 'Barely matters'];
     return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
     <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
-    <p class="why"><b>${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? `Neither of them makes your starting lineup right now, so your score doesn't change. But ${esc(m.add[0].name)} is a much better backup (${n(rate(m.add[0]))} vs ${n(rate(m.drop[0]))} a game) for bye weeks and injuries.` : ''}${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? '' : Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}</b>${nextRun ? ` It goes through ${nextRun}.` : ''}</p>
+    <p class="why"><b>${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? `Neither of them makes your starting lineup right now, so your score doesn't change. But ${esc(m.add[0].name)} is a much better backup (${n(rate(m.add[0]))} vs ${n(rate(m.drop[0]))} a game) for bye weeks and injuries.` : ''}${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? '' : Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}${Math.abs(m.nextGain) >= 0.5 ? ` Next week (week ${week + 1}): ${m.nextGain > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.nextGain))}.` : ''}</b>${nextRun ? ` It goes through ${nextRun}.` : ''}</p>
     ${covers ? `<p class="why">${esc(m.byeFor.map(p => p.name).join(' and '))} ${m.byeFor.length > 1 ? 'are' : 'is'} on bye in week ${week + 1}; ${esc(m.add[0].name)} is expected ${n(m.nextPts)} that week (ESPN's projection).</p>` : ''}
     ${m.likelyLost ? `<p class="why" style="color:var(--bad)"><b>${esc(m.likelyLost.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', '))} ${m.likelyLost.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${m.likelyLost.length > 1 ? 'need' : 'needs'} a ${POS_NAME[m.add[0].pos].toLowerCase()} in week ${week + 1}, so they'll likely take him first.</b>${m.backupFill ? '' : ' Your to-do list has a free agent you can add right now.'}</p>` : ''}
     ${m.backupFill ? `<p class="why"><b>Don't just cancel it. Do this, in order:</b><br>1. Add ${esc(m.backupFill.name)} now (free agent, see your to-do list).<br>2. Put in a new claim for ${esc(m.add[0].name)} that drops ${esc(m.backupFill.name)} (button below).<br>3. Cancel this claim: it has no drop, so once your roster is full ESPN would turn it down.<br>Win the new claim and ${esc(m.add[0].name)} replaces ${esc(m.backupFill.name)}. Lose it and you still have ${esc(m.backupFill.name)}.</p>
