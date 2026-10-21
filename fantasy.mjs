@@ -1060,7 +1060,7 @@ fs.mkdirSync(path.dirname(memoFile), { recursive: true });
 fs.writeFileSync(memoFile, JSON.stringify(memo));
 // Small summary for the iPhone Home Screen widget (Scriptable).
 fs.writeFileSync(path.join(dir, 'site', 'widget.json'), JSON.stringify({
-  week, me: me.name, opp: opp?.name ?? null, myProj: n(myProj), oppProj: n(oppProj), updated: Date.now(),
+  week, me: me.name, opp: opp?.name ?? null, myProj: n(myProj), oppProj: n(oppProj), win: winPct, live: isLive, updated: Date.now(),
   todo: todo.map(([lvl, title]) => ({ lvl, title })),
 }));
 fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
