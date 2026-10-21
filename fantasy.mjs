@@ -320,6 +320,20 @@ if (week < lastWeek) {
     if (s) nextProj.set(x.player.id, s.appliedTotal);
   }
 }
+// Every later regular-season week, for Compare. ESPN only, one download per week, so it's refreshed with ros.json (hourly).
+if (rosSaved.future?.week !== week) {
+  rosSaved.future = { week, by: {} };
+  const ids = [...new Set([...teams.flatMap(t => t.roster), ...allFa].map(p => p.id))];
+  for (let w = week + 1; w <= lastWeek; w++) {
+    try {
+      const d = await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${w}`, { players: { filterIds: { value: ids } } });
+      for (const x of d.players) {
+        const st = x.player.stats?.find(s => s.seasonId === SEASON && s.statSourceId === 1 && s.statSplitTypeId === 1 && s.scoringPeriodId === w);
+        (rosSaved.future.by[x.player.id] ??= [])[w - week - 1] = st ? +st.appliedTotal.toFixed(1) : null;
+      }
+    } catch (err) { console.warn(`Week ${w} projections skipped:`, err.message); }
+  }
+}
 
 // Available players being added fastest across all ESPN leagues
 const trending = (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, {
@@ -724,6 +738,15 @@ const nextRun = runMin == null ? '' : (() => {
 const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day except ${noProc.map(cap).join(' and ')}` : `on ${[...procDays].map(cap).join(', ')}`;
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
 const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
+// The (i) button on a suggestion: every number behind it and where it came from
+const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper) and CBS Sports projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the three. Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024. Rosters, waiver order and claims: your ESPN league.";
+const srcLine = p => {
+  const ros = ['ESPN', 'Rotowire', 'CBS'].map((s, i) => (p.rosBy?.[i] != null ? `${s} ${n(p.rosBy[i])}` : '')).filter(Boolean).join(', '), odds = playOdds(p, p.inj?.type);
+  return `<b>${esc(p.name)}</b>: this week ${esc(srcText(p) || 'no projection (bye or not playing)')}${srcText(p).includes(',') ? `, average ${n(p.proj)}` : ''}` +
+    `${nextProj.has(p.id) ? `; next week ESPN ${n(nextProj.get(p.id))}` : ''}; rest of season per game ${esc(ros || 'none')}` +
+    `${p.status ? `; status: ${esc(statusWords(p))} (ESPN)${odds ? `, ${odds.pct}% chance to play (${esc(odds.why)})` : ''}` : ''}.`;
+};
+const info = ps => (ps.length ? `<details class="info"><summary aria-label="Where this comes from" title="Where this comes from">i</summary><div>${ps.map(p => `<p>${srcLine(p)}</p>`).join('')}<p>${SOURCES_NOTE}</p></div></details>` : '');
 // --- Roster moves the site can send to ESPN (through worker.js). Slot ids are ESPN's lineupSlotId.
 const SLOT_ID = Object.fromEntries(Object.entries(SLOT).map(([id, name]) => [name, +id]));
 // The best lineup as ESPN moves. Starters already in a spot that fits them stay put (so a player
@@ -750,23 +773,23 @@ const bestMove = lineupMove();
 const pickupMove = s => ({ label: s.add.wa ? 'Put in this waiver claim on ESPN' : 'Do this pickup on ESPN', type: s.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: s.add.id }, { type: 'DROP', playerId: s.drop.id }] });
 const todo = [];
 for (const p of starters(me)) {
-  if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`, bestMove]);
-  else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`, bestMove]);
+  if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`, bestMove, [p]]);
+  else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`, bestMove, [p]]);
 }
-for (const p of benchIn) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(weekValue(p))}${replaces.get(p) ? `, more than ${replaces.get(p).name} (${n(weekValue(replaces.get(p)))})` : ''}.`, bestMove]);
+for (const p of benchIn) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(weekValue(p))}${replaces.get(p) ? `, more than ${replaces.get(p).name} (${n(weekValue(replaces.get(p)))})` : ''}.`, bestMove, [p, replaces.get(p)].filter(Boolean)]);
 const fillMove = f => ({ label: `Add ${f.add.name} on ESPN`, type: f.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: f.add.id }] });
 for (const f of fills) todo.push([f.week >= 1 ? 'urgent' : 'week', f.byeFor.length ? `Add ${f.add.name} now for week ${week + 1} (${f.byeFor.map(p => p.name).join(' and ')} on bye)` : `Add ${f.add.name} (empty roster spot)`,
-  `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${byeText(f)} ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup ${f.add.pos === 'D/ST' ? 'they add' : 'he adds'} about ${Math.round(f.rest)} points over the next two weeks by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ` ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} on waivers, so this is a claim.` : ''}${f.claim ? ` You also have a claim in for ${f.claim.add[0].name}. Keep trying for him, but make that claim drop ${f.add.name} (steps under Pending): win it and ${f.claim.add[0].name} replaces ${they(f.add) === 'they' ? 'them' : 'him'}, lose it and you still have ${f.add.name}.` : ''}`, fillMove(f)]);
+  `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${byeText(f)} ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup ${f.add.pos === 'D/ST' ? 'they add' : 'he adds'} about ${Math.round(f.rest)} points over the next two weeks by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ` ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} on waivers, so this is a claim.` : ''}${f.claim ? ` You also have a claim in for ${f.claim.add[0].name}. Keep trying for him, but make that claim drop ${f.add.name} (steps under Pending): win it and ${f.claim.add[0].name} replaces ${they(f.add) === 'they' ? 'them' : 'him'}, lose it and you still have ${f.add.name}.` : ''}`, fillMove(f), [f.add]]);
 for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
-    (s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`) + alsoText(s.alts.map(a => a.add), s.kind === 'week' ? weekValue : rate), locked(s.add) || locked(s.drop) ? null : pickupMove(s)]);
+    (s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`) + alsoText(s.alts.map(a => a.add), s.kind === 'week' ? weekValue : rate), locked(s.add) || locked(s.drop) ? null : pickupMove(s), [s.add, s.drop]]);
 }
 const irUsed = me.roster.filter(p => p.slot === 'IR').length;
 const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 for (const p of me.roster) {
-  if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.', locked(p) ? null : { label: 'Move him to IR on ESPN', type: 'ROSTER', items: [{ type: 'LINEUP', playerId: p.id, from: SLOT_ID[p.slot], to: SLOT_ID.IR }] }]);
-  if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }]);
-  if (p.slot === 'IR' && p.inj?.back && p.inj.back - Date.now() < 8 * 864e5 && !p.inj.season) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, 'When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you\'d drop.' + (([w]) => w ? ` Easiest: ${w === p ? 'drop him' : `drop ${w.name}`} (expected ${n(rate(w))} a game the rest of the season).` : '')([p, ...baseRoster.filter(x => x.slot === 'Bench')].sort((a, b) => rate(a) - rate(b)))]);
+  if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.', locked(p) ? null : { label: 'Move him to IR on ESPN', type: 'ROSTER', items: [{ type: 'LINEUP', playerId: p.id, from: SLOT_ID[p.slot], to: SLOT_ID.IR }] }, [p]]);
+  if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }, [p]]);
+  if (p.slot === 'IR' && p.inj?.back && p.inj.back - Date.now() < 8 * 864e5 && !p.inj.season) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, 'When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you\'d drop.' + (([w]) => w ? ` Easiest: ${w === p ? 'drop him' : `drop ${w.name}`} (expected ${n(rate(w))} a game the rest of the season).` : '')([p, ...baseRoster.filter(x => x.slot === 'Bench')].sort((a, b) => rate(a) - rate(b))), null, [p]]);
 }
 // Bye gaps, counting the players the plan adds (so a planned pickup that covers it hides the warning)
 const afterPlan = [...baseRoster.filter(p => !plan.some(s => s.drop === p)), ...plan.map(s => s.add)];
@@ -774,7 +797,7 @@ for (let wk = week + 1; wk <= lastWeek; wk++) {
   for (const pos of ['QB', 'TE', 'K', 'D/ST']) {
     if (afterPlan.some(p => p.pos === pos && !HURT.includes(p.status) && p.slot !== 'IR' && p.bye !== wk)) continue;
     const sub = fa[pos].filter(p => p.bye !== wk && !HURT.includes(p.status)).sort((a, b) => rate(b) - rate(a))[0];
-    todo.push(['later', `Week ${wk}: get a ${POS_NAME[pos].toLowerCase()}`, `None of yours play that week.${sub ? ` Best one available: ${sub.name} (${sub.teamName}, expected ${n(rate(sub))} per game).` : ''}`]);
+    todo.push(['later', `Week ${wk}: get a ${POS_NAME[pos].toLowerCase()}`, `None of yours play that week.${sub ? ` Best one available: ${sub.name} (${sub.teamName}, expected ${n(rate(sub))} per game).` : ''}`, null, sub ? [sub] : []]);
   }
 }
 
@@ -1064,6 +1087,22 @@ const winPct = !opp ? 0 : liveWin ? Math.round(mySide.winProbability * 100)
 let seed = week * 7919;
 const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI * rnd());
+// --- Whole league this week: everyone's expected final score (lineups as set; ESPN's live projection once games
+// start), where you rank, who's below you, and the chance you're the lowest score. Same bell curves as the win chance.
+// ponytail: during games only players who haven't kicked off add spread; ESPN's live projection covers the rest.
+const sideOf = t => (league.schedule ?? []).filter(g => g.matchupPeriodId === week).map(g => (g.home?.teamId === t.id ? g.home : g.away?.teamId === t.id ? g.away : null)).find(Boolean);
+const board = teams.map(t => {
+  const side = sideOf(t), live = isLive && side?.totalProjectedPointsLive != null;
+  const open = starters(t).filter(p => !(live && locked(p)));
+  return { t, proj: live ? side.totalProjectedPointsLive : lineupProj(t), now: isLive ? side?.totalPointsLive ?? null : null, sd: Math.sqrt(open.reduce((a, p) => a + (0.65 * weekValue(p)) ** 2, 0)) || 1 };
+}).sort((a, b) => b.proj - a.proj);
+let lowestRuns = 0;
+for (let i = 0; i < 10000; i++) {
+  let mine = 0, low = Infinity;
+  for (const r of board) { const v = r.proj + r.sd * gauss(); if (r.t === me) mine = v; else low = Math.min(low, v); }
+  if (mine < low) lowestRuns++;
+}
+const lowestPct = Math.round(lowestRuns / 100), myBoardRank = board.findIndex(r => r.t === me) + 1, below = board.slice(myBoardRank);
 const futLine = new Map(teams.map(t => [t.id, bestLineup(t.roster, seasonValue).lineup.map(x => seasonValue(x.player))]));
 const futMean = id => futLine.get(id).reduce((a, b) => a + b, 0), futSd = id => Math.sqrt(futLine.get(id).reduce((a, v) => a + (0.65 * v) ** 2, 0)) || 15;
 const byId_ = new Map(teams.map(t => [t.id, t]));
@@ -1159,6 +1198,8 @@ section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-
 .todo{display:flex;gap:12px;align-items:flex-start}
 .todo .lvl{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
+details.info{margin-top:6px}details.info>summary{list-style:none;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font:italic 700 12px/1 Georgia,serif;cursor:pointer}details.info>summary::-webkit-details-marker{display:none}details.info[open]>summary{color:var(--fg);border-color:var(--fg)}details.info>div{margin-top:6px;font-size:13px;color:var(--muted)}details.info p{margin:0 0 4px}
+.tpics{display:flex;gap:6px;margin:6px 0 2px}.tpics .pic{width:36px;height:36px}.tpics [data-pid]{cursor:pointer}
 .todo b{display:block;font-size:15px}.todo p{margin:2px 0 0;color:var(--muted);font-size:14px}
 .player{display:flex;gap:12px;align-items:center;min-width:0;flex:1}
 .pic{flex:none;width:48px;height:48px;border-radius:50%;background:var(--chip);overflow:hidden;position:relative;display:grid;place-items:center}
@@ -1275,7 +1316,10 @@ ${opp ? (() => {
   <div class="t">${esc(opp.name)}</div><div class="p">${n(b)}</div><div class="bar"><i style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
 </div><div class="verdict">${a >= b ? `<b style="color:var(--good)">You're expected to win</b> by ${n((Math.round(a * 10) - Math.round(b * 10)) / 10)} points.` : `<b style="color:var(--bad)">You're expected to lose</b> by ${n((Math.round(b * 10) - Math.round(a * 10)) / 10)} points.`}
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
-<div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>`;
+<div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
+<details class="board" style="margin-top:10px"><summary><b>Whole league this week:</b> you're ${ordinal(myBoardRank)} of ${board.length}, ${below.length} team${below.length === 1 ? '' : 's'} below you. <b style="color:${lowestPct >= 15 ? 'var(--bad)' : lowestPct >= 5 ? 'var(--warn)' : 'var(--good)'}">${lowestPct < 1 ? 'Under 1' : lowestPct}% chance</b> you're the lowest score.</summary>
+<table class="cmp" style="margin-top:8px">${board.map((r, i) => `<tr${r.t === me ? ' style="font-weight:700"' : ''}><td class="num" style="text-align:left">${i + 1}</td><td>${esc(r.t === me ? 'You' : r.t.name)}</td>${isLive ? `<td class="num">${n(r.now)} now</td>` : ''}<td class="num">${n(r.proj)}</td></tr>`).join('')}</table>
+<p class="tag" style="margin:6px 0 0">${isLive ? 'Expected final score (ESPN live projection)' : 'Expected score with every lineup as set right now (averaged projections)'}. ${below.length ? `Below you: ${esc(below.map(r => r.t.name).join(', '))}.` : 'Nobody is projected below you.'} Lineups can still change before games start.</p></details></div>`;
 })() : ''}
 <div id="stale" class="card" hidden style="background:var(--badbg);border-color:var(--bad)"><b style="color:var(--bad)">&#9888; This page stopped updating</b><div class="tag" id="staletext"></div></div>
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
@@ -1299,7 +1343,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
 ${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
-${todo.length ? todo.map(([lvl, title, why, move]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p>${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
+${todo.length ? todo.map(([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
 <section id="news"><h2>News</h2><p class="sub">Latest updates on your players and pickups, from Rotowire via ESPN. Tap a name for details.</p>
@@ -1325,15 +1369,15 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
     : '<br><span class="tag" style="color:var(--good)">No team that picks before you needs him, so you\'ll probably get him.</span>'; })() : ''}
   ${notes(s.add).map(t => `<br><span class="tag">&#9432; ${esc(t)}</span>`).join('')}
-  ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
+  ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p>${info([s.add, s.drop])}</div>`; }).join('')
   : `<div class="card empty">Nobody out there would make your starting lineup better${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
 ${benchUps.length ? `<div class="group">Better backups available</div><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
-  <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}${esc(alsoText(x.alts, rate))}</p>
+  <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}${esc(alsoText(x.alts, rate))}</p>${info([x.add, x.drop, ...x.alts])}
   ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div>` : ''}
 ${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><div class="list">${fills.map(f => `<div class="card"><div class="row">${player(f.add)}${big(rate(f.add), 'per game, rest of season', null, f.add, 'season')}</div>
-  <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${esc(byeText(f))}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the next two weeks covering your starters' bye weeks.` : ' A backup for injuries.'}</p>
+  <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${esc(byeText(f))}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the next two weeks covering your starters' bye weeks.` : ' A backup for injuries.'}</p>${info([f.add, ...f.byeFor, ...f.alts])}
   ${MOVE_URL && !locked(f.add) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...fillMove(f), week: league.scoringPeriodId }))}">${f.add.wa ? 'Put in a claim for him on ESPN' : 'Add him on ESPN'}</button>` : ''}</div>`).join('')}</div>` : ''}
 </section>
 <section id="pending"><h2>Your pending moves</h2><p class="sub">Waiver claims and trade offers that haven't gone through yet, checked with the same math as everything else.</p>
@@ -1349,6 +1393,7 @@ ${pending.length ? pending.map(m => {
     ${m.likelyLost ? `<p class="why" style="color:var(--bad)"><b>${esc(m.likelyLost.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', '))} ${m.likelyLost.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${m.likelyLost.length > 1 ? 'need' : 'needs'} a ${POS_NAME[m.add[0].pos].toLowerCase()} in week ${week + 1}, so they'll likely take him first.</b>${m.backupFill ? '' : m.drop.some(d => d.pos === m.add[0].pos) ? ` That's fine: if you lose it, you keep ${esc(m.drop.find(d => d.pos === m.add[0].pos).name)}.` : ' Your to-do list has a free agent you can add right now.'}</p>` : ''}
     ${m.backupFill ? `<p class="why"><b>Don't just cancel it. Do this, in order:</b><br>1. Add ${esc(m.backupFill.name)} now (free agent, see your to-do list).<br>2. Put in a new claim for ${esc(m.add[0].name)} that drops ${esc(m.backupFill.name)} (button below).<br>3. Cancel this claim: it has no drop, so once your roster is full ESPN would turn it down.<br>Win the new claim and ${esc(m.add[0].name)} replaces ${esc(m.backupFill.name)}. Lose it and you still have ${esc(m.backupFill.name)}.</p>
     ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Claim ${m.add[0].name}, drop ${m.backupFill.name}`, type: 'WAIVER', items: [{ type: 'ADD', playerId: m.add[0].id }, { type: 'DROP', playerId: m.backupFill.id }], week: league.scoringPeriodId }))}">Claim ${esc(m.add[0].name)}, drop ${esc(m.backupFill.name)} (after step 1)</button>` : ''}` : ''}
+    ${info([...m.add, ...m.drop])}
     ${m.better ? `<p class="why" style="color:var(--warn)"><b>Better option:</b> ${lnk(m.better.c)} (${m.better.c.wa ? 'on waivers' : 'free agent, no waiting'}) would add about ${n(m.better.season)} a week instead of ${n(m.season)}, dropping the same player. To switch: cancel this claim, then tap him and use Add him.</p>` : ''}
     ${MOVE_URL ? `<button type="button" class="btn do" style="background:var(--chip);color:var(--fg)" data-move="${esc(JSON.stringify({ label: 'Cancel this claim on ESPN', type: 'WAIVER', cancel: true, related: m.id, items: [], week: league.scoringPeriodId }))}">Cancel this claim on ESPN</button>` : ''}</div>`;
   }
@@ -1686,7 +1731,7 @@ for (const p of me.roster) for (const x of blurbs.get(p.id) ?? []) {
 }
 const TOOLS_JS = String.raw`// Data for Compare, the trade checker and Add buttons: every rostered player and the free agents
 const R = JSON.parse(document.getElementById('rdata').textContent);
-const plOf = id => { const a = R.pl[id]; return a && { id: +id, name: a[0], pos: a[1], team: a[2], proj: a[3], rate: a[4], playable: a[5], locked: a[6], slot: a[7], rank: a[8], ceiling: a[9], avg: a[10], bye: a[11], status: a[12], abbr: a[13], next: a[14] }; };
+const plOf = id => { const a = R.pl[id]; return a && { id: +id, name: a[0], pos: a[1], team: a[2], proj: a[3], rate: a[4], playable: a[5], locked: a[6], slot: a[7], rank: a[8], ceiling: a[9], avg: a[10], bye: a[11], status: a[12], abbr: a[13], next: a[14], fut: a[15] }; };
 const photo = p => p.id < 0 || p.pos === 'D/ST' ? '<span class="pic logo"><img src="https://a.espncdn.com/i/teamlogos/nfl/500/' + e((p.abbr || '').toLowerCase()) + '.png" alt=""></span>' : '<span class="pic" data-i="' + e(p.name.split(' ').map(w => w[0]).join('').slice(0, 2)) + '"><img src="https://a.espncdn.com/i/headshots/nfl/players/full/' + p.id + '.png" alt="" onerror="this.remove()"></span>';
 // Compare / Trade buttons on a player page
 const toolBtns = p => { const x = plOf(p.id); if (!x) return ''; const onTeam = R.teams.some(t => t.ids.includes(x.id)); return '<div class="tools2"><button type="button" class="btn" data-cmp="' + x.id + '">Compare</button>' + (onTeam ? '<button type="button" class="btn" data-trade="' + x.id + '">Trade check</button>' : '') + '</div>'; };
@@ -1723,6 +1768,8 @@ function addHim(p) {
     tcCheck();
   }
   function tcCheck() {
+    // remembered for this tab, so an automatic update doesn't wipe what you picked
+    try { sessionStorage.setItem('tc', JSON.stringify({ team: tcTeam.value, ids: [...document.querySelectorAll('#check input[type=checkbox]:checked')].map(i => i.dataset.side + ':' + i.value) })); } catch {}
     const them = +tcTeam.value, ticked = side => [...document.querySelectorAll('#check input[data-side=' + side + ']:checked')].map(i => +i.value);
     const mine = rosterOf(R.me), theirs = them ? rosterOf(them) : [];
     const give = mine.filter(p => ticked('give').includes(p.id)), take = theirs.filter(p => ticked('get').includes(p.id));
@@ -1744,7 +1791,14 @@ function addHim(p) {
   }
   tcTeam.addEventListener('change', tcLists);
   $('check').addEventListener('change', ev => { if (ev.target.matches('input[type=checkbox]')) tcCheck(); });
+  let tcSaved = null;
+  try { tcSaved = JSON.parse(sessionStorage.getItem('tc') || 'null'); } catch {}
+  if (tcSaved && R.teams.some(t => t.id === +tcSaved.team)) tcTeam.value = tcSaved.team;
   tcLists();
+  if (tcSaved && tcTeam.value) {
+    for (const k of tcSaved.ids) { const [side, id] = k.split(':'), box = document.querySelector('#check input[data-side=' + side + '][value="' + id + '"]'); if (box) box.checked = true; }
+    tcCheck();
+  }
 
   // --- Compare two players side by side: tap a box, search by name, tap the player
   const ownerOf = id => { const t = R.teams.find(t => t.ids.includes(id)); return t ? (t.id === R.me ? 'You' : t.name) : 'Free agent'; };
@@ -1755,7 +1809,7 @@ function addHim(p) {
     const p = plOf(pick[k]);
     $('cmp-' + k).innerHTML = p ? photo(p) + '<span class="cmp-who"><b>' + e(p.name) + '</b><span class="tag">' + p.pos + ' &middot; ' + e(ownerOf(p.id)) + '</span></span>' : '<span class="tag">Tap to pick a player</span>';
   }
-  function setPick(k, id) { pick[k] = id; drawPick(k); compare(); }
+  function setPick(k, id) { pick[k] = id; drawPick(k); compare(); try { sessionStorage.setItem('cmp', JSON.stringify(pick)); } catch {} }
   function results(q) {
     const flat = s => s.toLowerCase().replace(/[^a-z0-9]/g, ''); // "aj brown" finds A.J. Brown
     q = flat(q);
@@ -1773,7 +1827,9 @@ function addHim(p) {
     if (!a || !b) { $('cmp-out').innerHTML = ''; return; }
     const rows = [
       ['Expected this week', a.proj, b.proj, 1],
-      ['Expected next week (ESPN)', a.next ?? '-', b.next ?? '-', 1],
+      // later weeks (ESPN only); '-' = bye or no projection
+      ...Array.from({ length: Math.max(0, R.lastWeek - R.fw + 1) }, (_, i) => ['Week ' + (R.fw + i) + ' (ESPN)', a.fut?.[i] ?? '-', b.fut?.[i] ?? '-', 1]),
+      ['Weeks ' + R.fw + '-' + R.lastWeek + ' total (ESPN)', +(a.fut || []).reduce((t, v) => t + (v || 0), 0).toFixed(1), +(b.fut || []).reduce((t, v) => t + (v || 0), 0).toFixed(1), 1],
       ['Great-game score', a.ceiling || a.proj, b.ceiling || b.proj, 1],
       ['Per game, rest of season', a.rate, b.rate, 1],
       ['Per game so far', a.avg, b.avg, 1],
@@ -1791,6 +1847,7 @@ function addHim(p) {
   const mine = rosterOf(R.me);
   pick.a = mine[0] ? mine[0].id : null;
   pick.b = (R.fa.map(plOf).find(p => p && mine[0] && p.pos === mine[0].pos) || mine[1] || {}).id || null;
+  try { const s = JSON.parse(sessionStorage.getItem('cmp') || 'null'); if (s) for (const k of ['a', 'b']) if (R.pl[s[k]]) pick[k] = s[k]; } catch {}
   drawPick('a'); drawPick('b'); compare();
 
   // --- From any player's page: "Compare" puts him in a compare box, "Trade" ticks him in the trade checker
@@ -1960,9 +2017,9 @@ html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, t
 });
 html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', bestLineup.toString()));
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
-const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null];
+const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
-const rdata = { week: league.scoringPeriodId, me: me.id, moves: !!MOVE_URL, tradesOpen, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
+const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => ({ id: t.id, name: t.name, ids: t.roster.map(p => p.id) })), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
