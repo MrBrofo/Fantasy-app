@@ -428,24 +428,30 @@ function judge(give, take, them) {
 }
 
 // Trade ideas: 1-for-1, worth 2+ points a week to me, and fair to them on value over replacement.
+// "Looser check" on the page also shows closer calls: 1+ a week to me, costing them up to 1.5.
 // ponytail: 1-for-1 only; add 2-for-1 if this gets used a lot.
 const tradeable = p => playable(p) && !['K', 'D/ST'].includes(p.pos) && rate(p) > 0;
 const tradesOpen = !(league.settings.tradeSettings?.deadlineDate < Date.now());
+const tradeOk = (j, strict) => (strict ? j.mine >= 2 && j.theirs >= -0.5 : j.mine >= 1 && j.theirs >= -1.5);
 const trades = [];
 for (const t of teams) {
   if (t === me || !tradesOpen) continue;
   for (const give of me.roster.filter(tradeable)) for (const take of t.roster.filter(tradeable)) {
     if (vor(give) < vor(take) * 0.85) continue;
     const j = judge([give], [take], t);
-    if (j.mine >= 2 && j.theirs >= -0.5) trades.push({ team: t, give, take, ...j });
+    if (tradeOk(j, false)) trades.push({ team: t, give, take, ...j, strict: tradeOk(j, true) });
   }
 }
 trades.sort((a, b) => b.mine + b.theirs - (a.mine + a.theirs));
-const topTrades = [];
+// up to 4 ideas per team (the page picks the team and how many show), at most 2 per player I give up
+const tradePool = [];
 for (const tr of trades) {
-  // at most 2 ideas per player I give up, so the list isn't one name 10 times
-  if (topTrades.filter(x => x.give === tr.give).length < 2 && topTrades.length < 6) topTrades.push(tr);
+  const same = tradePool.filter(x => x.team === tr.team);
+  if (same.length < 4 && same.filter(x => x.give === tr.give).length < 2) tradePool.push(tr);
 }
+// shared bits of the trade ideas and fleece lists (the page script shows/hides cards)
+const poolEmpty = `<div class="card empty pool-empty" hidden>${tradesOpen ? 'Nothing here with this check. Try the looser check or another team.' : 'The trade deadline has passed.'}</div>`;
+const poolMore = '<div class="tools2" style="margin-bottom:10px"><button type="button" class="btn" data-more>Show more</button><button type="button" class="btn" data-next>New batch</button></div>';
 
 // --- Adds / drops / trades around the league, last 3 weeks. Also my pending claims and trade
 // offers, and other teams' offers and claims that didn't happen (ESPN's app hides those).
@@ -635,6 +641,7 @@ const partners = teams.filter(t => t !== me).map(depth).map(d => ({
 // --- Fleece finder: trades that look fair on the number most managers check (points per game so far),
 // but that the rest-of-season projections say clearly favor me. 1-for-1 and 2-for-1 (my two for their one).
 // A trade only makes the list if there's a believable, true pitch for it (see pitches()).
+// "Looser check" on the page also shows closer calls: 1+ a week to me, costing them 0.5+, a weaker pitch.
 // ponytail: the other team's extra roster spot on a 2-for-1 isn't counted (they'd drop their worst bench player).
 const f1 = v => (v ?? 0).toFixed(1); // (n() is defined further down)
 const avgValue = p => (playable(p) ? p.avg ?? 0 : 0);
@@ -646,20 +653,22 @@ for (const d of tradesOpen ? partners : []) {
   const gives = [...mine.map(p => [p]), ...mine.flatMap((a, i) => mine.slice(i + 1).map(b => [a, b]))];
   for (const give of gives) for (const take of theirs) {
     const j = judge(give, [take], d.t);
-    if (j.mine < 2 || j.theirs > -1) continue;
+    if (j.mine < 1 || j.theirs > -0.5) continue;
     // what they'd see: their best lineup scored with season-so-far averages
     const looks = score([...d.t.roster.filter(p => p !== take), ...give], avgValue) - score(d.t.roster, avgValue);
-    if (looks < 0) continue;
+    if (looks < -1) continue;
     const theirWeek = weekScore([...d.t.roster.filter(p => p !== take || (locked(p) && isStarter(p))), ...give.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(d.t.roster);
-    fleece.push({ d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks, theirWeek });
+    fleece.push({ d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks, theirWeek, strict: j.mine >= 2 && j.theirs <= -1 && looks >= 0 });
   }
 }
 fleece.sort((a, b) => b.mine - b.theirs - (a.mine - a.theirs));
-const topFleece = [];
+// up to 3 per team (the page picks the team and how many show), no player twice for the same team
+const fleecePool = [];
 for (const f of fleece) {
-  if (topFleece.length >= 5 || topFleece.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)))) continue;
-  const texts = pitches(f);
-  if (texts) topFleece.push({ ...f, texts });
+  const same = fleecePool.filter(x => x.d === f.d);
+  if (same.length >= 3 || same.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)))) continue;
+  const pitch = pitches(f);
+  if (pitch) fleecePool.push({ ...f, texts: pitch.texts, strict: f.strict && pitch.strength >= 4 });
 }
 // Texts to send. Every fact is checked against the real numbers before it's used: season averages, who
 // they start now, this week's projection, injury tags, bye weeks, and which spots each team is short or
@@ -680,7 +689,7 @@ function pitches(f) {
   if (take.bye > week && take.bye <= week + 2) facts.push([1, `${last(take)} has his bye in week ${take.bye}`]);
   const reason = myDepth.short.includes(take.pos) ? `i'm thin at ${posName(take.pos)} and need one` : myDepth.extra.some(([pos]) => give.some(p => p.pos === pos)) ? `i've got more ${posName(g.pos)}s than i can start` : '';
   const strength = facts.reduce((s, [k]) => s + k, 0) + (hurt ? 2 : 0) + (reason ? 1 : 0);
-  if (strength < 4) return null;
+  if (strength < 2 || !facts.length) return null; // 4+ passes the normal check; 2+ only the looser one
   const top = facts.sort((a, b) => b[0] - a[0]).slice(0, 2).map(([, t]) => t);
   const close = ['', ' lmk', ' lmk what you think', ' open to tweaking it'][take.id % 4];
   const out = [
@@ -688,7 +697,7 @@ function pitches(f) {
     reason ? `${reason}, would you do ${both} for ${last(take)}? ${top.join('. ')}` : `you open to ${both} for ${last(take)}? ${top[0]}${top[1] ? `, plus ${top[1]}` : ''}`,
     hurt ? `ngl this is kinda risky for me since ${last(take)} is banged up, but i'd do ${both} for him. ${top[0]}` : `thoughts on ${both} for ${last(take)}? ${top[0]}.${close}`,
   ];
-  return [...new Set(out)];
+  return { texts: [...new Set(out)], strength };
 }
 // what Claude needs to write its own version: the trade and only true facts
 const claudePrompt = f => `Write a short, casual text (1-3 sentences, lowercase, like a real person texting a friend) to my fantasy football league mate proposing this trade. I give: ${f.give.map(p => `${p.name} (${p.pos})`).join(' and ')}. I get: ${f.take.name} (${f.take.pos}). Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: ${[
@@ -1498,23 +1507,27 @@ ${pending.length ? pending.map(m => {
 </section>
 
 <section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
-${topTrades.length ? topTrades.map(t => { const s = myStartersAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
+<div class="card"><select id="tp-team" class="sel" aria-label="Show trades with"><option value="">All teams</option>${teams.filter(t => t !== me).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+<label class="pick" style="border:0;padding-bottom:0"><input type="checkbox" id="tp-loose"> Looser check: also show closer calls (trade ideas worth 1+ point a week to you, fleeces with a weaker pitch)</label></div>
+<div class="pool-list" data-step="6">${tradePool.map(t => { const s = myStartersAt(t.after, t.give.pos); return `<div class="card" data-team="${t.team.id}" data-strict="${t.strict ? 1 : 0}"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
   <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game, rest of season', null, t.give, 'season')}</div>
   <div class="arrow">for</div>
   <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
   <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
-  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : `<div class="card empty">${tradesOpen ? 'No trades right now that clearly help you and look fair to the other team.' : 'The trade deadline has passed.'}</div>`}
+  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('')}${poolEmpty}</div>
+${poolMore}
 </section>
 
 <section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Only trades with a believable, true pitch show up.</p>
-${topFleece.length ? topFleece.map(f => `<div class="card"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
+<div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="why">Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, they lose about ${n(-f.theirs)} a week.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
   <div class="group">Text to send</div><p class="pitch">${esc(f.texts[0])}</p>
   <div class="tools2"><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-copy="${esc(f.texts[0])}">Copy text</button>${f.texts.length > 1 ? `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-versions="${esc(JSON.stringify(f.texts))}">Another version</button>` : ''}</div>
   <button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it (copies the facts, opens Claude)</button>
-  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Propose ${f.give.map(p => p.name).join(' + ')} for ${f.take.name} on ESPN`, type: 'TRADE_PROPOSAL', other: f.d.t.id, sms: f.d.t.name, items: [...f.give.map(p => ({ type: 'GIVE', playerId: p.id })), { type: 'GET', playerId: f.take.id }], week: league.scoringPeriodId }))}">Propose on ESPN, then text them</button>` : ''}</div>`).join('') : `<div class="card empty">${tradesOpen ? 'No lopsided trades with a believable pitch right now.' : 'The trade deadline has passed.'}</div>`}
+  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Propose ${f.give.map(p => p.name).join(' + ')} for ${f.take.name} on ESPN`, type: 'TRADE_PROPOSAL', other: f.d.t.id, sms: f.d.t.name, items: [...f.give.map(p => ({ type: 'GIVE', playerId: p.id })), { type: 'GET', playerId: f.take.id }], week: league.scoringPeriodId }))}">Propose on ESPN, then text them</button>` : ''}</div>`).join('')}${poolEmpty}</div>
+${poolMore}
 </section>
 
 <section id="partners"><h2>Trade partners</h2><p class="sub">Who's short at a position and who has extra. The best trades are with teams that have extra of what you're short on, and are short on what you have extra of.</p>
@@ -1965,6 +1978,32 @@ function addHim(p) {
     if (t) tradeFor(+t.dataset.trade);
   });
 })();
+// Trade ideas and fleece finder: pick a team, loosen the check, show more or a new batch.
+// Every candidate is already on the page; this only picks which cards show.
+{
+  const teamSel = document.getElementById('tp-team'), loose = document.getElementById('tp-loose');
+  const lists = [...document.querySelectorAll('.pool-list')].map(el => {
+    const l = { el, step: +el.dataset.step, start: 0, count: +el.dataset.step, bar: el.nextElementSibling };
+    l.bar.querySelector('[data-more]').onclick = () => { l.count += l.step; draw(); };
+    l.bar.querySelector('[data-next]').onclick = () => { l.start += l.count; l.count = l.step; draw(); };
+    return l;
+  });
+  function draw() {
+    for (const l of lists) {
+      const cards = [...l.el.children].filter(c => c.dataset.team);
+      const ok = cards.filter(c => (!teamSel.value || c.dataset.team === teamSel.value) && (loose.checked || c.dataset.strict === '1'));
+      if (l.start >= ok.length) l.start = 0; // "New batch" past the end starts over
+      cards.forEach(c => { c.hidden = true; });
+      ok.slice(l.start, l.start + l.count).forEach(c => { c.hidden = false; });
+      l.el.querySelector('.pool-empty').hidden = ok.length > 0;
+      l.bar.querySelector('[data-more]').hidden = l.start + l.count >= ok.length;
+      l.bar.querySelector('[data-next]').hidden = ok.length <= l.count;
+      l.bar.style.display = l.bar.querySelector('[data-more]').hidden && l.bar.querySelector('[data-next]').hidden ? 'none' : ''; // .tools2 is a grid, so [hidden] alone won't hide it
+    }
+  }
+  const reset = () => { lists.forEach(l => { l.start = 0; l.count = l.step; }); draw(); };
+  if (teamSel) { teamSel.onchange = reset; loose.onchange = reset; draw(); }
+}
 // One section at a time: the bottom bar picks which tab shows, like pages in an app
 const navLinks = [...document.querySelectorAll('nav a')];
 function showTab(tab, jump) {
