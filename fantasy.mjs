@@ -528,6 +528,14 @@ const playoffLine = myRank <= playoffTeams ? `You're in a playoff spot. Top ${pl
   : `Top ${playoffTeams} make the playoffs. ${cutWins - me.w <= 0 ? 'You have as many wins as the last playoff team, so it comes down to points.' : `You're ${cutWins - me.w} win${cutWins - me.w > 1 ? 's' : ''} behind.`}`;
 const myProj = lineupProj(me);
 const oppProj = opp ? lineupProj(opp) : 0;
+// Win chance from the averaged projections. Each starter's score is treated as a bell curve around his
+// projection, spread 65% of it (typical for one week). Once games start, ESPN's live estimate takes over.
+// ponytail: fixed spread per player and no live per-player scores; ESPN's live number covers game time.
+const erf = x => { const t = 1 / (1 + 0.3275911 * Math.abs(x)); return Math.sign(x) * (1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x)); };
+const spread = t => starters(t).reduce((s, p) => s + (0.65 * weekValue(p)) ** 2, 0);
+const isLive = !!opp && (mySide.totalPointsLive > 0 || oppSide.totalPointsLive > 0);
+const winPct = !opp ? 0 : isLive ? Math.round((mySide.winProbability ?? 0) * 100)
+  : Math.round(50 * (1 + erf((myProj - oppProj) / Math.sqrt(2 * (spread(me) + spread(opp) || 1)))));
 const fixedProj = best.total;
 const lineupRows = [...me.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
 const levelName = { urgent: 'Do now', week: 'This week', later: 'Plan ahead' };
@@ -542,7 +550,7 @@ const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): 
 const facts = [
   `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's, Rotowire's and CBS Sports' projections. Facts from ESPN, Sleeper (Rotowire), CBS Sports and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
   `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
-  opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, ESPN win chance ${Math.round((mySide?.winProbability ?? 0) * 100)}%.` : '',
+  opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, win chance ${winPct}%${isLive ? ' (ESPN live estimate)' : ''}.` : '',
   `Starters:\n${starters(me).map(p => `- ${p.slot}: ${line(p)}`).join('\n')}`,
   `Bench:\n${me.roster.filter(p => p.slot === 'Bench').map(p => `- ${line(p)}`).join('\n')}`,
   me.roster.some(p => p.slot === 'IR') ? `IR:\n${me.roster.filter(p => p.slot === 'IR').map(p => `- ${line(p)}`).join('\n')}` : '',
@@ -672,11 +680,11 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:32px}
 <div class="wrap">
 ${opp ? (() => {
   // Once games start, ESPN's live numbers replace the pre-game projection
-  const live = mySide.totalPointsLive > 0 || oppSide.totalPointsLive > 0;
+  const live = isLive;
   const [a, b] = live ? [mySide.totalProjectedPointsLive, oppSide.totalProjectedPointsLive] : [myProj, oppProj];
-  const wp = Math.round((mySide.winProbability ?? 0) * 100);
+  const wp = winPct;
   return `<div class="match"><h3>This week vs ${esc(opp.name)}${live ? '<span class="live">LIVE</span>' : ''}</h3>
-  <div class="wp"><b style="color:${wp >= 50 ? 'var(--good)' : 'var(--bad)'}">${wp}%</b><span>chance you win <span class="tag">(ESPN's estimate)</span></span></div>
+  <div class="wp"><b style="color:${wp >= 50 ? 'var(--good)' : 'var(--bad)'}">${wp}%</b><span>chance you win <span class="tag">(${live ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
   ${live ? `<div class="tag" style="margin-bottom:8px">Score right now: <b>${n(mySide.totalPointsLive)}</b> to <b>${n(oppSide.totalPointsLive)}</b>. Final guess below.</div>` : ''}
   <div class="vs">
   <div class="t">You</div><div class="p">${n(a)}</div><div class="bar"><i style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--brand2)"></i></div>
@@ -817,7 +825,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <b>FLEX</b>: one extra spot that can be an RB, WR or TE.</dd>
 <dt>Expected points</dt><dd>ESPN's guess for how many points a player will score this week. It's a guess, not a promise, but it's the best simple way to decide who to start.</dd>
 <dt>"Up to" number</dt><dd>What he'd score if he has a great game. A big gap between expected and "up to" means he's boom-or-bust.</dd>
-<dt>Win chance</dt><dd>ESPN's estimate of how likely you are to win this week. During games it updates with the live score.</dd>
+<dt>Win chance</dt><dd>How likely you are to win this week, worked out from the same averaged projections (ESPN, Rotowire, CBS) as the scores. Once games start it switches to ESPN's live estimate, which follows the real score.</dd>
 <dt>Points per game</dt><dd>How many points he's actually scored each week on average this season. Better for judging who's good long-term.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
 <dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 50/50, usually plays. <b>Probably won't play</b> (doubtful). <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
