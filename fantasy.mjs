@@ -988,7 +988,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Points per game</dt><dd>How many points he's actually scored each week on average this season.</dd>
 <dt>Per game, rest of season</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
-<dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 50/50, usually plays. <b>Probably won't play</b> (doubtful). <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
+<dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' counts of every injury report, 2017 to 2025.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
@@ -1171,8 +1171,8 @@ for (const [id, p] of shown) {
   const play = inj?.season ? ['no', `No. He's out for the season${hurtType}.`]
     : p.bye === week ? ['no', 'No. His team has no game this week (bye week).']
     : ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(p.status) ? ['no', `No. ${STATUS[p.status][0]}${hurtType}.${back}`]
-    : p.status === 'DOUBTFUL' ? ['no', `Probably not${hurtType}. Plan to bench him.`]
-    : p.status === 'QUESTIONABLE' ? ['maybe', `Maybe, about 50/50${hurtType}. Teams say who's out about 90 minutes before kickoff, so check then.`]
+    : p.status === 'DOUBTFUL' ? ['no', `Probably not${hurtType}. Only about 1 in 15 doubtful players end up playing, so plan to bench him.`]
+    : p.status === 'QUESTIONABLE' ? ['maybe', `Probably${hurtType}: about 7 in 10 questionable players end up playing. Teams say who's out about 90 minutes before kickoff, so check then.`]
     : ['yes', 'Yes, he\'s expected to play.'];
   const t = owner.get(id), mine = t === me;
   const advice = !mine ? null : inj?.season ? ['no', 'Drop him. He won\'t play again this season, so he\'s wasting a roster spot.'] : p.slot === 'IR' ? ['maybe', 'He\'s in your IR spot, so he doesn\'t use a bench spot. Leave him there until he\'s healthy.']
