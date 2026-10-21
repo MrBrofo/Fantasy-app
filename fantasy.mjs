@@ -10,6 +10,7 @@ const cfg = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}
 const ESPN_S2 = process.env.ESPN_S2 || cfg.espn_s2;
 const SWID = process.env.SWID || cfg.SWID;
 const LEAGUE_ID = process.env.LEAGUE_ID || cfg.leagueId;
+const MOVE_URL = '';
 const SEASON = Number(process.env.SEASON || cfg.season || new Date().getFullYear());
 if (!ESPN_S2 || !SWID || !LEAGUE_ID) throw new Error('Missing ESPN_S2, SWID or LEAGUE_ID');
 
@@ -525,21 +526,45 @@ const noProc = DAYS.filter(d => !procDays.has(d));
 const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day except ${noProc.map(cap).join(' and ')}` : `on ${[...procDays].map(cap).join(', ')}`;
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
 const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
+// --- Roster moves the site can send to ESPN (through worker.js). Slot ids are ESPN's lineupSlotId.
+const SLOT_ID = Object.fromEntries(Object.entries(SLOT).map(([id, name]) => [name, +id]));
+// The best lineup as ESPN moves. Starters already in a spot that fits them stay put (so a player
+// whose game has started is never moved); the rest fill the open spots, narrowest first.
+function lineupMove() {
+  const starting = new Set(best.lineup.map(x => x.player.id));
+  const open = Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).flatMap(([id, k]) => Array(k).fill(+id));
+  const to = new Map();
+  for (const p of me.roster) {
+    const i = starting.has(p.id) && SLOT_POS[SLOT_ID[p.slot]]?.includes(p.pos) ? open.indexOf(SLOT_ID[p.slot]) : -1;
+    if (i >= 0) to.set(p.id, open.splice(i, 1)[0]);
+  }
+  open.sort((a, b) => SLOT_POS[a].length - SLOT_POS[b].length);
+  for (const { player: p } of best.lineup) {
+    if (to.has(p.id)) continue;
+    const i = open.findIndex(id => SLOT_POS[id].includes(p.pos));
+    if (i < 0) return null;
+    to.set(p.id, open.splice(i, 1)[0]);
+  }
+  const items = me.roster.filter(p => p.slot !== 'IR').map(p => ({ type: 'LINEUP', playerId: p.id, from: SLOT_ID[p.slot], to: to.get(p.id) ?? SLOT_ID.Bench })).filter(x => x.from !== x.to);
+  return items.length ? { label: 'Set my best lineup on ESPN', type: 'ROSTER', items } : null;
+}
+const bestMove = lineupMove();
+const pickupMove = s => ({ label: s.add.wa ? 'Put in this waiver claim on ESPN' : 'Do this pickup on ESPN', type: s.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: s.add.id }, { type: 'DROP', playerId: s.drop.id }] });
 const todo = [];
 for (const p of starters(me)) {
-  if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`]);
-  else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`]);
+  if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`, bestMove]);
+  else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`, bestMove]);
 }
-for (const [i, p] of benchIn.entries()) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(p.proj)}${sitOut[i] ? `, more than ${sitOut[i].name} (${n(weekValue(sitOut[i]))})` : ''}.`]);
+for (const [i, p] of benchIn.entries()) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(p.proj)}${sitOut[i] ? `, more than ${sitOut[i].name} (${n(weekValue(sitOut[i]))})` : ''}.`, bestMove]);
 for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
-    s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`]);
+    s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`, locked(s.add) || locked(s.drop) ? null : pickupMove(s)]);
 }
 const irUsed = me.roster.filter(p => p.slot === 'IR').length;
 const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 for (const p of me.roster) {
-  if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.']);
-  if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`]);
+  if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.', locked(p) ? null : { label: 'Move him to IR on ESPN', type: 'ROSTER', items: [{ type: 'LINEUP', playerId: p.id, from: SLOT_ID[p.slot], to: SLOT_ID.IR }] }]);
+  if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }]);
   if (p.slot === 'IR' && p.inj?.back && p.inj.back - Date.now() < 8 * 864e5 && !p.inj.season) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, 'When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you\'d drop.']);
 }
 // Bye gaps, counting the players the plan adds (so a planned pickup that covers it hides the warning)
@@ -984,7 +1009,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
 
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
-${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
+${todo.length ? todo.map(([lvl, title, why, move]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p>${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
 <section id="news"><h2>News</h2><p class="sub">Latest updates on your players and pickups, from Rotowire via ESPN. Tap a name for details.</p>
@@ -1264,6 +1289,7 @@ document.addEventListener('click', ev => {
   const el = !ev.target.closest('.sheet-body') && ev.target.closest('[data-pid]');
   if (el) openSheet(el.dataset.pid);
 });
+__MOVEJS__
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') closeSheet();
   if (ev.key === 'Enter' && ev.target.dataset?.pid) openSheet(ev.target.dataset.pid);
@@ -1331,6 +1357,39 @@ for (const p of me.roster) for (const x of blurbs.get(p.id) ?? []) {
   const act = x.tag[1] === 'bad' && isStarter(p) && !locked(p);
   alerts.push([`news:${x.id}`, `${p.name} ${NEWS_SAYS[x.tag[0]]}`, `${x.h}${act ? ' He\'s in your lineup, so check your to-do list.' : ''}`, act]);
 }
+const MOVE_JS = String.raw`// Roster-move buttons: ask first, then send the move to ESPN through the Cloudflare worker
+const WHY = {
+  TRAN_LINEUP_LOCKED: "one of those players' games already started, so ESPN locked him",
+  TRAN_ROSTER_LIMIT_EXCEEDED_ONE: "your roster is full",
+  TRAN_PLAYER_NOT_FREEAGENT: "that player isn't available anymore",
+  TRAN_PLAYER_NOT_AVAILABLE: "that player isn't available anymore",
+  TRAN_PLAYER_NOT_ON_TEAM: "that player isn't on your team anymore",
+  TRAN_INVALID_SCORINGPERIOD_NOT_CURRENT: "the site is a bit behind ESPN. Wait 2 minutes and try again",
+  'Failed to fetch': "the site couldn't reach the move server",
+  'Load failed': "the site couldn't reach the move server",
+};
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest('button.do');
+  if (!b || b.disabled) return;
+  const m = JSON.parse(b.dataset.move);
+  if (!confirm(m.label + '?\n\nThis changes your real ESPN team.')) return;
+  let key = null;
+  try { key = localStorage.getItem('moveKey'); } catch {}
+  if (!key) key = prompt('Move password (the KEY you set in Cloudflare). This phone remembers it.');
+  if (!key) return;
+  b.disabled = true; b.textContent = 'Sending to ESPN...';
+  try {
+    const r = await fetch('__URL__', { method: 'POST', headers: { 'content-type': 'application/json', 'x-key': key }, body: JSON.stringify(m) });
+    const out = await r.json().catch(() => ({}));
+    if (r.status === 401) { try { localStorage.removeItem('moveKey'); } catch {} throw new Error('Wrong password. Tap the button to try again'); }
+    if (!r.ok) throw new Error(out.error || 'ESPN said ' + r.status);
+    try { localStorage.setItem('moveKey', key); } catch {}
+    b.textContent = out.status === 'PENDING' ? 'Claim sent. It goes through when waivers run' : 'Done on ESPN. The site catches up in about 3 minutes';
+  } catch (err) {
+    b.disabled = false; b.textContent = m.label;
+    alert('ESPN did not make the move: ' + (WHY[err.message] || err.message) + '.');
+  }
+});`;
 const pdata = {};
 for (const [id, p] of shown) {
   const c = card.get(id), inj = p.inj ?? (c?.injuryDetails && { type: c.injuryDetails.type, season: c.injuryDetails.outForSeason, back: c.injuryDetails.expectedReturnDate && new Date(c.injuryDetails.expectedReturnDate[0], c.injuryDetails.expectedReturnDate[1] - 1, c.injuryDetails.expectedReturnDate[2]) });
@@ -1373,6 +1432,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
+html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
 
 fs.mkdirSync(path.join(dir, 'site'), { recursive: true });

@@ -10,7 +10,8 @@ const code = cut('function bestLineup(', 'const lineupProj = t => starters(t).re
   + '\n' + cut('const weekScore = ', '.lineup.reduce((t, x) => t + weekValue(x.player), 0);')
   + '\n' + cut('function judge(', '    after: mineAfter,\n  };\n}')
   + '\n' + cut('const weakness = ', '  return out.sort((a, b) => b.gain - a.gain).slice(0, 5);\n}')
-  + '\nreturn { weekValue, locked, best, benchIn, sitOut, judge, bestSwap };';
+  + '\n' + cut('const SLOT_ID = ', 'const bestMove = lineupMove();')
+  + '\nreturn { weekValue, locked, best, benchIn, sitOut, judge, bestSwap, bestMove };';
 
 const HOUR = 3600e3, NOW = Date.UTC(2026, 9, 25, 18); // a Sunday afternoon
 // team 1 played Thursday (locked), team 2 kicks off in an hour, team 3 is on bye
@@ -84,4 +85,17 @@ assert.equal(sim()(), sim()(), 'same week, same numbers');
 const swaps = r.bestSwap(base, r.weekValue);
 assert(swaps.length && swaps.every(x => x.add.id === 31), 'only the free agent who plays later');
 assert(swaps.every(x => !r.locked(x.drop)), 'never drops a player whose game has started');
+// lineup move sent to ESPN: legal slots, gives exactly the best lineup, never moves a locked player
+const applyMove = (roster, move) => roster.map(p => { const x = move?.items.find(i => i.playerId === p.id); return x ? { ...p, slot: consts.SLOT[x.to] } : p; });
+for (const t of [r, early]) {
+  const roster = t === r ? base : base.map(p => ({ ...p, proTeamId: p.proTeamId === 1 ? 2 : p.proTeamId })), after = applyMove(roster, t.bestMove);
+  for (const [id, k] of Object.entries(consts.slotCounts)) if (consts.SLOT_POS[id]) {
+    const inSlot = after.filter(p => p.slot === consts.SLOT[id]);
+    assert(inSlot.length <= k && inSlot.every(p => consts.SLOT_POS[id].includes(p.pos)), 'legal slot ' + consts.SLOT[id]);
+  }
+  assert.deepEqual(ids(after.filter(p => p.slot !== 'Bench' && p.slot !== 'IR')), ids(t.best.lineup.map(x => x.player)), 'move gives the best lineup');
+  assert(!(t.bestMove?.items ?? []).some(x => t.locked(roster.find(p => p.id === x.playerId))), 'never moves a locked player');
+}
+assert.equal(r.bestMove, null, 'nothing to move on Sunday: the low starters are locked');
+assert.equal(early.bestMove.items.length, 4, 'two in, two out');
 console.log('ok');
