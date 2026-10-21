@@ -393,6 +393,7 @@ for (const tr of trades) {
 // offers, and other teams' offers and claims that didn't happen (ESPN's app hides those).
 const moves = [], pendingTx = new Map(), intel = new Map(), othersPending = new Map(), myFailed = [];
 const involvesMe = tx => tx.items.some(i => i.toTeamId === me.id || i.fromTeamId === me.id);
+const waiverRuns = []; // when ESPN processed claims (ms), to show the real waiver time
 for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
   const d = await get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${wk}`);
   for (const tx of d.transactions ?? []) {
@@ -402,6 +403,7 @@ for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
     else if (wk === week && tx.isPending && tx.type.startsWith('TRADE') && !involvesMe(tx) && tx.items.some(i => i.type === 'TRADE')) othersPending.set(tx.id, tx);
     else if (tx.type === 'WAIVER' && tx.status?.startsWith('FAILED') && tx.teamId === me.id) myFailed.push(tx);
     else if (tx.status !== 'EXECUTED' && tx.status !== 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && !involvesMe(tx)) intel.set(tx.id, tx);
+    if (tx.type === 'WAIVER' && tx.processDate && !tx.isPending) waiverRuns.push(tx.processDate);
     if (tx.status !== 'EXECUTED' || !['FREEAGENT', 'WAIVER', 'TRADE_ACCEPT'].includes(tx.type)) continue;
     for (const it of tx.items) if (['ADD', 'DROP', 'TRADE'].includes(it.type)) moves.push({ date: tx.processDate ?? tx.proposedDate, type: it.type, playerId: it.playerId, team: it.type === 'DROP' ? it.fromTeamId : it.toTeamId, from: it.fromTeamId });
   }
@@ -492,7 +494,9 @@ const partners = teams.filter(t => t !== me).map(depth).map(d => ({
 
 // --- Fleece finder: trades that look fair on the number most managers check (points per game so far),
 // but that the rest-of-season projections say clearly favor me. 1-for-1 and 2-for-1 (my two for their one).
+// A trade only makes the list if there's a believable, true pitch for it (see pitches()).
 // ponytail: the other team's extra roster spot on a 2-for-1 isn't counted (they'd drop their worst bench player).
+const f1 = v => (v ?? 0).toFixed(1); // (n() is defined further down)
 const avgValue = p => (playable(p) ? p.avg ?? 0 : 0);
 const fleece = [];
 for (const d of partners) {
@@ -503,27 +507,54 @@ for (const d of partners) {
     if (j.mine < 2 || j.theirs > -1) continue;
     // what they'd see: their best lineup scored with season-so-far averages
     const looks = score([...d.t.roster.filter(p => p !== take), ...give], avgValue) - score(d.t.roster, avgValue);
-    if (looks >= 0) fleece.push({ d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks });
+    if (looks < 0) continue;
+    const theirWeek = weekScore([...d.t.roster.filter(p => p !== take || (locked(p) && isStarter(p))), ...give.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(d.t.roster);
+    fleece.push({ d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks, theirWeek });
   }
 }
 fleece.sort((a, b) => b.mine - b.theirs - (a.mine - a.theirs));
 const topFleece = [];
-for (const f of fleece) if (topFleece.length < 5 && !topFleece.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)))) topFleece.push(f);
-// A text to send: casual, every fact true (season averages, ranks, injury tags, bye weeks, their thin spots),
-// only the framing is salesy.
-function pitch(f) {
-  const { give, take } = f, g = give[0], posName = p => POS_NAME[p.pos].toLowerCase();
-  const facts = [];
-  const thin = [...new Set(give.map(p => p.pos))].filter(pos => f.d.short.includes(pos));
-  if (thin.length) facts.push(`you're thin at ${thin.map(p => POS_NAME[p].toLowerCase()).join(' and ')} right now`);
-  if (give.length > 1) facts.push(`you'd get two guys who can start for one: ${give.map(p => `${p.name} (${n(p.avg)} a game)`).join(' and ')}`);
-  else if ((g.avg ?? 0) > (take.avg ?? 0)) facts.push(`${g.name} is averaging ${n(g.avg)} a game this year, ${take.name} is at ${n(take.avg)}`);
-  if (g.rank && g.pos === take.pos && (!take.rank || g.rank < take.rank)) facts.push(`${g.name} is the ${ordinal(g.rank)}-best ${posName(g)} this season`);
-  if (['QUESTIONABLE', 'DOUBTFUL'].includes(take.status)) facts.push(`${take.name} is banged up right now`);
-  if (take.bye > week && take.bye <= week + 2) facts.push(`${take.name} has his bye in week ${take.bye}`);
-  const hedge = ['Honestly this one is kinda risky for me', 'Not gonna lie I\'m giving up a lot here', 'Lowkey this might come back to bite me'][take.id % 3];
-  return `yo would you do ${take.name} for ${give.map(p => p.name).join(' and ')}? ${hedge}, but ${facts.length ? facts.map((x, i) => (i ? x[0].toUpperCase() + x.slice(1) : x)).join('. ') : 'I think it helps both of us'}. lmk`;
+for (const f of fleece) {
+  if (topFleece.length >= 5 || topFleece.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)))) continue;
+  const texts = pitches(f);
+  if (texts) topFleece.push({ ...f, texts });
 }
+// Texts to send. Every fact is checked against the real numbers before it's used: season averages, who
+// they start now, this week's projection, injury tags, bye weeks, and which spots each team is short or
+// deep at. Only the framing is salesy. Returns null when there's no honest, believable pitch, so an
+// obviously lopsided trade (worse player by every number they can see) never makes the list.
+function pitches(f) {
+  const { give, take, d } = f, g = give[0], two = give.length > 1;
+  const last = p => (p.pos === 'D/ST' ? p.name : p.name.replace(/ (Jr\.|Sr\.|II|III|IV|V)$/, '').split(' ').slice(-1)[0]);
+  const posName = pos => POS_NAME[pos].toLowerCase(), both = give.map(last).join(' and '), sum = give.reduce((s, p) => s + (p.avg ?? 0), 0);
+  const startable = p => (p.avg ?? 0) >= 0.8 * (typical[p.pos] ?? 0);
+  const facts = []; // [how convincing, text]
+  const weak = (lineups.get(d.t) ?? []).map(x => x.player).filter(p => p.pos === g.pos && p !== take).sort((a, b) => (a.avg ?? 0) - (b.avg ?? 0))[0];
+  if (weak && (g.avg ?? 0) >= (weak.avg ?? 0) + 2) facts.push([3, `you're starting ${weak.name} at ${posName(g.pos)} right now and ${last(g)} is putting up ${f1(g.avg)} a game`]);
+  if (two && give.every(startable)) facts.push([3, sum > (take.avg ?? 0) ? `that's two guys you can actually start, ${f1(sum)} points a game combined` : `that's two guys you can actually start for one`]);
+  if (!two && (g.avg ?? 0) > (take.avg ?? 0)) facts.push([3, `${last(g)} has outscored ${last(take)} so far this year (${f1(g.avg)} vs ${f1(take.avg)} a game)`]);
+  if (f.theirWeek >= 2) facts.push([2, `it'd get you about ${Math.round(f.theirWeek)} more points this week too`]);
+  const hurt = ['QUESTIONABLE', 'DOUBTFUL', 'OUT', 'INJURY_RESERVE'].includes(take.status);
+  if (take.bye > week && take.bye <= week + 2) facts.push([1, `${last(take)} has his bye in week ${take.bye}`]);
+  const reason = myDepth.short.includes(take.pos) ? `i'm thin at ${posName(take.pos)} and need one` : myDepth.extra.some(([pos]) => give.some(p => p.pos === pos)) ? `i've got more ${posName(g.pos)}s than i can start` : '';
+  const strength = facts.reduce((s, [k]) => s + k, 0) + (hurt ? 2 : 0) + (reason ? 1 : 0);
+  if (strength < 4) return null;
+  const top = facts.sort((a, b) => b[0] - a[0]).slice(0, 2).map(([, t]) => t);
+  const close = ['', ' lmk', ' lmk what you think', ' open to tweaking it'][take.id % 4];
+  const out = [
+    `would you do ${both} for ${last(take)}? ${top.join('. ')}.${close}`,
+    reason ? `${reason}, would you do ${both} for ${last(take)}? ${top.join('. ')}` : `you open to ${both} for ${last(take)}? ${top[0]}${top[1] ? `, plus ${top[1]}` : ''}`,
+    hurt ? `ngl this is kinda risky for me since ${last(take)} is banged up, but i'd do ${both} for him. ${top[0]}` : `thoughts on ${both} for ${last(take)}? ${top[0]}.${close}`,
+  ];
+  return [...new Set(out)];
+}
+// what Claude needs to write its own version: the trade and only true facts
+const claudePrompt = f => `Write a short, casual text (1-3 sentences, lowercase, like a real person texting a friend) to my fantasy football league mate proposing this trade. I give: ${f.give.map(p => `${p.name} (${p.pos})`).join(' and ')}. I get: ${f.take.name} (${f.take.pos}). Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: ${[
+  ...f.give.map(p => `${p.name} averages ${f1(p.avg)} points a game this season${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`),
+  `${f.take.name} averages ${f1(f.take.avg)} a game${f.take.status && STATUS[f.take.status] ? ` and is listed as "${STATUS[f.take.status][0].toLowerCase()}"` : ''}${f.take.bye > week ? `, bye in week ${f.take.bye}` : ''}`,
+  f.d.short.length ? `their team is short at ${f.d.short.map(p => POS_NAME[p].toLowerCase()).join(', ')}` : '',
+  f.theirWeek >= 1 ? `it would add about ${Math.round(f.theirWeek)} projected points to their lineup this week` : '',
+].filter(Boolean).join('; ')}. Give me 3 different versions.`;
 
 // --- Luck check: "all-play" record = your record if you'd played every team every week
 const weekly = {}; // week -> { teamId: points }
@@ -563,6 +594,18 @@ const procDays = new Set(league.settings.acquisitionSettings?.waiverProcessDays 
 const waiverDay = [2, 3, 4, 5, 6, 0, 1].map(i => DAYS[i]).find(d => procDays.has(d)) ?? 'WEDNESDAY';
 const waiverEve = cap(DAYS[(DAYS.indexOf(waiverDay) + 6) % 7]).slice(0, 3); // 'Tue', like etDay
 const noProc = DAYS.filter(d => !procDays.has(d));
+// Typical time claims go through (median of recent runs), and the next run, in Pacific time
+const ptParts = d => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(d).map(x => [x.type, x.value]));
+const runMin = waiverRuns.length ? waiverRuns.map(t => { const p = ptParts(new Date(t)); return +p.hour * 60 + +p.minute; }).sort((a, b) => a - b)[Math.floor(waiverRuns.length / 2)] : null;
+const clock = m => { const h = Math.floor(m / 60), mm = Math.round((m % 60) / 15) * 15; return `${(h % 12) || 12}${mm % 60 ? ':' + String(mm % 60).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`; };
+const nextRun = runMin == null ? '' : (() => {
+  const now = ptParts(new Date()), nowMin = +now.hour * 60 + +now.minute;
+  for (let i = 0; i < 8; i++) {
+    const day = ptParts(new Date(Date.now() + i * 864e5)).weekday.toUpperCase();
+    if (procDays.has(day) && (i > 0 || nowMin < runMin)) return `${i === 0 ? 'tonight/today' : i === 1 ? 'tomorrow' : cap(day)} (${cap(day).slice(0, 3)}) at about ${clock(runMin)} Pacific${runMin < 240 ? `, which is late ${cap(DAYS[(DAYS.indexOf(day) + 6) % 7])} night` : ''}`;
+  }
+  return '';
+})();
 const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day except ${noProc.map(cap).join(' and ')}` : `on ${[...procDays].map(cap).join(', ')}`;
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
 const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
@@ -1024,6 +1067,8 @@ table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}ta
 @media (prefers-color-scheme:dark){.chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}}
 .pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
 .pick .pic{width:34px;height:34px}
+#fab{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom) + 84px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
+#fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 </style></head><body>
 
@@ -1054,6 +1099,7 @@ ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pe
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
+<a id="fab" href="https://fantasy.espn.com/football/team?leagueId=${LEAGUE_ID}&amp;teamId=${me.id}&amp;seasonId=${SEASON}" aria-label="Open the ESPN Fantasy app"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1c/b2/68/1cb2683b-9dce-d70c-8905-2562c0482eda/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/120x120bb.jpg" alt=""></a>
 <nav><a href="#home">Home</a><a href="#team">Team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#trades">Trades</a><a href="#compare">Compare</a><a href="#season">Season</a><a href="#league">League</a><a href="#news">News</a><a href="#help">How it works</a></nav>
 
 <section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
@@ -1086,7 +1132,7 @@ ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.sl
 <section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. In ESPN: Players &rarr; find him &rarr; Add.</p>
 <div class="card"><div class="vhead"><span class="group" style="margin:0">Waiver order</span><span class="verdict-meh">You pick ${ordinal(me.waiver)} of ${teams.length}</span></div>
 <details class="all" style="margin:-4px 0 4px"><summary>See the full order</summary><div class="worder">${[...teams].sort((a, b) => a.waiver - b.waiver).map(t => `<span class="${t === me ? 'me' : t.waiver < me.waiver ? 'ahead' : ''}">${t.waiver}. ${esc(t.name)}</span>`).join('')}</div></details>
-<p class="tag" style="margin-bottom:0">When two teams claim the same player, the one higher on this list gets him. ${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'} Free agents (not on waivers) go to whoever adds them first.</p></div>
+${nextRun ? `<p class="why" style="margin:0 0 6px"><b>Next waiver run: ${nextRun}.</b></p>` : ''}<p class="tag" style="margin-bottom:0">When two teams claim the same player, the one higher on this list gets him. ${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'} Free agents (not on waivers) go to whoever adds them first.</p></div>
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
   <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'helps this week' : 'helps rest of season'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'this week' : 'per game, rest of season', null, s.add, wk ? 'week' : 'season')}</div>
@@ -1105,10 +1151,11 @@ ${trending.length ? `<div class="group">Trending: being picked up fast in other 
 <section id="pending"><h2>Your pending moves</h2><p class="sub">Waiver claims and trade offers that haven't gone through yet, checked with the same math as everything else.</p>
 ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
-    const v = m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : ['meh', 'Barely matters'];
+    const backup = m.add.length === 1 && m.drop.length === 1 && rate(m.add[0]) - rate(m.drop[0]) >= 2;
+    const v = m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : ['meh', 'Barely matters'];
     return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
     <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
-    <p class="why"><b>${Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}</b></p>
+    <p class="why"><b>${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? `Neither of them makes your starting lineup right now, so your score doesn't change. But ${esc(m.add[0].name)} is a much better backup (${n(rate(m.add[0]))} vs ${n(rate(m.drop[0]))} a game) for bye weeks and injuries.` : ''}${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? '' : Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}</b>${nextRun ? ` It goes through ${nextRun}.` : ''}</p>
     ${m.better ? `<p class="why" style="color:var(--warn)"><b>Better option:</b> ${lnk(m.better.c)} (${m.better.c.wa ? 'on waivers' : 'free agent, no waiting'}) would add about ${n(m.better.season)} a week instead of ${n(m.season)}, dropping the same player. To switch: cancel this claim, then tap him and use Add him.</p>` : ''}
     ${MOVE_URL ? `<button type="button" class="btn do" style="background:var(--chip);color:var(--fg)" data-move="${esc(JSON.stringify({ label: 'Cancel this claim on ESPN', type: 'WAIVER', cancel: true, related: m.id, items: [], week: league.scoringPeriodId }))}">Cancel this claim on ESPN</button>` : ''}</div>`;
   }
@@ -1131,12 +1178,15 @@ ${pending.length ? pending.map(m => {
 <div class="tc-cols"><div><div class="group">You give</div><div id="tc-give"></div></div><div><div class="group">You get</div><div id="tc-get"></div></div></div>
 <div id="tc-out"></div></div></section>
 
-<section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Every fact in the texts is true; only the wording is salesy.</p>
+<section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Only trades with a believable, true pitch show up.</p>
 ${topFleece.length ? topFleece.map(f => `<div class="card"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="why">Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, they lose about ${n(-f.theirs)} a week.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
-  <div class="group">Text to send</div><p class="pitch">${esc(pitch(f))}</p><button type="button" class="btn" data-copy="${esc(pitch(f))}">Copy text</button></div>`).join('') : '<div class="card empty">No lopsided trades that look fair right now.</div>'}
+  <div class="group">Text to send</div><p class="pitch">${esc(f.texts[0])}</p>
+  <div class="tools2"><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-copy="${esc(f.texts[0])}">Copy text</button>${f.texts.length > 1 ? `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-versions="${esc(JSON.stringify(f.texts))}">Another version</button>` : ''}</div>
+  <button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it (copies the facts, opens Claude)</button>
+  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Propose ${f.give.map(p => p.name).join(' + ')} for ${f.take.name} on ESPN`, type: 'TRADE_PROPOSAL', other: f.d.t.id, sms: f.d.t.name, items: [...f.give.map(p => ({ type: 'GIVE', playerId: p.id })), { type: 'GET', playerId: f.take.id }], week: league.scoringPeriodId }))}">Propose on ESPN, then text them</button>` : ''}</div>`).join('') : '<div class="card empty">No lopsided trades with a believable pitch right now.</div>'}
 </section>
 
 <section id="partners"><h2>Trade partners</h2><p class="sub">Who's short at a position and who has extra. The best trades are with teams that have extra of what you're short on, and are short on what you have extra of.</p>
@@ -1226,7 +1276,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Per game, rest of season</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
 <dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. The % on each player uses his practices this week from the official NFL injury report: 86% play after a full practice, 71% after a limited one, 29% after none. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' count of QB, RB, WR and TE injury reports, 2017 to 2024.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
-<dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
+<dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}${runMin != null ? `, at about ${clock(runMin)} Pacific` : ''}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
@@ -1495,7 +1545,8 @@ function addHim(p) {
       '<div><b>' + f1(wk) + '</b><small>points for you this week</small></div>' +
       '<div><b>' + f1(theirsGain) + '</b><small>points per week for them</small></div>' +
       '<div><b>' + (accept ? 'Likely' : 'Unlikely') + '</b><small>they say yes (fair on value)</small></div></div>' + roomNote +
-      '<p class="tag" style="margin:8px 0 0">Points per week = how much better your best lineup gets, using the averaged rest-of-season projections. Offer it in ESPN under Trade.</p>';
+      '<p class="tag" style="margin:8px 0 0">Points per week = how much better your best lineup gets, using the averaged rest-of-season projections.</p>' +
+      (R.moves ? '<button type="button" class="btn do" data-move="' + e(JSON.stringify({ label: 'Propose ' + give.map(p => p.name).join(' + ') + ' for ' + take.map(p => p.name).join(' + ') + ' on ESPN', type: 'TRADE_PROPOSAL', other: them, items: [...give.map(p => ({ type: 'GIVE', playerId: p.id })), ...take.map(p => ({ type: 'GET', playerId: p.id }))], week: R.week })) + '">Propose this trade on ESPN</button>' : '');
   }
   tcTeam.addEventListener('change', tcLists);
   $('check').addEventListener('change', ev => { if (ev.target.matches('input[type=checkbox]')) tcCheck(); });
@@ -1585,6 +1636,40 @@ document.addEventListener('click', ev => {
   if (!c) return;
   navigator.clipboard.writeText(c.dataset.copy).then(() => { c.textContent = 'Copied'; setTimeout(() => { c.textContent = 'Copy text'; }, 2000); }, () => { c.textContent = 'Copy failed'; });
 });
+
+// Fleece texts: "Another version" swaps the text; "Have Claude write it" copies the facts and opens Claude
+document.addEventListener('click', ev => {
+  const v = ev.target.closest('[data-versions]');
+  if (v) {
+    const list = JSON.parse(v.dataset.versions), card = v.closest('.card'), p = card.querySelector('.pitch');
+    const next = list[(list.indexOf(p.textContent) + 1) % list.length];
+    p.textContent = next; card.querySelector('[data-copy]').dataset.copy = next;
+  }
+  const w = ev.target.closest('[data-claude]');
+  if (w) navigator.clipboard.writeText(w.dataset.claude).then(() => { w.textContent = 'Copied. Paste it into Claude'; }, () => {}).finally(() => window.open('https://claude.ai/new', '_blank', 'noopener'));
+});
+// Floating ESPN button: drag to move (remembered on this phone), tap to open the app
+(() => {
+  const fab = document.getElementById('fab');
+  if (!fab) return;
+  try { const p = JSON.parse(localStorage.getItem('fabPos') || 'null'); if (p) { fab.style.left = p.x + 'px'; fab.style.top = p.y + 'px'; fab.style.right = 'auto'; fab.style.bottom = 'auto'; } } catch {}
+  let start = null, moved = false;
+  fab.addEventListener('pointerdown', ev => { start = { x: ev.clientX, y: ev.clientY, l: fab.offsetLeft, t: fab.offsetTop }; moved = false; fab.setPointerCapture(ev.pointerId); });
+  fab.addEventListener('pointermove', ev => {
+    if (!start) return;
+    const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+    if (!moved && Math.hypot(dx, dy) < 6) return;
+    moved = true; fab.classList.add('drag');
+    const x = Math.min(innerWidth - fab.offsetWidth - 4, Math.max(4, start.l + dx)), y = Math.min(innerHeight - fab.offsetHeight - 4, Math.max(4, start.t + dy));
+    fab.style.left = x + 'px'; fab.style.top = y + 'px'; fab.style.right = 'auto'; fab.style.bottom = 'auto';
+  });
+  fab.addEventListener('pointerup', () => {
+    fab.classList.remove('drag');
+    if (moved) try { localStorage.setItem('fabPos', JSON.stringify({ x: fab.offsetLeft, y: fab.offsetTop })); } catch {}
+    start = null;
+  });
+  fab.addEventListener('click', ev => { if (moved) { ev.preventDefault(); moved = false; } });
+})();
 `;
 const MOVE_JS = String.raw`// Roster-move buttons: ask first, then send the move to ESPN through the Cloudflare worker
 const WHY = {
@@ -1614,7 +1699,14 @@ document.addEventListener('click', async ev => {
     if (r.status === 401) { try { localStorage.removeItem('moveKey'); } catch {} throw new Error('Wrong password. Tap the button to try again'); }
     if (!r.ok) throw new Error(out.error || 'ESPN said ' + r.status);
     try { localStorage.setItem('moveKey', key); } catch {}
-    b.textContent = out.status === 'PENDING' ? 'Claim sent. It goes through when waivers run' : 'Done on ESPN. The site catches up in about 3 minutes';
+    b.textContent = m.type === 'TRADE_PROPOSAL' ? 'Trade offer sent on ESPN' : out.status === 'PENDING' ? 'Claim sent. It goes through when waivers run' : 'Done on ESPN. The site catches up in about 3 minutes';
+    const pitch = m.sms && b.closest('.card') && b.closest('.card').querySelector('.pitch');
+    if (pitch && confirm('Offer sent. Open Messages with the text to ' + m.sms + '? You still press send.')) {
+      let num = '';
+      try { num = localStorage.getItem('phone:' + m.other) || ''; } catch {}
+      if (!num) { num = (prompt('Phone number for ' + m.sms + '? Saved on this phone only. Leave blank to pick them in Messages.') || '').replace(/[^0-9+]/g, ''); try { if (num) localStorage.setItem('phone:' + m.other, num); } catch {} }
+      location.href = 'sms:' + num + '&body=' + encodeURIComponent(pitch.textContent);
+    }
   } catch (err) {
     b.disabled = false; b.textContent = m.label;
     alert('ESPN did not make the move: ' + (WHY[err.message] || err.message) + '.');
