@@ -30,6 +30,13 @@ jobs:
 
       - run: npm ci
 
+      # What alerts were already sent, carried from the last run (newest cache whose key starts with "alerts-")
+      - uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: alerts-${{ github.run_id }}
+          restore-keys: alerts-
+
       - name: Build report
         run: node fantasy.mjs
         env:
@@ -39,6 +46,12 @@ jobs:
           PUSH_SUB: ${{ secrets.PUSH_SUB }} # phone alerts: code from the app's "Turn on alerts"
           VAPID_PRIVATE: ${{ secrets.VAPID_PRIVATE }}
           SEASON: "2026"
+
+      # Saved right after the build (before deploy), so a failed deploy never forgets alerts already sent
+      - uses: actions/cache/save@v4
+        with:
+          path: state
+          key: alerts-${{ github.run_id }}-${{ github.run_attempt }}
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

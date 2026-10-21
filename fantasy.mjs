@@ -418,8 +418,10 @@ for (let wk = week + 1; wk <= lastWeek; wk++) {
   }
 }
 
-// --- Phone alerts. Each alert has a key; keys already sent are remembered in alerts.json on the published
-// site, so the every-minute runs don't repeat them. Urgent alerts also go out during quiet hours (11pm-8am ET).
+// --- Phone alerts. Each alert has a key; keys already sent are remembered in state/alerts.json, which the
+// workflow carries from run to run (Actions cache), so the every-minute runs don't repeat them. The published
+// site's copy is only a fallback: GitHub's CDN can serve it up to 10 minutes stale, which once re-sent everything.
+// Urgent alerts also go out during quiet hours (11pm-8am ET).
 const VAPID_PUBLIC = 'BARgoktdqvKVCNGSMWSNgihh0VeG29ic9R9phwQIM2C0cb5tzZj6CQfoeigkrXC0-7rQ9BXE6IHjN_ua-akcKEw';
 const etNow = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(new Date());
 const etHour = Number(etNow.find(x => x.type === 'hour').value), etDay = etNow.find(x => x.type === 'weekday').value;
@@ -428,7 +430,9 @@ const notStarted = p => kickoff(p) > Date.now();
 const soon = (p, hours) => notStarted(p) && kickoff(p) - Date.now() < hours * 3600e3;
 // memo.sent = key -> when sent; memo.q = my players who were questionable last run; memo.downSince = source -> since when
 let memo = { sent: {}, q: {}, downSince: {} }, memoOk = false;
-try {
+const memoFile = path.join(dir, 'state', 'alerts.json');
+if (fs.existsSync(memoFile)) { memo = { ...memo, ...JSON.parse(fs.readFileSync(memoFile, 'utf8')) }; memoOk = true; }
+else try {
   const r = await fetch(`https://mrbrofo.github.io/Fantasy-app/alerts.json?t=${Date.now()}`);
   if (r.status === 404) memoOk = true; // first run ever
   else if (r.ok) { memo = { ...memo, ...await r.json() }; memoOk = true; }
@@ -1044,6 +1048,8 @@ if (process.env.PUSH_SUB && process.env.VAPID_PRIVATE) {
 }
 for (const [k, t] of Object.entries(memo.sent)) if (Date.now() - t > 21 * 864e5) delete memo.sent[k]; // forget after 3 weeks
 fs.writeFileSync(path.join(dir, 'site', 'alerts.json'), JSON.stringify(memo));
+fs.mkdirSync(path.dirname(memoFile), { recursive: true });
+fs.writeFileSync(memoFile, JSON.stringify(memo));
 fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
   name: me.name, short_name: 'Fantasy', start_url: '.', display: 'standalone', background_color: '#0b1530', theme_color: '#0b1530',
   icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
