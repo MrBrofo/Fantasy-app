@@ -456,17 +456,8 @@ const pending = [...pendingTx.values()].map(tx => {
 
 // Start from the roster as it will be once my pending waiver claims go through, so the plan doesn't
 // suggest a second pickup for the same hole, or a player I've already claimed.
-const claims = pending.filter(m => m.kind === 'waiver');
-const baseRoster = [...me.roster.filter(p => !claims.some(m => m.drop.some(d => d.id === p.id))), ...claims.flatMap(m => m.add.map(a => ({ ...a, slot: 'Bench' })))];
-const rosterSpots = Object.entries(slotCounts).filter(([id]) => +id !== 21).reduce((t, [, k]) => t + k, 0);
-// A backup's worth = the points he'd add over the rest of the season, week by week with everyone's bye
-// weeks taken out (a second kicker only helps on your kicker's bye; a defense helps when yours is off).
-// Small extra for RB/WR/TE: they get hurt most, so a backup there covers injuries too.
-// only the next 2 weeks: a bye further out can be covered by grabbing someone that week
-const restWeeks = Array.from({ length: Math.max(0, Math.min(2, lastWeek - week)) }, (_, i) => week + 1 + i);
 // next week counts with next week's own projection (who's playing whom), later weeks with rest-of-season
 const nextValue = p => (playable(p) ? nextProj.get(p.id) ?? rate(p) : 0);
-const byeScore = roster => restWeeks.reduce((t, w) => t + score(roster.filter(p => p.bye !== w), w === week + 1 && nextProj.size ? nextValue : seasonValue), 0);
 // Teams ahead of me on waivers that are short at a position next week (too few healthy players without a bye)
 const shortNextWeek = pos => teams.filter(t => t !== me && t.waiver < me.waiver && t.roster.filter(p => p.pos === pos && p.slot !== 'IR' && playable(p) && p.bye !== week + 1).length < (slotCounts[FA_SLOT[pos]] || 1));
 // A waiver player is likely gone if as many rivals need his position as there are waiver players there they'd take first
@@ -476,6 +467,24 @@ const lostOnWaivers = (c, taken) => {
   const k = shortNextWeek(c.pos).length;
   return k > 0 && allFa.filter(o => o.wa && o.pos === c.pos && o.id !== c.id && !taken.has(o.id) && nextValue(o) > nextValue(c)).length < k;
 };
+const claims = pending.filter(m => m.kind === 'waiver');
+for (const m of claims) {
+  const a = m.add.length === 1 ? allFa.find(c => c.id === m.add[0].id) ?? m.add[0] : null;
+  if (!a) continue;
+  m.likelyLost = lostOnWaivers(a, new Set()) ? shortNextWeek(a.pos) : null;
+  m.byeFor = me.roster.filter(p => p.pos === a.pos && p.slot !== 'IR' && p.bye === week + 1 && !m.drop.includes(p));
+  m.nextPts = nextProj.get(a.id) ?? null;
+}
+// a claim I'll likely lose doesn't count: the plan should still fill that hole
+const sureClaims = claims.filter(m => !m.likelyLost);
+const baseRoster = [...me.roster.filter(p => !sureClaims.some(m => m.drop.some(d => d.id === p.id))), ...sureClaims.flatMap(m => m.add.map(a => ({ ...a, slot: 'Bench' })))];
+const rosterSpots = Object.entries(slotCounts).filter(([id]) => +id !== 21).reduce((t, [, k]) => t + k, 0);
+// A backup's worth = the points he'd add over the rest of the season, week by week with everyone's bye
+// weeks taken out (a second kicker only helps on your kicker's bye; a defense helps when yours is off).
+// Small extra for RB/WR/TE: they get hurt most, so a backup there covers injuries too.
+// only the next 2 weeks: a bye further out can be covered by grabbing someone that week
+const restWeeks = Array.from({ length: Math.max(0, Math.min(2, lastWeek - week)) }, (_, i) => week + 1 + i);
+const byeScore = roster => restWeeks.reduce((t, w) => t + score(roster.filter(p => p.bye !== w), w === week + 1 && nextProj.size ? nextValue : seasonValue), 0);
 const fills = [];
 while (rosterSpots - baseRoster.filter(p => p.slot !== 'IR').length > 0 && fills.length < 5) {
   const taken = new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]);
@@ -814,6 +823,8 @@ if (etDay === waiverEve && etHour >= 18 && wplan) {
 // Someone available beats a player you have, or fills an empty spot: tell me once per player per week, as soon as it shows up
 for (const s of plan) alerts.push([`pickup:${week}:${s.add.id}`, `${s.add.name} is better than ${s.drop.name}`,
   `${s.kind === 'week' ? `About ${n(s.gain)} more points this week` : `About ${n(s.gain)} more points per week`}. ${s.add.wa ? 'On waivers, so put in a claim' : 'Free agent, so you can add him now'}.`, s.kind === 'week']);
+for (const m of claims) if (m.likelyLost) alerts.push([`claimrisk:${week}:${m.id}`, `You'll likely lose your ${m.add[0].name} claim`,
+  `${m.likelyLost.map(t => t.name).join(', ')} pick${m.likelyLost.length > 1 ? '' : 's'} before you and also need${m.likelyLost.length > 1 ? '' : 's'} a ${POS_NAME[m.add[0].pos].toLowerCase()} in week ${week + 1}. Open the app for a free agent you can add now.`, false]);
 for (const f of fills) alerts.push([`fill:${week}:${f.add.id}`, `Add ${f.add.name} (empty roster spot)`,
   `${f.byeFor.length && nextProj.has(f.add.id) ? `Fills in for ${f.byeFor.map(p => p.name).join(' and ')} (bye in week ${week + 1}), expected ${n(nextProj.get(f.add.id))}. ` : ''}${f.add.wa ? 'On waivers, so put in a claim.' : 'Free agent, so you can add now.'}`, false]);
 // A source that's been down for 6+ hours (one alert per outage)
@@ -1225,10 +1236,13 @@ ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><d
 ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
     const backup = m.add.length === 1 && m.drop.length === 1 && rate(m.add[0]) - rate(m.drop[0]) >= 2;
-    const v = m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : ['meh', 'Barely matters'];
+    const covers = m.byeFor?.length && m.nextPts > 0;
+    const v = m.likelyLost ? ['bad', 'You\'ll likely lose this claim'] : covers ? ['good', `Covers your week ${week + 1} bye`] : m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : ['meh', 'Barely matters'];
     return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
     <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
     <p class="why"><b>${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? `Neither of them makes your starting lineup right now, so your score doesn't change. But ${esc(m.add[0].name)} is a much better backup (${n(rate(m.add[0]))} vs ${n(rate(m.drop[0]))} a game) for bye weeks and injuries.` : ''}${backup && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? '' : Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}</b>${nextRun ? ` It goes through ${nextRun}.` : ''}</p>
+    ${covers ? `<p class="why">${esc(m.byeFor.map(p => p.name).join(' and '))} ${m.byeFor.length > 1 ? 'are' : 'is'} on bye in week ${week + 1}; ${esc(m.add[0].name)} is expected ${n(m.nextPts)} that week (ESPN's projection).</p>` : ''}
+    ${m.likelyLost ? `<p class="why" style="color:var(--bad)"><b>${esc(m.likelyLost.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', '))} ${m.likelyLost.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${m.likelyLost.length > 1 ? 'need' : 'needs'} a ${POS_NAME[m.add[0].pos].toLowerCase()} in week ${week + 1}, so they'll likely take him first.</b> Your to-do list has a free agent you can add right now instead; if you add him, cancel this claim.</p>` : ''}
     ${m.better ? `<p class="why" style="color:var(--warn)"><b>Better option:</b> ${lnk(m.better.c)} (${m.better.c.wa ? 'on waivers' : 'free agent, no waiting'}) would add about ${n(m.better.season)} a week instead of ${n(m.season)}, dropping the same player. To switch: cancel this claim, then tap him and use Add him.</p>` : ''}
     ${MOVE_URL ? `<button type="button" class="btn do" style="background:var(--chip);color:var(--fg)" data-move="${esc(JSON.stringify({ label: 'Cancel this claim on ESPN', type: 'WAIVER', cancel: true, related: m.id, items: [], week: league.scoringPeriodId }))}">Cancel this claim on ESPN</button>` : ''}</div>`;
   }
