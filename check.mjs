@@ -171,6 +171,25 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert.equal(adviceCheck(ctx({ claims: [{ add: [mcl] }], lost: p => p === mcl })).length, 1, 'catches an unflagged claim a team ahead will win');
   assert.equal(adviceCheck(ctx({ fills: [{ add: cmdrs, byeFor: [texans] }], allFa: [lions, cmdrs] })).length, 0, 'good advice: no warnings');
 }
+// bench check: keep a bye cover and a real backup, free up a spare and say what to do with his spot
+{
+  const slotCounts = { 0: 1, 2: 2, 4: 2, 6: 1 }, SLOT = { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE' }, SLOT_POS = { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'] };
+  const bestLineup = new Function('slotCounts', 'SLOT', 'SLOT_POS', cut('function bestLineup(', '  return { lineup, total: lineup.reduce((s, x) => s + value(x.player), 0) };\n}') + '\nreturn bestLineup;')(slotCounts, SLOT, SLOT_POS);
+  const pp = (name, pos, r, slot = 'Bench', bye = 0) => ({ id: name, name, pos, r, slot, bye });
+  const starters = [pp('qb', 'QB', 20, 'QB'), pp('rb1', 'RB', 15, 'RB'), pp('rb2', 'RB', 14, 'RB'), pp('wr1', 'WR', 15, 'WR', 9), pp('wr2', 'WR', 14, 'WR'), pp('te', 'TE', 6, 'TE')];
+  const backup = pp('rb3', 'RB', 8), spare = pp('rb4', 'RB', 5), cover = pp('wr3', 'WR', 7), freeTe = pp('fte', 'TE', 9, 'FA'), freeRb = pp('frb', 'RB', 4, 'FA');
+  const baseRoster = [...starters, backup, spare, cover];
+  const g = { week: 8, lastWeek: 14, rosSaved: { future: { by: {} } }, bestLineup, score: (r, v) => bestLineup(r, v).total, seasonValue: p => p.r, weekValue: p => (p.slot === 'Bench' ? 0 : p.r),
+    rate: p => p.r, locked: () => false, faBest: [freeTe, freeRb], benchTaken: new Set(), plan: [], benchUps: [], baseRoster, seasonStarterIds: new Set(starters.map(p => p.id)),
+    POS_NAME: { QB: 'Quarterback', RB: 'Running back', WR: 'Wide receiver', TE: 'Tight end' }, f1: v => v.toFixed(1), FA_SLOT: { QB: 0, RB: 2, WR: 4, TE: 6 },
+    trades: [{ give: spare, take: pp('x', 'WR', 16), team: { name: 'T' }, mine: 2, strict: true }], fleece: [] };
+  const bc = new Function(...Object.keys(g), cut('const benchHorizon = [];', '  return { p, swap, trade, steal, planned: plan.some(s => s.drop === p) || benchUps.some(x => x.drop === p) };\n});') + '\nreturn benchCheck;')(...Object.values(g));
+  const by = Object.fromEntries(bc.map(b => [b.p.id, b]));
+  assert(/week 9, covering wr1's bye/.test(by.wr3.keep), 'bye cover kept: ' + by.wr3.keep);
+  assert(/top backup/.test(by.rb3.keep), 'real backup kept: ' + by.rb3.keep);
+  assert(!by.rb4.keep && by.rb4.swap?.add === freeTe && Math.round(by.rb4.swap.gain) === 12 && by.rb4.trade?.take.id === 'x', 'spare: swap for the better TE (+3 x 4 weeks) and a trade');
+}
+
 // why a past week went the way it did
 {
   const K = n => `${n}|CIN`;

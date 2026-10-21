@@ -670,6 +670,39 @@ for (const f of fleece) {
   const pitch = pitches(f);
   if (pitch) fleecePool.push({ ...f, texts: pitch.texts, strict: f.strict && pitch.strength >= 4 });
 }
+
+// --- Bench check: does each bench player earn his spot? Needed = he'd start this week or in one of the next
+// 4 weeks (byes, injuries), or he's the top backup at his spot and clearly better than any free player there.
+// If not, his spot is free: the best waiver swap and the best trade that sends him away.
+// ponytail: looks 4 weeks ahead; depth for the playoffs isn't counted.
+const benchHorizon = [];
+for (let w = week + 1; w <= Math.min(lastWeek, week + 4); w++) benchHorizon.push(w);
+const futValue = w => p => (p.bye === w || !seasonValue(p) ? 0 : rosSaved.future?.by[p.id]?.[w - week - 1] ?? seasonValue(p));
+const aheadScore = r => benchHorizon.reduce((s, w) => s + score(r, futValue(w)), 0);
+const benchTakenAll = new Set([...benchTaken, ...plan.map(s => s.add.id)]);
+const faFree = faBest.filter(o => !locked(o) && !benchTakenAll.has(o.id));
+const benchCheck = baseRoster.filter(p => p.slot === 'Bench').map(p => {
+  if (bestLineup(baseRoster, weekValue).lineup.some(x => x.player === p)) return { p, keep: 'He\'s in your best lineup this week.' };
+  const w = benchHorizon.find(w => bestLineup(baseRoster, futValue(w)).lineup.some(x => x.player === p));
+  if (w) {
+    const off = baseRoster.find(x => x.pos === p.pos && x.bye === w && seasonStarterIds.has(x.id));
+    return { p, keep: `He starts in week ${w}${off ? `, covering ${off.name}'s bye` : ''}.` };
+  }
+  const top = baseRoster.filter(x => x.pos === p.pos && x.slot !== 'IR' && !seasonStarterIds.has(x.id)).sort((a, b) => seasonValue(b) - seasonValue(a))[0];
+  const fa = faFree.find(o => o.pos === p.pos);
+  if (top === p && ['QB', 'RB', 'WR', 'TE'].includes(p.pos) && seasonValue(p) >= (fa ? seasonValue(fa) : 0) + 1.5)
+    return { p, keep: `He's your top backup ${POS_NAME[p.pos].toLowerCase()} if a starter gets hurt, and the best free one${fa ? ` (${fa.name}, ${f1(rate(fa))} a game)` : ''} is clearly worse than his ${f1(rate(p))}.` };
+  // spare: what the spot is worth instead (best free player per position, over the next 4 weeks)
+  const others = baseRoster.filter(x => x !== p), now = aheadScore(baseRoster);
+  let swap = null;
+  for (const pos of Object.keys(FA_SLOT)) for (const o of faFree.filter(o => o.pos === pos).slice(0, 6)) {
+    const gain = aheadScore([...others, { ...o, slot: 'Bench' }]) - now;
+    if (gain >= 1 && (!swap || gain > swap.gain)) swap = { add: o, gain };
+  }
+  const trade = trades.filter(t => t.give === p).sort((a, b) => b.mine - a.mine)[0];
+  const steal = trade ? null : fleece.filter(f => f.give.includes(p)).sort((a, b) => b.mine - a.mine)[0];
+  return { p, swap, trade, steal, planned: plan.some(s => s.drop === p) || benchUps.some(x => x.drop === p) };
+});
 // Texts to send. Every fact is checked against the real numbers before it's used: season averages, who
 // they start now, this week's projection, injury tags, bye weeks, and which spots each team is short or
 // deep at. Only the framing is salesy. Returns null when there's no honest, believable pitch, so an
@@ -1451,6 +1484,18 @@ ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.sl
 }).join('')}
 </section>
 
+<section id="bench"><h2>Bench check</h2><p class="sub">Does each bench player earn his spot? Keep = he starts this week or in the next ${benchHorizon.length || 'few'} weeks (byes, injuries), or he's your top backup and clearly better than any free player at his spot. If not, here's a better use of the spot.</p>
+${benchCheck.length ? `<div class="list">${benchCheck.map(b => `<div class="card"><div class="vhead"><b>${lnk(b.p)}</b><span class="verdict-${b.keep ? 'good' : 'meh'}">${b.keep ? 'Keep' : 'Not needed'}</span></div>
+  <p class="why" style="margin:0">${b.keep ? esc(b.keep) : [
+    `He doesn't start in any of the next ${benchHorizon.length} weeks, and a free player could back up about as well.`,
+    b.planned ? 'Your pickup plan already swaps him out.' : '',
+    b.swap ? `<b>Waivers:</b> drop him for ${lnk(b.swap.add)} (${b.swap.add.pos}, ${n(rate(b.swap.add))} a game${b.swap.add.wa ? ', on waivers' : ''}): about +${n(b.swap.gain)} points over the next ${benchHorizon.length} weeks.` : '',
+    b.trade ? `<b>Trade:</b> him for ${lnk(b.trade.take)} with ${esc(b.trade.team.name)}, +${n(b.trade.mine)} a week for you${b.trade.strict ? '' : ' (a closer call)'}.` : '',
+    b.steal ? `<b>Trade:</b> ${b.steal.give.map(lnk).join(' + ')} for ${lnk(b.steal.take)} with ${esc(b.steal.d.t.name)}, +${n(b.steal.mine)} a week for you (they lose about ${n(-b.steal.theirs)}, so it may be a hard sell).` : '',
+    !b.swap && !b.trade && !b.steal ? 'Nothing better on waivers or in trades right now. Keep him as depth until you need the spot.' : '',
+  ].filter(Boolean).join(' ')}</p></div>`).join('')}</div>` : '<div class="card empty">Nobody on your bench.</div>'}
+</section>
+
 <section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. In ESPN: Players &rarr; find him &rarr; Add.</p>
 <div class="card"><div class="vhead"><span class="group" style="margin:0">Waiver order</span><span class="verdict-meh">You pick ${ordinal(me.waiver)} of ${teams.length}</span></div>
 <details class="all" style="margin:-4px 0 4px"><summary>See the full order</summary><div class="worder">${[...teams].sort((a, b) => a.waiver - b.waiver).map(t => `<span class="${t === me ? 'me' : t.waiver < me.waiver ? 'ahead' : ''}">${t.waiver}. ${esc(t.name)}</span>`).join('')}</div></details>
@@ -2142,7 +2187,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
