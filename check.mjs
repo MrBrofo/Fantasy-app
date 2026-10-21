@@ -64,6 +64,10 @@ for (const [h, want] of [
   ['Hockenson (concussion) was a limited participant Thursday', 'Limited in practice'],
   ["Lamar (ankle) is active for Sunday's game", 'Playing'],
   ['Pittman (foot) placed on injured reserve', 'Out'],
+  ["McLaurin tore his left patellar tendon during Monday's loss to the 49ers", 'Out for season'],
+  ['Diggs (hamstring) is listed as active Monday at San Francisco.', 'Playing'],
+  ["Diggs (hamstring), who is listed as questionable for Monday's game, is in line to play", 'Playing'],
+  ["McLaurin left Monday night's game against the 49ers in the first quarter with a left knee injury", 'Hurt in game'],
   ['Cook rushes for 120 yards in win', undefined],
 ]) assert.equal(newsTag(h)?.[0], want, h);
 

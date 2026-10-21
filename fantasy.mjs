@@ -1182,13 +1182,14 @@ for (let i = 0; i < ids.length; i += 50) {
 }
 // Plain-English tag for a Rotowire player update, read from its headline. First match wins, so "ruled out" beats "questionable".
 const NEWS_TAGS = [
-  ['Out for season', 'bad', /season-ending|out for the (rest of the )?season|miss the rest of the season/i],
+  ['Out for season', 'bad', /season-ending|out for the (rest of the )?season|miss the rest of the season|\btorn (acl|achilles|patellar)|\btore (his )?((left|right) )?(acl|achilles|patellar)/i],
   ['Out', 'bad', /ruled out|won't play|will not play|\bis inactive\b|placed on (injured reserve|ir)\b|won't suit up/i],
   ['Starting', 'good', /will start|expected to start|in line to start|named (the )?starter|take over as the starter/i],
-  ['Playing', 'good', /\bis active\b|will play|cleared to play|good to go|off the injury report|activated/i],
+  ['Playing', 'good', /\b(is|listed as) active\b|will play|in line to play|expected to play|cleared to play|good to go|off the injury report|activated/i],
   ["Didn't practice", 'bad', /did not practice|didn't practice|not practicing|sat out practice|held out of practice|absent from practice/i],
   ['Limited in practice', 'warn', /limited/i],
   ['Full practice', 'good', /full participant|practiced fully|full practice|full participation/i],
+  ['Hurt in game', 'bad', /\bleft .*(game|contest)\b.*injur|\bexited\b|injured (in|during)/i],
   ['Doubtful', 'bad', /doubtful/i],
   ['Questionable', 'warn', /questionable/i],
   ['Roster move', 'warn', /traded|released|waived|signed|claimed/i],
