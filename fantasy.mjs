@@ -740,6 +740,7 @@ const facts = [
     : `- Trade ${m.mineOffer ? 'I offered' : 'offered to me by'} ${m.them.name}: I give ${m.give.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}; I get ${m.take.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}`).join('\n')}` : '',
   `Best free agents (points per game expected rest of season, expected this week):\n${Object.entries(fa).map(([pos, list]) => `- ${pos}: ${[...list].filter(p => !HURT.includes(p.status)).sort((a, b) => rate(b) - rate(a)).slice(0, 4).map(p => `${p.name} ${n(rate(p))}/g ahead, ${n(p.proj)} exp`).join('; ')}`).join('\n')}`,
   ahead.length ? `My remaining schedule: ${ahead.map(g => `wk ${g.week} ${g.t.name} (${g.t.w}-${g.t.l}, ${n(g.avg)} pts/wk)`).join('; ')}.` : '',
+  '__NEWSFACTS__',
   'Explain things simply, I\'m new to football. My question:',
 ].filter(Boolean).join('\n\n');
 
@@ -795,7 +796,7 @@ section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-
 .pos{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:5px;color:#fff;margin-right:2px;vertical-align:1px}
 .pos-QB{background:#e5484d}.pos-RB{background:#12a150}.pos-WR{background:#3e63dd}.pos-TE{background:#f76b15}.pos-K{background:#8e4ec6}.pos-DST{background:#646f82}
 .chip{display:inline-block;margin-top:4px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px}
-.chip.bad{background:var(--badbg);color:var(--bad)}.chip.warn{background:var(--warnbg);color:var(--warn)}
+.chip.bad{background:var(--badbg);color:var(--bad)}.chip.good{background:var(--goodbg);color:var(--good)}.chip.warn{background:var(--warnbg);color:var(--warn)}
 .row{display:flex;align-items:center;gap:10px}
 .slot{flex:none;width:44px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase}
 .big{flex:none;text-align:right}.big b{display:block;font-size:20px;font-weight:800;line-height:1.1}.big small{display:block;font-size:11px;color:var(--muted)}
@@ -882,7 +883,7 @@ ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pe
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
-<nav><a href="#todo">To-do</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#partners">Partners</a><a href="#trades">Trades</a><a href="#season">Season</a><a href="#league">League</a><a href="#help">How it works</a></nav>
+<nav><a href="#todo">To-do</a><a href="#news">News</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#partners">Partners</a><a href="#trades">Trades</a><a href="#season">Season</a><a href="#league">League</a><a href="#help">How it works</a></nav>
 
 <section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
@@ -900,6 +901,9 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
 ${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
+
+<section id="news"><h2>News</h2><p class="sub">Latest updates on your players and pickups, from Rotowire via ESPN. Tap a name for details.</p>
+<div class="list">__NEWS__</div></section>
 
 <section id="lineup"><h2>My team</h2><p class="sub">Big number = points he's expected to score this week (average of ESPN, Rotowire and CBS). Top starter, starter or below starter compares him with the players who start at his position across your league. Green "up to" = his score if he has a great game. Tap any player to see if he plays, when, his last games and news.</p>
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
@@ -1176,12 +1180,29 @@ for (let i = 0; i < ids.length; i += 50) {
   });
   for (const x of d.players) card.set(x.player.id, x.player);
 }
+// Plain-English tag for a Rotowire player update, read from its headline. First match wins, so "ruled out" beats "questionable".
+const NEWS_TAGS = [
+  ['Out for season', 'bad', /season-ending|out for the (rest of the )?season|miss the rest of the season/i],
+  ['Out', 'bad', /ruled out|won't play|will not play|\bis inactive\b|placed on (injured reserve|ir)\b|won't suit up/i],
+  ['Starting', 'good', /will start|expected to start|in line to start|named (the )?starter|take over as the starter/i],
+  ['Playing', 'good', /\bis active\b|will play|cleared to play|good to go|off the injury report|activated/i],
+  ["Didn't practice", 'bad', /did not practice|didn't practice|not practicing|sat out practice|held out of practice|absent from practice/i],
+  ['Limited in practice', 'warn', /limited/i],
+  ['Full practice', 'good', /full participant|practiced fully|full practice|full participation/i],
+  ['Doubtful', 'bad', /doubtful/i],
+  ['Questionable', 'warn', /questionable/i],
+  ['Roster move', 'warn', /traded|released|waived|signed|claimed/i],
+];
+const newsTag = h => NEWS_TAGS.find(([, , re]) => re.test(h)) ?? null;
+const blurbs = new Map(); // player id -> his Rotowire updates: { id, h (headline), t (published ms), tag }
 const news = new Map(await Promise.all(ids.filter(id => id > 0).map(async id => {
   try {
     const r = await fetch(`https://site.api.espn.com/apis/fantasy/v2/games/ffl/news/players?limit=6&playerId=${id}`);
+    const feed = (await r.json()).feed ?? [];
+    blurbs.set(id, feed.filter(x => x.type === 'Rotowire' && x.headline).map(x => ({ id: x.id, h: x.headline, t: Date.parse(x.published), tag: newsTag(x.headline) })));
     const last = (shown.get(id).name.split(' ').filter(w => !/^(jr|sr|ii|iii|iv)\.?$/i.test(w)).pop() ?? '').toLowerCase();
     // player notes (his name in the headline) before general articles that only mention him
-    const items = ((await r.json()).feed ?? []).filter(x => x.headline && (x.headline + ' ' + (x.story ?? '')).toLowerCase().includes(last))
+    const items = feed.filter(x => x.headline && (x.headline + ' ' + (x.story ?? '')).toLowerCase().includes(last))
       .sort((a, b) => b.headline.toLowerCase().includes(last) - a.headline.toLowerCase().includes(last)).slice(0, 2);
     return [id, items.map(x => ({ h: x.headline, url: x.links?.web?.href || `https://www.espn.com/nfl/player/_/id/${id}`, when: new Date(x.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }))];
   } catch { return [id, []]; }
@@ -1193,6 +1214,23 @@ const gameText = p => {
   const home = g.homeProTeamId === p.proTeamId;
   return `${home ? 'Home vs' : 'Away at'} ${proName[home ? g.awayProTeamId : g.homeProTeamId]}, ${new Date(g.date).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit' })} ET. Your lineup locks for him when that game starts.`;
 };
+const ago = t => { const m = Math.max(1, Math.round((Date.now() - t) / 60e3)); return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
+const myIds = new Set(me.roster.map(p => p.id)), watchIds = new Set([...plan.map(s => s.add.id), ...claims.flatMap(m => m.add.map(a => a.id))]);
+const feedItems = [...blurbs].filter(([id]) => myIds.has(id) || watchIds.has(id))
+  .flatMap(([id, xs]) => xs.map(x => ({ ...x, p: shown.get(id) }))).filter(x => x.p && Date.now() - x.t < 7 * 864e5).sort((a, b) => b.t - a.t).slice(0, 15);
+html = html.replace('__NEWS__', () => feedItems.length ? feedItems.map(x => `<div class="card"><div class="vhead">${lnk(x.p)}${x.tag ? `<span class="chip ${x.tag[1]}" style="margin:0">${x.tag[0]}</span>` : ''}</div>
+  <p class="why" style="margin:6px 0 2px">${esc(x.h)}</p><span class="tag">${ago(x.t)}${watchIds.has(x.p.id) && !myIds.has(x.p.id) ? ' &middot; pickup' : ''}</span></div>`).join('') : '<div class="card empty">No news on your players in the last week.</div>');
+// ...and for Claude
+const newsFacts = feedItems.length ? `Recent news on my players and pickups (Rotowire):\n${feedItems.map(x => `- ${x.p.name}, ${ago(x.t)}: ${x.h}`).join('\n')}` : 'No news on my players in the last week.';
+html = html.replace('__NEWSFACTS__', () => JSON.stringify(newsFacts).slice(1, -1).replace(/</g, '\\u003c'));
+// 3. Breaking news on my players (last 6 hours, once each): ruled out, starting, or playing after being in doubt
+const NEWS_SAYS = { Out: 'is out', 'Out for season': 'is out for the season', Starting: 'is starting', Playing: 'is playing' };
+for (const p of me.roster) for (const x of blurbs.get(p.id) ?? []) {
+  if (!x.tag || !NEWS_SAYS[x.tag[0]] || Date.now() - x.t > 6 * 3600e3 || decided.has(p.id)) continue;
+  if (x.tag[0] === 'Playing' && !['QUESTIONABLE', 'DOUBTFUL'].includes(p.status)) continue; // only news if he was in doubt
+  const act = x.tag[1] === 'bad' && isStarter(p) && !locked(p);
+  alerts.push([`news:${x.id}`, `${p.name} ${NEWS_SAYS[x.tag[0]]}`, `${x.h}${act ? ' He\'s in your lineup, so check your to-do list.' : ''}`, act]);
+}
 const pdata = {};
 for (const [id, p] of shown) {
   const c = card.get(id), inj = p.inj ?? (c?.injuryDetails && { type: c.injuryDetails.type, season: c.injuryDetails.outForSeason, back: c.injuryDetails.expectedReturnDate && new Date(c.injuryDetails.expectedReturnDate[0], c.injuryDetails.expectedReturnDate[1] - 1, c.injuryDetails.expectedReturnDate[2]) });

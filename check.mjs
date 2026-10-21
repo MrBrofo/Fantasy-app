@@ -53,4 +53,18 @@ assert.equal(r.judge([], [pl(20, 'RB', 'RB', 25, 1)], them).mineWeek, 0, 'gettin
 assert.equal(r.judge([], [pl(21, 'RB', 'RB', 25, 2)], them).mineWeek, 25 - 10, 'getting one who plays later pushes out my lowest open starter (10)');
 assert.equal(r.judge([base[1]], [], them).mineWeek, 0, 'trading away a starter who already played loses nothing this week');
 assert.equal(r.judge([base[2]], [], them).mineWeek, -(12 - 9), 'trading away one who plays later: the bench RB (9) steps in');
+// news headline tags (first match wins, so "inactive" beats "questionable")
+const { newsTag } = new Function(cut('const NEWS_TAGS', 'const newsTag = h => NEWS_TAGS.find(([, , re]) => re.test(h)) ?? null;') + '\nreturn { newsTag };')();
+for (const [h, want] of [
+  ["Judkins (ankle) is inactive for Sunday's game against the Ravens.", 'Out'],
+  ["Judkins (ankle), who is listed as questionable for Sunday's contest, will go through a pregame workout", 'Questionable'],
+  ['McLaurin (knee) will miss the rest of the season', 'Out for season'],
+  ['Winston will start Sunday against the Eagles', 'Starting'],
+  ['Addison (hamstring) did not practice Wednesday', "Didn't practice"],
+  ['Hockenson (concussion) was a limited participant Thursday', 'Limited in practice'],
+  ["Lamar (ankle) is active for Sunday's game", 'Playing'],
+  ['Pittman (foot) placed on injured reserve', 'Out'],
+  ['Cook rushes for 120 yards in win', undefined],
+]) assert.equal(newsTag(h)?.[0], want, h);
+
 console.log('ok');
