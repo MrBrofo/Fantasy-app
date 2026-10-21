@@ -729,6 +729,10 @@ function pitches(f) {
     `would you do ${both} for ${last(take)}? ${top.join('. ')}.${close}`,
     reason ? `${reason}, would you do ${both} for ${last(take)}? ${top.join('. ')}` : `you open to ${both} for ${last(take)}? ${top[0]}${top[1] ? `, plus ${top[1]}` : ''}`,
     hurt ? `ngl this is kinda risky for me since ${last(take)} is banged up, but i'd do ${both} for him. ${top[0]}` : `thoughts on ${both} for ${last(take)}? ${top[0]}.${close}`,
+    `${top[0]}. any chance you'd do ${both} for ${last(take)}?`,
+    `trade idea: ${both} for ${last(take)}. ${top.join(', and ')}`,
+    `what would it take to get ${last(take)}? thinking ${both}. ${top[0]}`,
+    `${both} for ${last(take)}, you in? ${top[top.length - 1]}`,
   ];
   return { texts: [...new Set(out)], strength };
 }
@@ -1926,6 +1930,10 @@ function addHim(p) {
       'would you do ' + ask + '?' + (top.length ? ' ' + top.join('. ') + '.' : '') + ' lmk',
       'you open to ' + ask + '?' + (top[0] ? ' ' + top[0] : ''),
       'thoughts on ' + ask + '?' + (top[0] ? ' ' + top[0] + '.' : '') + ' open to tweaking it',
+      top[0] ? top[0] + ". any chance you'd do " + ask + '?' : 'any chance you would do ' + ask + '?',
+      'trade idea: ' + ask + '.' + (top.length ? ' ' + top.join(', and ') : ''),
+      'what would it take to get ' + take.map(last).join(' and ') + '? thinking ' + both + '.' + (top[0] ? ' ' + top[0] : ''),
+      ask + ', you in?' + (top.length ? ' ' + top[top.length - 1] : ''),
     ])];
   }
   const tcPrompt = (give, take, team, theirWeek) => "Write a short, casual text (1-3 sentences, lowercase, like a real person texting a friend) to my fantasy football league mate proposing this trade. I give: " +
