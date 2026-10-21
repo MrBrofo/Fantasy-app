@@ -828,10 +828,6 @@ const facts = [
   'Explain things simply, I\'m new to football. My question:',
 ].filter(Boolean).join('\n\n');
 
-// To-do button that opens ESPN (the app, if iOS hands the link to it): pickups go to the free-agent page, the rest to my team
-const espnLink = title => /add |get a /.test(title)
-  ? `<a class="espn" href="https://fantasy.espn.com/football/players/add?leagueId=${LEAGUE_ID}&amp;seasonId=${SEASON}">Open free agents in ESPN</a>`
-  : `<a class="espn" href="https://fantasy.espn.com/football/team?leagueId=${LEAGUE_ID}&amp;teamId=${me.id}&amp;seasonId=${SEASON}">Open my team in ESPN</a>`;
 let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -873,7 +869,6 @@ section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-
 .todo{display:flex;gap:12px;align-items:flex-start}
 .todo .lvl{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
-.todo .espn{display:inline-block;margin-top:8px;padding:6px 12px;border-radius:999px;background:var(--brand2);color:#fff;font-size:13px;font-weight:700;text-decoration:none}
 .todo b{display:block;font-size:15px}.todo p{margin:2px 0 0;color:var(--muted);font-size:13.5px}
 .player{display:flex;gap:12px;align-items:center;min-width:0;flex:1}
 .pic{flex:none;width:48px;height:48px;border-radius:50%;background:var(--chip);overflow:hidden;position:relative;display:grid;place-items:center}
@@ -989,7 +984,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
 
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
-${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p>${espnLink(title)}</div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
+${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
 <section id="news"><h2>News</h2><p class="sub">Latest updates on your players and pickups, from Rotowire via ESPN. Tap a name for details.</p>
