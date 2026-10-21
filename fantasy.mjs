@@ -253,7 +253,7 @@ const teams = league.teams.map(t => {
     return { ...row(p, e.playerPoolEntry.ratings), slot: SLOT[e.lineupSlotId] ?? e.lineupSlotId };
   });
   const r = t.record.overall;
-  return { id: t.id, name: t.name.trim(), owners: t.owners, w: r.wins, l: r.losses, pf: r.pointsFor, pa: r.pointsAgainst, waiver: t.waiverRank, roster };
+  return { id: t.id, name: t.name.trim(), owners: t.owners, w: r.wins, l: r.losses, ties: r.ties ?? 0, div: t.divisionId ?? 0, pf: r.pointsFor, pa: r.pointsAgainst, waiver: t.waiverRank, roster };
 });
 const teamName = Object.fromEntries(teams.map(t => [t.id, t.name]));
 const me = teams.find(t => t.owners?.includes(SWID));
@@ -294,7 +294,16 @@ const rate = p => p.ros ?? p.avg ?? 0;
 const seasonValue = p => (p.slot !== 'IR' && p.status !== 'INJURY_RESERVE' && !p.inj?.season ? rate(p) : 0);
 const score = (players, value) => bestLineup(players, value).total;
 const starters = t => t.roster.filter(p => p.slot !== 'Bench' && p.slot !== 'IR');
-const lineupProj = t => starters(t).reduce((s, p) => s + weekValue(p), 0);
+// A questionable player is a fine start when a healthy bench player at his position plays at the same time or later:
+// teams name their inactives 90 minutes before kickoff, so you swap then if he sits (the "is playing" alert covers it).
+// Counting only 71% of his points benched good players who usually play.
+// ponytail: checks the bench as set now, not the bench the best lineup leaves.
+const pivot = p => p.status === 'QUESTIONABLE' && !locked(p) && me.roster.some(b => b !== p && b.slot === 'Bench' && b.pos === p.pos && b.status !== 'QUESTIONABLE' && weekValue(b) > 0 && kickoff(b) >= kickoff(p));
+const startValue = p => (pivot(p) ? (p.proj ?? 0) : weekValue(p));
+// What a team should score this week. Mine: lineup as set (the to-do list says what to fix). Everyone else: their best
+// lineup, since managers bench players on bye or out before kickoff; counting those as 0 made my win chance too high.
+const weekLine = t => (t === me ? starters(t) : bestLineup(t.roster, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0)).lineup.map(x => x.player));
+const lineupProj = t => weekLine(t).reduce((s, p) => s + weekValue(p), 0);
 
 // This week's opponent
 const game = league.schedule?.find(g => g.matchupPeriodId === week && (g.home?.teamId === me.id || g.away?.teamId === me.id));
@@ -343,7 +352,7 @@ const trending = (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${w
 // --- Start / sit: best lineup by this week's projections vs what's set now
 // locked starters can't be moved, so they always stay in the best lineup
 // a starter keeps his spot unless someone beats him by a full point: smaller gaps are coin flips, not moves
-const best = bestLineup(me.roster, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0) + (isStarter(p) && weekValue(p) > 0 ? 0.99 : 0));
+const best = bestLineup(me.roster, p => startValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0) + (isStarter(p) && weekValue(p) > 0 ? 0.99 : 0));
 best.total = best.lineup.reduce((t, x) => t + weekValue(x.player), 0);
 const bestIds = new Set(best.lineup.map(x => x.player.id));
 const benchIn = best.lineup.map(x => x.player).filter(p => !starters(me).includes(p));
@@ -396,16 +405,20 @@ const vor = p => Math.max(0, rate(p) - (repl[p.pos] ?? 0));
 const myStartersAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map(x => x.player).filter(p => p.pos === pos).sort((a, b) => rate(b) - rate(a));
 // "Stefon Diggs (9.4), Jakobi Meyers (9.1) and Malik Washington (8.2)"
 const startersText = ps => ps.map(p => `${esc(p.name)} (${n(rate(p))})`).join(', ').replace(/, (?=[^,]*$)/, ' and ');
+// A team that ends a trade with fewer players (2 for 1) fills the open roster spot with the best free agent.
+// That spot is real value for the side getting the one better player, so it's counted.
+const faBest = allFa.filter(playable).sort((a, b) => seasonValue(b) - seasonValue(a));
+const refill = (after, before) => (after.length < before.length ? [...after, ...faBest.slice(0, before.length - after.length)] : after);
 // Effect of a trade on both teams. give = players I send, take = players I get.
 function judge(give, take, them) {
   const mineAfter = [...me.roster.filter(p => !give.includes(p)), ...take];
   const theirsAfter = [...them.roster.filter(p => !take.includes(p)), ...give];
   return {
-    mine: score(mineAfter, seasonValue) - score(me.roster, seasonValue),
+    mine: score(refill(mineAfter, me.roster), seasonValue) - score(me.roster, seasonValue),
     // this week: a starter of mine whose game has kicked off already scored for me, traded or not; a player
     // I'd get counts like a bench player (0 once his game has kicked off)
     mineWeek: weekScore([...me.roster.filter(p => !give.includes(p) || (locked(p) && isStarter(p))), ...take.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(me.roster),
-    theirs: score(theirsAfter, seasonValue) - score(them.roster, seasonValue),
+    theirs: score(refill(theirsAfter, them.roster), seasonValue) - score(them.roster, seasonValue),
     vorGive: give.reduce((s, p) => s + vor(p), 0), vorTake: take.reduce((s, p) => s + vor(p), 0),
     after: mineAfter,
   };
@@ -1063,18 +1076,31 @@ for (const kind of ['week', 'season']) for (const pos of Object.keys(FA_SLOT)) {
 const tier = (v, p, kind) => { const c = p && tierCut[`${kind}|${p.pos}`]; return !c || !(v > 0) ? null : v >= c[0] ? ['good', 'top starter'] : v >= c[1] ? ['avg', 'starter'] : ['weak', 'below starter']; };
 const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"><b${t ? ` class="t-${t[0]}"` : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
 
-const myRank = [...teams].sort((a, b) => b.w - a.w || b.pf - a.pf).indexOf(me) + 1;
-const standings = [...teams].sort((a, b) => b.w - a.w || b.pf - a.pf);
-const cutWins = standings[playoffTeams - 1]?.w ?? 0;
+// Playoff seeding, ESPN's way: with divisions, each division winner takes a top seed; the rest go by record.
+// Ties: total points (ESPN's default tiebreak). A tie game counts as half a win.
+// ponytail: a league set to break ties head-to-head is still seeded by points here.
+const divIds = [...new Set(teams.map(t => t.div))];
+const seedOrder = (w, pf) => {
+  const by = (a, b) => w.get(b.id) - w.get(a.id) || pf.get(b.id) - pf.get(a.id);
+  const winners = divIds.length > 1 ? divIds.map(d => teams.filter(t => t.div === d).sort(by)[0]).sort(by) : [];
+  return { order: [...winners, ...teams.filter(t => !winners.includes(t)).sort(by)], winners };
+};
+const seeded = seedOrder(new Map(teams.map(t => [t.id, t.w + t.ties / 2])), new Map(teams.map(t => [t.id, t.pf])));
+const standings = seeded.order, myRank = standings.indexOf(me) + 1;
+// wins needed = the last playoff team that got in on record (not a division winner)
+const cutWins = standings.slice(0, playoffTeams).filter(t => !seeded.winners.includes(t)).at(-1)?.w ?? standings[playoffTeams - 1]?.w ?? 0;
 const playoffLine = myRank <= playoffTeams ? `You're in a playoff spot. Top ${playoffTeams} make it.`
   : `Top ${playoffTeams} make the playoffs. ${cutWins - me.w <= 0 ? 'You have as many wins as the last playoff team, so it comes down to points.' : `You're ${cutWins - me.w} win${cutWins - me.w > 1 ? 's' : ''} behind.`}`;
 const myProj = lineupProj(me);
 const oppProj = opp ? lineupProj(opp) : 0;
 // Win chance from the averaged projections. Each starter's score is treated as a bell curve around his
-// projection, spread 65% of it (typical for one week). Once games start, ESPN's live estimate takes over.
-// ponytail: fixed spread per player and no live per-player scores; ESPN's live number covers game time.
+// projection; how wide depends on his position (4for4's weekly swings: QBs steadiest, TEs and defenses wildest).
+// Once games start, ESPN's live estimate takes over.
+// ponytail: players treated as independent (a QB and his receiver rise and fall together); ESPN's live number covers game time.
+const SWING = { QB: 0.41, RB: 0.63, WR: 0.61, TE: 0.7, K: 0.49, 'D/ST': 0.71 };
+const vari = (ps, v) => ps.reduce((s, p) => s + ((SWING[p.pos] ?? 0.65) * v(p)) ** 2, 0);
 const erf = x => { const t = 1 / (1 + 0.3275911 * Math.abs(x)); return Math.sign(x) * (1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x)); };
-const spread = t => starters(t).reduce((s, p) => s + (0.65 * weekValue(p)) ** 2, 0);
+const spread = t => vari(weekLine(t), weekValue);
 const isLive = !!opp && (mySide.totalPointsLive > 0 || oppSide.totalPointsLive > 0);
 const liveWin = isLive && mySide.winProbability != null;
 const winPct = !opp ? 0 : liveWin ? Math.round(mySide.winProbability * 100)
@@ -1093,8 +1119,8 @@ const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI *
 const sideOf = t => (league.schedule ?? []).filter(g => g.matchupPeriodId === week).map(g => (g.home?.teamId === t.id ? g.home : g.away?.teamId === t.id ? g.away : null)).find(Boolean);
 const board = teams.map(t => {
   const side = sideOf(t), live = isLive && side?.totalProjectedPointsLive != null;
-  const open = starters(t).filter(p => !(live && locked(p)));
-  return { t, proj: live ? side.totalProjectedPointsLive : lineupProj(t), now: isLive ? side?.totalPointsLive ?? null : null, sd: Math.sqrt(open.reduce((a, p) => a + (0.65 * weekValue(p)) ** 2, 0)) || 1 };
+  const open = weekLine(t).filter(p => !(live && locked(p)));
+  return { t, proj: live ? side.totalProjectedPointsLive : lineupProj(t), now: isLive ? side?.totalPointsLive ?? null : null, sd: Math.sqrt(vari(open, weekValue)) || 1 };
 }).sort((a, b) => b.proj - a.proj);
 let lowestRuns = 0;
 for (let i = 0; i < 10000; i++) {
@@ -1103,25 +1129,32 @@ for (let i = 0; i < 10000; i++) {
   if (mine < low) lowestRuns++;
 }
 const lowestPct = Math.round(lowestRuns / 100), myBoardRank = board.findIndex(r => r.t === me) + 1, below = board.slice(myBoardRank);
-const futLine = new Map(teams.map(t => [t.id, bestLineup(t.roster, seasonValue).lineup.map(x => seasonValue(x.player))]));
-const futMean = id => futLine.get(id).reduce((a, b) => a + b, 0), futSd = id => Math.sqrt(futLine.get(id).reduce((a, v) => a + (0.65 * v) ** 2, 0)) || 15;
+// Later weeks: each team's best lineup for that week, so bye weeks count (a team with three starters off in
+// week 10 really is weaker that week). ESPN's projection for that week, else rest-of-season per game.
+const futLine = new Map();
+for (const t of teams) for (let w = week + 1; w <= lastWeek; w++) {
+  const v = p => (p.bye === w || !seasonValue(p) ? 0 : rosSaved.future.by[p.id]?.[w - week - 1] ?? seasonValue(p));
+  const ps = bestLineup(t.roster, v).lineup.map(x => x.player);
+  futLine.set(`${t.id}|${w}`, { mean: ps.reduce((s, p) => s + v(p), 0), sd: Math.sqrt(vari(ps, v)) || 15 });
+}
+const nowMean = new Map(teams.map(t => [t.id, lineupProj(t)])), nowSd = new Map(teams.map(t => [t.id, Math.sqrt(spread(t)) || 15]));
 const byId_ = new Map(teams.map(t => [t.id, t]));
 const left = (league.schedule ?? []).filter(g => g.away && g.matchupPeriodId >= week && g.matchupPeriodId <= lastWeek);
 const SIMS = 10000, byRecord = {};
 let made = 0;
 for (let k = 0; k < SIMS; k++) {
-  const w = new Map(teams.map(t => [t.id, t.w])), pf = new Map(teams.map(t => [t.id, t.pf]));
+  const w = new Map(teams.map(t => [t.id, t.w + t.ties / 2])), pf = new Map(teams.map(t => [t.id, t.pf]));
   for (const g of left) {
     const [a, b] = [g.home, g.away].map(side => {
-      const t = byId_.get(side.teamId), now = g.matchupPeriodId === week;
-      const mean = now ? (isLive && side.totalProjectedPointsLive > 0 ? side.totalProjectedPointsLive : lineupProj(t)) : futMean(t.id);
-      return mean + gauss() * (now ? Math.sqrt(spread(t)) || 15 : futSd(t.id));
+      const t = byId_.get(side.teamId), now = g.matchupPeriodId === week, fut = futLine.get(`${t.id}|${g.matchupPeriodId}`);
+      if (!now) return fut.mean + gauss() * fut.sd;
+      return (isLive && side.totalProjectedPointsLive > 0 ? side.totalProjectedPointsLive : nowMean.get(t.id)) + gauss() * nowSd.get(t.id);
     });
     pf.set(g.home.teamId, pf.get(g.home.teamId) + a); pf.set(g.away.teamId, pf.get(g.away.teamId) + b);
     const winner = a >= b ? g.home.teamId : g.away.teamId;
     w.set(winner, w.get(winner) + 1);
   }
-  const inP = [...teams].sort((x, y) => w.get(y.id) - w.get(x.id) || pf.get(y.id) - pf.get(x.id)).indexOf(me) < playoffTeams;
+  const inP = seedOrder(w, pf).order.indexOf(me) < playoffTeams;
   made += inP;
   const r = (byRecord[w.get(me.id)] ??= [0, 0]); r[0] += inP; r[1]++;
 }

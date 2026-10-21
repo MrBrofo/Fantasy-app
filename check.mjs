@@ -6,24 +6,24 @@ import crypto from 'crypto';
 
 const src = fs.readFileSync(new URL('./fantasy.mjs', import.meta.url), 'utf8');
 const cut = (from, to) => { const i = src.indexOf(from), j = src.indexOf(to, i); assert(i >= 0 && j > i, `code moved: ${from}`); return src.slice(i, j + to.length); };
-const code = cut('function bestLineup(', 'const lineupProj = t => starters(t).reduce((s, p) => s + weekValue(p), 0);')
+const code = cut('function bestLineup(', 'const lineupProj = t => weekLine(t).reduce((s, p) => s + weekValue(p), 0);')
   + '\n' + cut('const best = bestLineup(me.roster,', 'const sitOut = starters(me).filter(p => !bestIds.has(p.id));')
   + '\n' + cut('const weekScore = ', '.lineup.reduce((t, x) => t + weekValue(x.player), 0);')
-  + '\n' + cut('function judge(', '    after: mineAfter,\n  };\n}')
+  + '\n' + cut('const faBest = ', '    after: mineAfter,\n  };\n}')
   + '\n' + cut('const weakness = ', '  return out.sort((a, b) => b.gain - a.gain).slice(0, 5);\n}')
   + '\n' + cut('const SLOT_ID = ', 'const bestMove = lineupMove();')
   + '\nreturn { weekValue, seasonValue, locked, best, benchIn, sitOut, judge, bestSwap, bestMove };';
 
 const HOUR = 3600e3, NOW = Date.UTC(2026, 9, 25, 18); // a Sunday afternoon
 // team 1 played Thursday (locked), team 2 kicks off in an hour, team 3 is on bye
-const pro = [{ id: 1, proGamesByScoringPeriod: { 7: [{ date: NOW - 72 * HOUR }] } }, { id: 2, proGamesByScoringPeriod: { 7: [{ date: NOW + HOUR }] } }, { id: 3, proGamesByScoringPeriod: {} }];
+const pro = [{ id: 1, proGamesByScoringPeriod: { 7: [{ date: NOW - 72 * HOUR }] } }, { id: 2, proGamesByScoringPeriod: { 7: [{ date: NOW + HOUR }] } }, { id: 3, proGamesByScoringPeriod: {} }, { id: 4, proGamesByScoringPeriod: { 7: [{ date: NOW + 5 * HOUR }] } }];
 const pl = (id, pos, slot, proj, team, status = '') => ({ id, name: `P${id}`, pos, slot, proj, proTeamId: team, status });
 const consts = {
   slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 },
   SLOT: { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 23: 'FLEX', 20: 'Bench', 21: 'IR' },
   SLOT_POS: { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'], 23: ['RB', 'WR', 'TE'] },
   HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, playOdds: p => ({ DOUBTFUL: { pct: 7 }, QUESTIONABLE: { pct: 71 } })[p.status] ?? null, pro, vor: () => 0,
-  allFa: [pl(30, 'RB', 'FA', 30, 1), pl(31, 'RB', 'FA', 20, 2)], // 30 already played (locked), 31 plays later
+  allFa: [pl(30, 'RB', 'FA', 30, 1), { ...pl(31, 'RB', 'FA', 20, 2), ros: 5 }], // 30 already played (locked), 31 plays later
 };
 const run = roster => new Function(...Object.keys(consts), 'me', 'Date', code)(...Object.values(consts), { roster }, { now: () => NOW });
 const ids = list => list.map(p => p.id).sort();
@@ -57,6 +57,28 @@ assert.equal(r.judge([], [pl(20, 'RB', 'RB', 25, 1)], them).mineWeek, 0, 'gettin
 assert.equal(r.judge([], [pl(21, 'RB', 'RB', 25, 2)], them).mineWeek, 25 - 10, 'getting one who plays later pushes out my lowest open starter (10)');
 assert.equal(r.judge([base[1]], [], them).mineWeek, 0, 'trading away a starter who already played loses nothing this week');
 assert.equal(r.judge([base[2]], [], them).mineWeek, -(12 - 9), 'trading away one who plays later: the bench RB (9) steps in');
+// 2 for 1: the open roster spot gets the best free agent (31, worth 5 a game), so getting one player isn't undervalued
+assert.equal(r.judge([base[2], base[3]], [{ ...pl(40, 'RB', 'RB', 0, 2), ros: 3 }], them).mine, 3 + 5, 'open spot filled from free agents');
+
+// questionable: start him when a bench player at his position plays at the same time or later (swap him if he's inactive)
+{
+  const ros = team => [pl(1, 'QB', 'QB', 18, 2), pl(2, 'RB', 'RB', 12, team, 'QUESTIONABLE'), pl(3, 'RB', 'RB', 9, 2), pl(4, 'RB', 'Bench', 10, 2),
+    pl(5, 'WR', 'WR', 9.5, 2), pl(6, 'WR', 'WR', 9.5, 2), pl(8, 'TE', 'TE', 6, 2), pl(9, 'WR', 'FLEX', 9, 2)];
+  assert(!run(ros(2)).sitOut.some(p => p.id === 2), 'questionable RB starts: the bench RB plays at the same time');
+  assert(run(ros(4)).sitOut.some(p => p.id === 2), 'questionable RB plays later than every backup: no way to swap, so 71% of his points');
+}
+
+// playoff seeding: division winners first, then record, then points
+{
+  const seedOrder = new Function('teams', cut('const divIds = ', 'winners };\n};') + '\nreturn seedOrder;');
+  const T = (id, div, w, pf) => ({ id, div, w, pf });
+  const ts = [T(1, 1, 8, 900), T(2, 1, 7, 950), T(3, 2, 4, 800), T(4, 2, 3, 990)];
+  const go = list => seedOrder(list)(new Map(list.map(t => [t.id, t.w])), new Map(list.map(t => [t.id, t.pf]))).order.map(t => t.id);
+  assert.deepEqual(go(ts), [1, 3, 2, 4], 'division winner with 4 wins seeds above a 7-win wild card');
+  assert.deepEqual(go(ts.map(t => ({ ...t, div: 0 }))), [1, 2, 3, 4], 'no divisions: by record');
+  assert.deepEqual(go([T(1, 0, 5, 800), T(2, 0, 5, 900)]), [2, 1], 'same record: more points wins');
+}
+
 // news headline tags (first match wins, so "inactive" beats "questionable")
 const { newsTag } = new Function(cut('const NEWS_TAGS', 'const newsTag = h => NEWS_TAGS.find(([, , re]) => re.test(h)) ?? null;') + '\nreturn { newsTag };')();
 for (const [h, want] of [
