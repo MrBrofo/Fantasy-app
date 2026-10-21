@@ -597,14 +597,14 @@ function notes(p) {
   for (const st of usualStarters(team)) {
     const now = slpBy.get(st.k);
     if (st.k === k || !now?.inj || !(OUT.includes(now.inj) || now.inj === 'Questionable')) continue;
-    const sure = OUT.includes(now.inj), who = `${st.name} ${statusWord(now.inj)}`;
+    const sure = OUT.includes(now.inj), status = statusWord(now.inj);
     if (st.pos === 'QB' && p.pos !== 'QB') {
       const q = qbThisWeek(team);
-      out.push(`His usual QB, ${who}${sure && q && q.k !== st.k ? `, so ${q.name} is throwing to him` : ''}. ${sure ? 'Backup QBs usually mean fewer points for receivers.' : ''}`.trim());
+      out.push(`His usual QB, ${st.name}, ${status}.${sure && q && q.k !== st.k ? ` ${q.name} is expected to start instead. A backup QB usually means fewer points for his teammates.` : ''}`);
     } else if (st.pos === p.pos) {
-      out.push(`${who}. He's one of the team's usual starting ${POS_PL[p.pos]}, so ${sure ? 'this player should get more work' : 'if he sits, this player should get more work'}.`);
+      out.push(`${st.name}, one of the team's usual starting ${POS_PL[p.pos]}, ${status}. ${sure ? 'That' : 'If he sits, that'} should mean more work for ${p.name}.`);
     } else if (p.pos === 'QB' && ['WR', 'TE'].includes(st.pos)) {
-      out.push(`His top target, ${who}.`);
+      out.push(`${st.name}, one of his usual top targets, ${status}.`);
     }
   }
   const teamsRanked = Object.keys(rosSaved.allowed?.[p.pos] ?? {}).length;
