@@ -46,6 +46,37 @@ const slotCounts = league.settings.rosterSettings.lineupSlotCounts;
 const playoffTeams = league.settings.scheduleSettings?.playoffTeamCount ?? 0;
 const lastWeek = league.settings.scheduleSettings?.matchupPeriodCount ?? 14;
 
+// --- Second opinions, so one site's guess doesn't decide everything. If either is down, ESPN alone is used.
+// Players are matched by name + NFL team (positions differ between sites); defenses by team.
+const norm = s => s.toLowerCase().replace(/[^a-z ]/g, '').replace(/ (jr|sr|ii|iii|iv|v)$/, '').trim();
+const TEAM = t => ({ WSH: 'WAS' }[t?.toUpperCase()] ?? t?.toUpperCase());
+const pkey = (name, pos, team) => (pos === 'D/ST' ? `dst|${TEAM(team)}` : `${norm(name)}|${TEAM(team)}`);
+// Sleeper's projections for this week (made by Rotowire, not ESPN), half-point PPR like this league
+const sleeper = new Map();
+try {
+  const r = await fetch(`https://api.sleeper.app/projections/nfl/${SEASON}/${week}?season_type=regular&${['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map(p => `position[]=${p}`).join('&')}`);
+  for (const x of await r.json()) {
+    const pos = x.player?.position === 'DEF' ? 'D/ST' : x.player?.position;
+    if (x.stats?.pts_half_ppr != null) sleeper.set(pkey(`${x.player.first_name} ${x.player.last_name}`, pos, x.team), x.stats.pts_half_ppr);
+  }
+} catch (err) { console.warn('Sleeper projections skipped:', err.message); }
+// Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
+const vegas = {};
+try {
+  const d = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&dates=${SEASON}`)).json();
+  for (const ev of d.events ?? []) {
+    const c = ev.competitions[0], o = c.odds?.[0];
+    if (!o?.overUnder || o.spread == null) continue;
+    const home = c.competitors.find(x => x.homeAway === 'home'), away = c.competitors.find(x => x.homeAway === 'away');
+    // spread is the home team's line: -3 means home is favored by 3
+    vegas[TEAM(home.team.abbreviation)] = (o.overUnder - o.spread) / 2;
+    vegas[TEAM(away.team.abbreviation)] = (o.overUnder + o.spread) / 2;
+  }
+} catch (err) { console.warn('Vegas lines skipped:', err.message); }
+const vegasAvg = Object.values(vegas).reduce((s, v) => s + v, 0) / Math.max(1, Object.keys(vegas).length);
+// "Experts disagree" = the two projections are 5+ points and 35%+ apart
+const split = (a, b) => a != null && b != null && Math.abs(a - b) >= 5 && Math.abs(a - b) >= 0.35 * Math.max(a, b);
+
 // statSourceId 0 = actual, 1 = projected; statSplitTypeId 0 = season, 1 = one week.
 // Stats also include last season's totals, so filter by seasonId.
 const stat = (p, src, split) => p.stats?.find(s => s.seasonId === SEASON && s.statSourceId === src && s.statSplitTypeId === split && (split === 0 || s.scoringPeriodId === week));
@@ -54,11 +85,15 @@ const stat = (p, src, split) => p.stats?.find(s => s.seasonId === SEASON && s.st
 function row(p, ratings) {
   const season = stat(p, 0, 0);
   const proj = stat(p, 1, 1);
+  const pos = POS[p.defaultPositionId] ?? '?', team = proAbbr[p.proTeamId] ?? 'FA';
+  // expected points = average of ESPN and Rotowire; ESPN alone when Rotowire has no number (or ESPN has none, e.g. bye)
+  const espn = proj?.appliedTotal ?? null, roto = espn == null ? null : sleeper.get(pkey(p.fullName, pos, team)) ?? null;
   return {
-    id: p.id, name: p.fullName, pos: POS[p.defaultPositionId] ?? '?', proTeamId: p.proTeamId,
-    team: proAbbr[p.proTeamId] ?? 'FA', teamName: proName[p.proTeamId] ?? 'No team', bye: proBye[p.proTeamId] ?? null,
+    id: p.id, name: p.fullName, pos, proTeamId: p.proTeamId,
+    team, teamName: proName[p.proTeamId] ?? 'No team', bye: proBye[p.proTeamId] ?? null,
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
-    pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, proj: proj?.appliedTotal ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
+    pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
+    proj: roto == null ? espn : (espn + roto) / 2, espn, roto, split: split(espn, roto), vegas: vegas[TEAM(team)] ?? null,
     owned: p.ownership?.percentOwned ?? null, trend: p.ownership?.percentChange ?? 0, rank: ratings?.[0]?.positionalRanking || null,
   };
 }
@@ -362,6 +397,7 @@ function chip(p) {
     const when = p.inj?.back && wks > 0 ? ` &middot; back ~${dateStr(p.inj.back)}${wks > 1 ? ` (${wks} wks)` : ''}` : '';
     out.push(`<span class="chip ${s[1]}">${s[0]}${p.inj?.type && p.inj.type !== 'Undisclosed' ? ` (${esc(p.inj.type.toLowerCase())})` : ''}${p.status === 'QUESTIONABLE' ? '' : when}</span>`);
   }
+  if (p.split && !out.length) out.push(`<span class="chip warn">Experts disagree: ESPN ${n(p.espn)}, Rotowire ${n(p.roto)}</span>`);
   return out.join(' ');
 }
 const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new Intl.PluralRules('en-US', { type: 'ordinal' }).select(k)];
@@ -394,9 +430,9 @@ const statusWords = p => p.inj?.season ? 'out for the season' : p.bye === week ?
 const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: statusWords(p), slot: p.slot === 'Bench' ? 'bench' : p.slot === 'IR' ? 'IR' : 'starting', pr: Math.round((p.proj ?? 0) * 10) / 10 }]));
 
 // Everything Claude needs to answer questions about this team, as plain text to paste
-const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week, ${n(p.avg)} per game, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`;
+const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null ? ` (ESPN ${n(p.espn)}, Rotowire ${n(p.roto)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''},${n(p.avg)} per game, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`;
 const facts = [
-  `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. Facts from ESPN as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
+  `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's and Rotowire's projections. Facts from ESPN, Sleeper (Rotowire) and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
   `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
   opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, ESPN win chance ${Math.round((mySide?.winProbability ?? 0) * 100)}%.` : '',
   `Starters:\n${starters(me).map(p => `- ${p.slot}: ${line(p)}`).join('\n')}`,
@@ -733,6 +769,7 @@ function render(p) {
       '<div><b>' + e(p.rank) + '</b><small>rank at his position</small></div>' +
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
+    (p.sources ? '<div class="group">Where "expected" comes from</div><p class="why" style="margin:0">' + e(p.sources) + '</p>' : '') +
     (p.games.length ? '<div class="group">Last games (fantasy points)</div><div class="bars">' + p.games.map(g =>
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
@@ -835,16 +872,21 @@ for (const [id, p] of shown) {
   const recent = played.length ? played.reduce((s, g) => s + g.pts, 0) / played.length : null;
   const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`
     : recent < p.avg * 0.75 ? `Cold: ${n(recent)} per game over his last ${played.length} games, worse than his season average.` : '';
+  const sources = [
+    p.roto != null ? `ESPN says ${n(p.espn)}, Rotowire says ${n(p.roto)}, so we use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
+    p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Vegas expects his team to score about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
+  ].filter(Boolean).join(' ');
   pdata[id] = {
     id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: p.teamName,
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
-    trend, games, news: news.get(id) ?? [],
+    trend, sources, games, news: news.get(id) ?? [],
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
   };
   // a defense is a whole team: "they", not "he"
   if (p.pos === 'D/ST') for (const k of ['play', 'advice']) if (pdata[id][k]) pdata[id][k] = [pdata[id][k][0], pdata[id][k][1].replace(/\bhe's\b/gi, 'they\'re').replace(/\bHe\b/g, 'They').replace(/\bhim\b/g, 'them')];
+  if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
