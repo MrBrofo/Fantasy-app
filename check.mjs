@@ -124,6 +124,31 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert.equal(t.seasonValue({ ...pl(20, 'WR', 'WR', 0, 2, 'OUT'), ros: 12 }), 12, 'out this week keeps his rest-of-season value');
   assert.equal(t.seasonValue({ ...pl(21, 'WR', 'IR', 0, 2, 'INJURY_RESERVE'), ros: 12 }), 0, 'IR is worth 0');
 }
+
+// advice check: each rule catches the mistake it was written for, and good advice passes clean
+{
+  const adviceCheck = new Function(cut('function adviceCheck(', '  return out;\n}') + '\nreturn adviceCheck;')();
+  const P = (id, pos, o = {}) => ({ id, name: `P${id}`, pos, slot: 'Bench', status: '', bye: 12, proj: 0, next: 0, ros: 5, ...o });
+  const zvada = P(1, 'K', { slot: 'K', bye: 8, proj: 8.7 }), sanders = P(2, 'K', { proj: 8.9, next: 9.0, ros: 8 });
+  const mcl = P(3, 'K', { next: 9.2, ros: 8.8 }), lions = P(4, 'D/ST', { next: 5.1, ros: 4.8 }), cmdrs = P(5, 'D/ST', { next: 7.4, ros: 4.7 });
+  const texans = P(6, 'D/ST', { slot: 'D/ST', bye: 8, proj: 8 }), winston = P(7, 'QB', { ros: 5 }), mendoza = P(8, 'QB', { ros: 8.5 });
+  const doubt = P(9, 'RB', { slot: 'RB', status: 'DOUBTFUL', proj: 0.7 }), rb2 = P(10, 'RB', { proj: 6 }), out1 = P(11, 'WR', { slot: 'WR', status: 'OUT', ros: 10 });
+  const ctx = o => ({
+    week: 7, weekValue: p => p.proj, nextValue: p => p.next, seasonValue: p => (p.status === 'OUT' ? 0 : p.ros), rate: p => p.ros, locked: () => false,
+    benchIn: [], replaces: new Map(), lineup: [], roster: [], base: [], seasonStarters: new Set(), fills: [], plan: [], benchUps: [], claims: [],
+    allFa: [mcl, lions, cmdrs], taken: new Set(), lost: () => false, slotPos: { RB: ['RB'], K: ['K'] }, ...o });
+  assert.equal(adviceCheck(ctx({ benchIn: [sanders], replaces: new Map([[sanders, zvada]]) })).length, 1, 'catches "Do now" for a 0.2-point swap');
+  assert.equal(adviceCheck(ctx({ lineup: [{ slot: 'RB', player: doubt }], roster: [doubt, rb2] })).length, 1, 'catches a doubtful starter kept over a healthy bench RB');
+  assert.equal(adviceCheck(ctx({ fills: [{ add: lions, byeFor: [texans] }], allFa: [lions, cmdrs] })).length, 1, 'catches the Lions picked over the Commanders for the bye week');
+  assert.match(adviceCheck(ctx({ fills: [{ add: sanders, byeFor: [zvada] }], allFa: [sanders, mcl] })).map(x => x[1]).join(), /coin flip/, 'catches a close call not marked close');
+  assert.equal(adviceCheck(ctx({ fills: [{ add: sanders, byeFor: [zvada], close: mcl }], allFa: [sanders, mcl] })).length, 0, 'a close call marked close passes');
+  assert.equal(adviceCheck(ctx({ plan: [{ add: rb2, drop: doubt, gain: 0.4, kind: 'season' }] })).length, 1, 'catches a pickup step worth under a point');
+  assert.equal(adviceCheck(ctx({ base: [winston], allFa: [mendoza] })).length, 1, 'catches a much better backup QB nobody mentions');
+  assert.equal(adviceCheck(ctx({ base: [winston], allFa: [mendoza], benchUps: [{ add: mendoza, drop: winston }] })).length, 0, 'a mentioned backup passes');
+  assert.equal(adviceCheck(ctx({ roster: [out1] })).length, 1, 'catches a one-week absence worth 0 for the season');
+  assert.equal(adviceCheck(ctx({ claims: [{ add: [mcl] }], lost: p => p === mcl })).length, 1, 'catches an unflagged claim a team ahead will win');
+  assert.equal(adviceCheck(ctx({ fills: [{ add: cmdrs, byeFor: [texans] }], allFa: [lions, cmdrs] })).length, 0, 'good advice: no warnings');
+}
 console.log('ok');
 
 // site lock: the published page can't be read without the password, and the password opens it

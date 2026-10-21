@@ -519,6 +519,7 @@ while (rosterSpots - baseRoster.filter(p => p.slot !== 'IR').length > 0 && fills
   const close = scored.find(s => s !== best && s.add.pos === best.add.pos && best.worth - s.worth < 0.5 && !lostOnWaivers(s.add, taken));
   if (close) best.close = close.add;
   best.byeFor = baseRoster.filter(p => p.pos === best.add.pos && p.slot !== 'IR' && p.bye === week + 1);
+  best.alts = scored.filter(s => s !== best && s.add.pos === best.add.pos).slice(0, 3).map(s => s.add);
   fills.push(best);
   baseRoster.push({ ...best.add, slot: 'Bench' });
 }
@@ -528,17 +529,21 @@ for (const m of claims) if (m.likelyLost && !m.drop.length) {
   const f = fills.find(x => x.add.pos === m.add[0].pos && !x.add.wa && !x.claim);
   if (f) { f.claim = m; m.backupFill = f.add; }
 }
+// "Also considered: McLaughlin (9.2), Smack (9.1, waivers)." so a missing or better option is visible
+const alsoText = (list, val) => (list.length ? ` Also considered: ${list.map(c => `${c.name} (${n(val(c))}${c.wa ? ', waivers' : ''})`).join(', ')}.` : '');
+const fillValue = f => (f.byeFor.length && nextProj.size ? nextValue : rate); // what the fill is judged on: his bye week, or the rest of the season
 const they = p => (p.pos === 'D/ST' ? 'they' : 'he'), They = p => (p.pos === 'D/ST' ? 'They' : 'He');
 // "Dominic Zvada is on bye in week 8. Expected 9.2 that week (ESPN)." + who we skipped and why
 const byeText = f => (f.byeFor.length && nextProj.has(f.add.id) ? ` ${f.byeFor.map(p => p.name).join(' and ')} ${f.byeFor.length > 1 ? 'are' : 'is'} on bye in week ${week + 1}. ${They(f.add)}'${f.add.pos === 'D/ST' ? 're' : 's'} expected ${n(nextProj.get(f.add.id))} that week (ESPN's projection).` : '')
   + (f.lost ? ` ${f.lost.p.name} is expected ${n(nextValue(f.lost.p))}, but ${they(f.lost.p)}'${f.lost.p.pos === 'D/ST' ? 're' : 's'} on waivers and ${f.lost.rivals.map(t => `${t.name} (${ordinal(t.waiver)})`).join(', ')} ${f.lost.rivals.length > 1 ? 'pick' : 'picks'} before you (${ordinal(me.waiver)}) and also ${f.lost.rivals.length > 1 ? 'need' : 'needs'} a ${POS_NAME[f.add.pos].toLowerCase()} that week, so you'd likely lose that claim.` : '')
-  + (f.close ? ` Close call: ${f.close.name}${nextProj.has(f.close.id) && f.byeFor.length ? ` (${n(nextProj.get(f.close.id))} that week)` : ''} is about as good${f.close.wa ? ', but on waivers' : ''}, so either is fine.` : '');
+  + (f.close ? ` Close call: ${f.close.name}${nextProj.has(f.close.id) && f.byeFor.length ? ` (${n(nextProj.get(f.close.id))} that week)` : ''} is about as good${f.close.wa ? ', but on waivers' : ''}, so either is fine.` : '')
+  + alsoText(f.alts, fillValue(f));
 // Better backups: a free player 2+ a game better (rest of season) than one of my bench players at the same spot.
 // Info, not a to-do: a backup only scores when a starter is out, so the gain is small.
 const seasonStarterIds = new Set(bestLineup(baseRoster, seasonValue).lineup.map(x => x.player.id));
 const benchTaken = new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]);
 const benchUps = baseRoster.filter(p => !seasonStarterIds.has(p.id) && p.slot !== 'IR' && ['QB', 'RB', 'WR', 'TE'].includes(p.pos))
-  .map(p => ({ drop: p, add: allFa.filter(c => c.pos === p.pos && playable(c) && !locked(c) && !benchTaken.has(c.id)).sort((a, b) => rate(b) - rate(a))[0] }))
+  .map(p => { const c = allFa.filter(c => c.pos === p.pos && playable(c) && !locked(c) && !benchTaken.has(c.id)).sort((a, b) => rate(b) - rate(a)); return { drop: p, add: c[0], alts: c.slice(1, 4) }; })
   .filter(x => x.add && rate(x.add) - rate(x.drop) >= 2).sort((a, b) => rate(b.add) - rate(b.drop) - (rate(a.add) - rate(a.drop)));
 // One plan, done in order: each step is applied before picking the next, so every step
 // drops a different player and players added earlier in the plan are never dropped.
@@ -754,7 +759,7 @@ for (const f of fills) todo.push([f.week >= 1 ? 'urgent' : 'week', f.byeFor.leng
   `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${byeText(f)} ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup ${f.add.pos === 'D/ST' ? 'they add' : 'he adds'} about ${Math.round(f.rest)} points over the next two weeks by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ` ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} on waivers, so this is a claim.` : ''}${f.claim ? ` You also have a claim in for ${f.claim.add[0].name}. Keep trying for him, but make that claim drop ${f.add.name} (steps under Pending): win it and ${f.claim.add[0].name} replaces ${they(f.add) === 'they' ? 'them' : 'him'}, lose it and you still have ${f.add.name}.` : ''}`, fillMove(f)]);
 for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
-    s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`, locked(s.add) || locked(s.drop) ? null : pickupMove(s)]);
+    (s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`) + alsoText(s.alts.map(a => a.add), s.kind === 'week' ? weekValue : rate), locked(s.add) || locked(s.drop) ? null : pickupMove(s)]);
 }
 const irUsed = me.roster.filter(p => p.slot === 'IR').length;
 const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -791,6 +796,61 @@ else try {
   else if (r.ok) { memo = { ...memo, ...await r.json() }; memoOk = true; }
 } catch {}
 const alerts = []; // [key, title, body, urgent]
+
+// --- Advice check: every update, re-test the advice against plain rules a smart manager uses. A failure shows on
+// Home and sends an alert, so a mistake shows up as a warning instead of a confident answer. Each rule comes from a
+// mistake the site really made (the Lions for a one-week fill-in, "Do now" for a 0.25-point swap, and so on).
+// ponytail: catches the kinds of mistakes named here; the "Also considered" lists are for spotting new kinds.
+function adviceCheck(c) {
+  const out = [], { week, weekValue, nextValue, seasonValue, rate, locked } = c, f1 = x => x.toFixed(1);
+  const cant = p => ['OUT', 'DOUBTFUL', 'INJURY_RESERVE', 'SUSPENSION'].includes(p.status) || p.slot === 'IR';
+  const valFor = f => (f.byeFor.length ? nextValue : rate);
+  // 1. a lineup change marked "Do now" wins by a point
+  for (const p of c.benchIn) {
+    const o = c.replaces.get(p);
+    if (o && weekValue(p) - weekValue(o) < 1) out.push(['Lineup', `"Start ${p.name}" beats ${o.name} by under a point (${f1(weekValue(p))} vs ${f1(weekValue(o))}), a coin flip.`]);
+  }
+  // 2. the lineup never keeps someone on bye or unlikely to play when a bench player who fits that spot would score more
+  for (const x of c.lineup) {
+    const p = x.player;
+    if (locked(p) || !(p.bye === week || cant(p))) continue;
+    const alt = c.roster.find(b => !c.lineup.some(y => y.player === b) && (c.slotPos[x.slot] ?? []).includes(b.pos) && weekValue(b) > weekValue(p));
+    if (alt) out.push(['Lineup', `${p.name} stays in your lineup (${p.bye === week ? 'on bye' : p.status.toLowerCase()}) though ${alt.name} could play that spot.`]);
+  }
+  // 3. nobody is suggested for a week he can't play
+  for (const f of c.fills) if ((f.byeFor.length && f.add.bye === week + 1) || cant(f.add)) out.push(['Pickups', `${f.add.name} is suggested but can't play when he's needed.`]);
+  for (const s of c.plan) if ((s.kind === 'week' && s.add.bye === week) || cant(s.add)) out.push(['Pickups', `${s.add.name} is suggested but can't play when he's needed.`]);
+  for (const f of c.fills) {
+    const v = valFor(f);
+    const top = c.allFa.filter(o => o.pos === f.add.pos && o.id !== f.add.id && !c.taken.has(o.id) && !cant(o) && !locked(o) && !c.lost(o)).sort((a, b) => v(b) - v(a))[0];
+    if (!top) continue;
+    // 4. a fill-in is the best you can actually get for the week it's for (within a point)
+    if (v(top) > v(f.add) + 1) out.push(['Pickups', `${f.add.name} (${f1(v(f.add))}) is suggested, but ${top.name} (${f1(v(top))}) is available and better ${f.byeFor.length ? `for week ${week + 1}` : 'for the rest of the season'}.`]);
+    // 5. a coin flip is called one
+    else if (Math.abs(v(top) - v(f.add)) < 0.5 && !f.close) out.push(['Pickups', `${f.add.name} vs ${top.name} is a coin flip (${f1(v(f.add))} vs ${f1(v(top))}) but isn't marked as one.`]);
+  }
+  // 6. every pickup step is worth a point
+  for (const s of c.plan) if (s.gain < 1) out.push(['Pickups', `"Add ${s.add.name}, drop ${s.drop.name}" is worth under a point.`]);
+  // 7. a free agent 2+ a game better than one of your backups gets mentioned
+  for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+    const mine = c.base.filter(p => p.pos === pos && p.slot !== 'IR' && !c.seasonStarters.has(p.id)).sort((a, b) => rate(a) - rate(b))[0];
+    const fa = c.allFa.filter(o => o.pos === pos && !cant(o) && !locked(o) && !c.taken.has(o.id)).sort((a, b) => rate(b) - rate(a))[0];
+    if (mine && fa && rate(fa) - rate(mine) >= 2 && ![...c.benchUps, ...c.plan, ...c.fills].some(x => x.add.id === fa.id)) out.push(['Pickups', `${fa.name} (${f1(rate(fa))}) beats your backup ${mine.name} (${f1(rate(mine))}) but isn't mentioned.`]);
+  }
+  // 8. a short absence doesn't make a player worthless for the season
+  for (const p of c.roster) if (p.slot !== 'IR' && p.status && p.status !== 'INJURY_RESERVE' && !p.inj?.season && rate(p) > 0 && seasonValue(p) === 0) out.push(['Season', `${p.name} counts as worth 0 for the season, but he's only ${p.status.toLowerCase()}.`]);
+  // 9. a claim a team ahead of you will likely win is flagged
+  for (const m of c.claims) if (m.add.length === 1 && c.lost(c.allFa.find(o => o.id === m.add[0].id) ?? m.add[0]) && !m.likelyLost) out.push(['Pending', `Your ${m.add[0].name} claim will likely lose to a team ahead of you, but it isn't flagged.`]);
+  return out;
+}
+const ADVICE_RULES = 9;
+const adviceIssues = adviceCheck({
+  week, weekValue, nextValue, seasonValue, rate, locked, benchIn, replaces, lineup: best.lineup, roster: me.roster, base: baseRoster,
+  seasonStarters: seasonStarterIds, fills, plan, benchUps, claims, allFa, lost: o => lostOnWaivers(o, new Set()),
+  taken: new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]),
+  slotPos: Object.fromEntries(Object.entries(SLOT).filter(([id]) => SLOT_POS[id]).map(([id, name]) => [name, SLOT_POS[id]])),
+});
+for (const [where, text] of adviceIssues) alerts.push([`check:${week}:${text}`, `Advice check: ${where}`, `${text} Treat that advice with care.`, false]);
 // --- Last week's recap from ESPN's box score: what my lineup scored vs the best lineup I could have set (hindsight),
 // and, once there's a saved one, what the site's suggested lineup would have scored
 let recap = null;
@@ -1238,6 +1298,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
 
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
+${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
 ${todo.length ? todo.map(([lvl, title, why, move]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p>${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
@@ -1267,7 +1328,7 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
   ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
   : `<div class="card empty">Nobody out there would make your starting lineup better${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
 ${benchUps.length ? `<div class="group">Better backups available</div><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
-  <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}</p>
+  <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}${esc(alsoText(x.alts, rate))}</p>
   ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div>` : ''}
 ${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
