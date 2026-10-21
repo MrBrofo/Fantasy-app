@@ -10,7 +10,7 @@ const cfg = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}
 const ESPN_S2 = process.env.ESPN_S2 || cfg.espn_s2;
 const SWID = process.env.SWID || cfg.SWID;
 const LEAGUE_ID = process.env.LEAGUE_ID || cfg.leagueId;
-const MOVE_URL = '';
+const MOVE_URL = 'https://fantasy-workers.drbrodydisick.workers.dev/';
 const SEASON = Number(process.env.SEASON || cfg.season || new Date().getFullYear());
 if (!ESPN_S2 || !SWID || !LEAGUE_ID) throw new Error('Missing ESPN_S2, SWID or LEAGUE_ID');
 
