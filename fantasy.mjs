@@ -811,6 +811,11 @@ if (etDay === waiverEve && etHour >= 18 && wplan) {
   const s = wplan;
   alerts.push([`wrem:${week}`, `Waivers run ${cap(waiverDay)}`, `Claim ${s.add.name} and drop ${s.drop.name}: ${s.kind === 'week' ? `about ${n(s.gain)} more points this week` : `about ${n(s.gain)} more points per week`}. More ideas in the app.`, false]);
 }
+// Someone available beats a player you have, or fills an empty spot: tell me once per player per week, as soon as it shows up
+for (const s of plan) alerts.push([`pickup:${week}:${s.add.id}`, `${s.add.name} is better than ${s.drop.name}`,
+  `${s.kind === 'week' ? `About ${n(s.gain)} more points this week` : `About ${n(s.gain)} more points per week`}. ${s.add.wa ? 'On waivers, so put in a claim' : 'Free agent, so you can add him now'}.`, s.kind === 'week']);
+for (const f of fills) alerts.push([`fill:${week}:${f.add.id}`, `Add ${f.add.name} (empty roster spot)`,
+  `${f.byeFor.length && nextProj.has(f.add.id) ? `Fills in for ${f.byeFor.map(p => p.name).join(' and ')} (bye in week ${week + 1}), expected ${n(nextProj.get(f.add.id))}. ` : ''}${f.add.wa ? 'On waivers, so put in a claim.' : 'Free agent, so you can add now.'}`, false]);
 // A source that's been down for 6+ hours (one alert per outage)
 for (const src of Object.keys(memo.downSince)) if (!down.includes(src)) delete memo.downSince[src];
 for (const src of down) {
