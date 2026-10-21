@@ -573,12 +573,13 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#eef1f7;--card:#fff;--fg:#121826;--muted:#667085;--line:#e4e7ee;--brand:#0b1530;--brand2:#1d3a8a;
---good:#12a150;--goodbg:#e3f6ea;--warn:#b26b00;--warnbg:#fff3d6;--bad:#d92d20;--badbg:#fde8e6;--chip:#f1f3f8}
+--good:#12a150;--goodbg:#e3f6ea;--warn:#b26b00;--warnbg:#fff3d6;--bad:#d92d20;--badbg:#fde8e6;--chip:#f1f3f8;--glass:rgba(255,255,255,.62);--glassline:rgba(255,255,255,.7)}
 @media (prefers-color-scheme:dark){:root{--bg:#0a0f1c;--card:#141b2d;--fg:#eef1f7;--muted:#98a2b3;--line:#232c42;
---good:#3ccf7a;--goodbg:#10301f;--warn:#f5b84a;--warnbg:#33270d;--bad:#ff6b5e;--badbg:#3a1714;--chip:#1c2540}}
-*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:64px}
+--good:#3ccf7a;--goodbg:#10301f;--warn:#f5b84a;--warnbg:#33270d;--bad:#ff6b5e;--badbg:#3a1714;--chip:#1c2540;--glass:rgba(28,37,64,.55);--glassline:rgba(255,255,255,.12)}}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top) + 12px)}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 Inter,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-.wrap{max-width:720px;margin:0 auto;padding:0 16px 48px}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px calc(96px + env(safe-area-inset-bottom))}
+body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);z-index:6;background:var(--glass);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
 header{background:linear-gradient(160deg,var(--brand),var(--brand2));color:#fff;padding:calc(env(safe-area-inset-top) + 20px) 0 56px}
 header .wrap{padding-bottom:0}
 .league{opacity:.7;font-size:13px;font-weight:500}
@@ -590,9 +591,11 @@ h1{font-size:26px;font-weight:800;margin:4px 0 2px;letter-spacing:-.02em}
 .vs .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vs .p{font-weight:800;font-size:20px;text-align:right}
 .bar{grid-column:1/-1;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;margin-bottom:6px}.bar i{display:block;height:100%;border-radius:3px}
 .verdict{margin-top:8px;font-size:14px}
-nav{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}
+/* Bottom bar, frosted glass like iOS. Fixed so it's always one tap away. */
+nav{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 8px);max-width:696px;margin:0 auto;z-index:10;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:6px;border-radius:999px;background:var(--glass);border:1px solid var(--glassline);box-shadow:0 8px 30px rgba(0,0,0,.18);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
 nav::-webkit-scrollbar{display:none}
-nav a{flex:none;padding:7px 14px;border-radius:999px;background:var(--card);color:var(--fg);text-decoration:none;font-weight:600;font-size:13px;border:1px solid var(--line)}
+nav a{flex:none;padding:9px 14px;border-radius:999px;color:var(--fg);text-decoration:none;font-weight:600;font-size:13px;transition:background .2s,color .2s}
+nav a.on{background:var(--brand2);color:#fff}
 section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
@@ -902,6 +905,16 @@ function render(p) {
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '');
 }
 function openSheet(id) { const p = P[id]; if (!p) return; body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+// Highlight the bottom-bar button for the section on screen
+const navLinks = [...document.querySelectorAll('nav a')];
+const spy = new IntersectionObserver(es => es.forEach(e => {
+  if (!e.isIntersecting) return;
+  navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + e.target.id));
+  const on = navLinks.find(a => a.classList.contains('on'));
+  const bar = on && on.parentNode;
+  if (on) bar.scrollTo({ left: on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' });
+}), { rootMargin: '-30% 0px -60% 0px' });
+navLinks.forEach(a => { const t = document.querySelector(a.hash); if (t) spy.observe(t); });
 function closeSheet() { sheet.hidden = true; document.body.style.overflow = ''; }
 
 // What changed since you last tapped "Got it". The last-seen copy lives only in this browser.
