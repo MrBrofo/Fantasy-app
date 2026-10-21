@@ -887,7 +887,7 @@ h1{font-size:26px;font-weight:800;margin:4px 0 2px;letter-spacing:-.02em}
 /* Bottom bar, frosted glass like iOS. Fixed so it's always one tap away. */
 nav{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 8px);max-width:696px;margin:0 auto;z-index:10;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:6px;border-radius:999px;background:var(--glass);border:1px solid var(--glassline);box-shadow:0 8px 30px rgba(0,0,0,.18);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
 nav::-webkit-scrollbar{display:none}
-nav a{flex:1;text-align:center;white-space:nowrap;padding:9px 6px;border-radius:999px;color:var(--fg);text-decoration:none;font-weight:600;font-size:13px;transition:background .2s,color .2s}
+nav a{flex:none;white-space:nowrap;padding:9px 14px;border-radius:999px;color:var(--fg);text-decoration:none;font-weight:600;font-size:13px;transition:background .2s,color .2s}
 nav a.on{background:var(--brand2);color:#fff}
 section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
@@ -968,6 +968,12 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:32px}
 details.intro{margin:-8px 0 12px}details.intro summary{display:inline;font-weight:600;font-size:13px;color:var(--brand2)}
 @media (prefers-color-scheme:dark){details.intro summary{color:#8fb0ff}}
 details.intro summary::after{content:none}details.intro[open] summary{margin-bottom:4px;display:block}details.intro p{margin:0}
+.off{display:none!important}
+body:not(.home) header{padding-bottom:22px}body:not(.home) .match{display:none}
+.sel{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--chip);color:var(--fg);font:15px Inter,system-ui,sans-serif;margin-bottom:6px}
+.tc-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pick{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:8px 0;border-bottom:1px solid var(--line);line-height:1.3}.pick input{margin-top:3px;flex:none}
+table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}table.cmp td.win{color:var(--good);font-weight:800}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 </style></head><body>
 
@@ -998,7 +1004,7 @@ ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pe
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
-<nav><a href="#todo">To-do</a><a href="#lineup">Team</a><a href="#pickups">Pickups</a><a href="#partners">Trades</a><a href="#season">Season</a></nav>
+<nav><a href="#home">Home</a><a href="#team">Team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#trades">Trades</a><a href="#compare">Compare</a><a href="#season">Season</a><a href="#league">League</a><a href="#news">News</a><a href="#help">How it works</a></nav>
 
 <section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
@@ -1067,6 +1073,11 @@ ${pending.length ? pending.map(m => {
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
 
+<section id="check"><h2>Trade checker</h2><p class="sub">Pick a team, then tick who you'd give and who you'd get.</p>
+<div class="card"><select id="tc-team" class="sel" aria-label="Team to trade with"></select>
+<div class="tc-cols"><div><div class="group">You give</div><div id="tc-give"></div></div><div><div class="group">You get</div><div id="tc-get"></div></div></div>
+<div id="tc-out"></div></div></section>
+
 <section id="partners"><h2>Trade partners</h2><p class="sub">Who's short at a position and who has extra. The best trades are with teams that have extra of what you're short on, and are short on what you have extra of.</p>
 <div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
 <p class="why" style="margin:0">Short on: <b>${myDepth.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}</b>. Extra: <b>${myDepth.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(p => esc(p.name)).join(', ')})`).join('; ') || 'nothing'}</b>.</p></div>
@@ -1086,6 +1097,9 @@ ${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.po
   <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
   <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(rate(s))} per game, rest of season)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
 </section>
+
+<section id="compare"><h2>Compare players</h2><p class="sub">Pick any two players. Green = better.</p>
+<div class="card"><select id="cmp-a" class="sel" aria-label="First player"></select><select id="cmp-b" class="sel" aria-label="Second player"></select><div id="cmp-out"></div></div></section>
 
 <section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
 ${week > lastWeek ? '' : `<div class="card"><div class="group" style="margin:0 0 10px">Playoff chances</div><div class="stat">
@@ -1159,6 +1173,7 @@ ${process.env.SITE_PASSWORD ? '<button type="button" id="signout" class="btn" st
 </div>
 <div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
 <script type="application/json" id="pdata">__PDATA__</script>
+<script type="application/json" id="rdata">__RDATA__</script>
 <script type="application/json" id="snap">${JSON.stringify(snap).replace(/</g, '\\u003c')}</script>
 <script type="application/json" id="facts">${JSON.stringify(facts).replace(/</g, '\\u003c')}</script>
 <script>
@@ -1226,20 +1241,10 @@ function render(p) {
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
     (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b><small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
-    (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '');
+    (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + addHim(p);
 }
 function openSheet(id) { const p = P[id]; if (!p) return; body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
-// Highlight the bottom-bar button for the section on screen
-const navLinks = [...document.querySelectorAll('nav a')];
-const NAV_OF = { changes: 'todo', ask: 'todo', alerts: 'todo', news: 'todo', pending: 'pickups', trades: 'partners', league: 'season', help: 'season' };
-const spy = new IntersectionObserver(es => es.forEach(e => {
-  if (!e.isIntersecting) return;
-  navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + (NAV_OF[e.target.id] || e.target.id)));
-  const on = navLinks.find(a => a.classList.contains('on'));
-  const bar = on && on.parentNode;
-  if (on) bar.scrollTo({ left: on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' });
-}), { rootMargin: '-30% 0px -60% 0px' });
-document.querySelectorAll('section[id]').forEach(t => spy.observe(t));
+__TOOLSJS__
 function closeSheet() { sheet.hidden = true; document.body.style.overflow = ''; }
 
 // What changed since you last tapped "Got it". The last-seen copy lives only in this browser.
@@ -1372,6 +1377,110 @@ for (const p of me.roster) for (const x of blurbs.get(p.id) ?? []) {
   const act = x.tag[1] === 'bad' && isStarter(p) && !locked(p);
   alerts.push([`news:${x.id}`, `${p.name} ${NEWS_SAYS[x.tag[0]]}`, `${x.h}${act ? ' He\'s in your lineup, so check your to-do list.' : ''}`, act]);
 }
+const TOOLS_JS = String.raw`// Data for Compare, the trade checker and Add buttons: every rostered player and the free agents
+const R = JSON.parse(document.getElementById('rdata').textContent);
+const plOf = id => { const a = R.pl[id]; return a && { id: +id, name: a[0], pos: a[1], team: a[2], proj: a[3], rate: a[4], playable: a[5], locked: a[6], slot: a[7], rank: a[8], ceiling: a[9], avg: a[10], bye: a[11], status: a[12] }; };
+const rosterOf = teamId => R.teams.find(t => t.id === teamId).ids.map(plOf).filter(Boolean);
+// "Add him" on a free agent's page: one button per player you could drop (lowest rest-of-season first)
+function addHim(p) {
+  if (!p.free || !R.moves) return '';
+  if (p.free.locked) return '<div class="group">Add him</div><p class="why" style="margin:0">His game already started, so ESPN locks him until next week.</p>';
+  const drops = rosterOf(R.me).filter(x => !x.locked).sort((a, b) => a.rate - b.rate);
+  return '<div class="group">Add him</div><p class="why" style="margin:0 0 4px">' + (p.free.wa ? "He is on waivers, so this puts in a claim. It goes through when waivers run." : "He is a free agent, so he joins your team right away.") + ' Pick who to drop:</p>' +
+    drops.map(x => '<button type="button" class="btn do" style="background:var(--chip);color:var(--fg);text-align:left" data-move="' + e(JSON.stringify({ label: 'Add ' + p.name + ', drop ' + x.name, type: p.free.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: p.id }, { type: 'DROP', playerId: x.id }], week: R.week })) + '">Drop ' + e(x.name) + ' <span class="tag">' + x.pos + ', ' + x.rate.toFixed(1) + ' per game</span></button>').join('');
+}
+(() => {
+  const slotCounts = R.slotCounts, SLOT_POS = R.slotPos, SLOT = R.slotName;
+  __BESTLINEUP__
+  const isStarter = p => !['Bench', 'IR', 'FA'].includes(p.slot);
+  const seasonV = p => (p.playable ? p.rate : 0);
+  const weekV = p => (p.playable && !(p.locked && !isStarter(p)) ? p.proj : 0);
+  const total = (ps, v) => bestLineup(ps, v).total;
+  const weekTotal = ps => bestLineup(ps, p => weekV(p) + (p.locked && isStarter(p) ? 1e3 : 0)).lineup.reduce((t, x) => t + weekV(x.player), 0);
+  const vor = p => Math.max(0, p.rate - (R.repl[p.pos] || 0));
+  const f1 = x => (x > 0 ? '+' : '') + x.toFixed(1);
+  const opt = p => '<option value="' + p.id + '">' + e(p.name) + ' (' + p.pos + ')</option>';
+  const $ = id => document.getElementById(id);
+
+  // --- Trade checker: the same math as the trade ideas, for any players you pick
+  const tcTeam = $('tc-team');
+  tcTeam.innerHTML = '<option value="">Pick a team...</option>' + R.teams.filter(t => t.id !== R.me).map(t => '<option value="' + t.id + '">' + e(t.name) + '</option>').join('');
+  const box = (p, side) => '<label class="pick"><input type="checkbox" data-side="' + side + '" value="' + p.id + '"><span><b>' + e(p.name) + '</b><br><span class="tag">' + p.pos + ' &middot; ' + p.rate.toFixed(1) + ' per game</span></span></label>';
+  function tcLists() {
+    const them = +tcTeam.value;
+    $('tc-give').innerHTML = rosterOf(R.me).map(p => box(p, 'give')).join('');
+    $('tc-get').innerHTML = them ? rosterOf(them).map(p => box(p, 'get')).join('') : '<p class="tag">Pick a team first.</p>';
+    tcCheck();
+  }
+  function tcCheck() {
+    const them = +tcTeam.value, ticked = side => [...document.querySelectorAll('#check input[data-side=' + side + ']:checked')].map(i => +i.value);
+    const mine = rosterOf(R.me), theirs = them ? rosterOf(them) : [];
+    const give = mine.filter(p => ticked('give').includes(p.id)), take = theirs.filter(p => ticked('get').includes(p.id));
+    if (!them || !give.length || !take.length) { $('tc-out').innerHTML = '<p class="tag" style="margin:10px 0 0">Tick at least one player on each side.</p>'; return; }
+    const mineAfter = [...mine.filter(p => !give.includes(p)), ...take], theirsAfter = [...theirs.filter(p => !take.includes(p)), ...give];
+    const season = total(mineAfter, seasonV) - total(mine, seasonV), theirsGain = total(theirsAfter, seasonV) - total(theirs, seasonV);
+    const wk = weekTotal([...mine.filter(p => !give.includes(p) || (p.locked && isStarter(p))), ...take.map(p => ({ ...p, slot: 'Bench' }))]) - weekTotal(mine);
+    const vg = give.reduce((s, p) => s + vor(p), 0), vt = take.reduce((s, p) => s + vor(p), 0);
+    const roomNote = give.length < take.length ? '<p class="tag" style="margin:6px 0 0">You get more players than you give, so you would also have to drop ' + (take.length - give.length) + ' (not counted here).</p>' : '';
+    const [cls, word] = season >= 1 ? ['good', 'Good for you'] : season <= -1 ? ['bad', 'Bad for you'] : ['meh', 'About even for you'];
+    const accept = theirsGain >= -0.5 && vg >= vt * 0.85;
+    $('tc-out').innerHTML = '<div class="vhead" style="margin-top:12px"><b>Verdict</b><span class="verdict-' + cls + '">' + word + '</span></div>' +
+      '<div class="stat"><div><b style="color:var(--' + (season >= 0 ? 'good' : 'bad') + ')">' + f1(season) + '</b><small>points per week for you, rest of season</small></div>' +
+      '<div><b>' + f1(wk) + '</b><small>points for you this week</small></div>' +
+      '<div><b>' + f1(theirsGain) + '</b><small>points per week for them</small></div>' +
+      '<div><b>' + (accept ? 'Likely' : 'Unlikely') + '</b><small>they say yes (fair on value)</small></div></div>' + roomNote +
+      '<p class="tag" style="margin:8px 0 0">Points per week = how much better your best lineup gets, using the averaged rest-of-season projections. Offer it in ESPN under Trade.</p>';
+  }
+  tcTeam.addEventListener('change', tcLists);
+  $('check').addEventListener('change', ev => { if (ev.target.matches('input[type=checkbox]')) tcCheck(); });
+  tcLists();
+
+  // --- Compare two players side by side
+  const groups = '<optgroup label="Your team">' + rosterOf(R.me).map(opt).join('') + '</optgroup>' +
+    '<optgroup label="Free agents">' + R.fa.map(plOf).filter(Boolean).map(opt).join('') + '</optgroup>' +
+    R.teams.filter(t => t.id !== R.me).map(t => '<optgroup label="' + e(t.name) + '">' + rosterOf(t.id).map(opt).join('') + '</optgroup>').join('');
+  const ca = $('cmp-a'), cb = $('cmp-b');
+  ca.innerHTML = groups; cb.innerHTML = groups;
+  const mineIds = rosterOf(R.me);
+  ca.value = mineIds[0] ? mineIds[0].id : ''; cb.value = (R.fa.map(plOf).find(p => p && mineIds[0] && p.pos === mineIds[0].pos) || mineIds[1] || {}).id || '';
+  const ownerOf = id => { const t = R.teams.find(t => t.ids.includes(id)); return t ? (t.id === R.me ? 'You' : t.name) : 'Free agent'; };
+  function compare() {
+    const a = plOf(ca.value), b = plOf(cb.value);
+    if (!a || !b) { $('cmp-out').innerHTML = ''; return; }
+    const rows = [
+      ['Expected this week', a.proj, b.proj, 1],
+      ['Great-game score', a.ceiling || a.proj, b.ceiling || b.proj, 1],
+      ['Per game, rest of season', a.rate, b.rate, 1],
+      ['Per game so far', a.avg, b.avg, 1],
+      ['Rank at his position', a.rank || '-', b.rank || '-', -1],
+      ['Status', a.status, b.status, 0],
+      ['Bye week', a.bye || '-', b.bye || '-', 0],
+      ['Team in your league', ownerOf(a.id), ownerOf(b.id), 0],
+    ];
+    const cell = (v, o, dir) => '<td class="num' + (dir && typeof v === 'number' && typeof o === 'number' && (dir > 0 ? v > o : v < o) ? ' win' : '') + '">' + e(typeof v === 'number' && dir ? (dir > 0 ? v.toFixed(1) : v) : v) + '</td>';
+    const wk = a.proj === b.proj ? 'Even this week.' : 'This week: ' + e((a.proj > b.proj ? a : b).name) + ' (by ' + Math.abs(a.proj - b.proj).toFixed(1) + ').';
+    const ros = a.rate === b.rate ? 'Even for the rest of the season.' : 'Rest of season: ' + e((a.rate > b.rate ? a : b).name) + ' (by ' + Math.abs(a.rate - b.rate).toFixed(1) + ' per game).';
+    $('cmp-out').innerHTML = '<table class="cmp"><tr><td></td><td class="num"><b>' + e(a.name) + '</b></td><td class="num"><b>' + e(b.name) + '</b></td></tr>' +
+      rows.map(([k, x, y, dir]) => '<tr><td>' + k + '</td>' + cell(x, y, dir) + cell(y, x, dir) + '</tr>').join('') + '</table>' +
+      '<p class="why"><b>Better pick</b><br>' + wk + '<br>' + ros + '</p>';
+  }
+  ca.addEventListener('change', compare); cb.addEventListener('change', compare);
+  compare();
+})();
+// One section at a time: the bottom bar picks which tab shows, like pages in an app
+const navLinks = [...document.querySelectorAll('nav a')];
+function showTab(tab, jump) {
+  if (!navLinks.some(a => a.hash === '#' + tab)) tab = 'home';
+  document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab));
+  document.body.classList.toggle('home', tab === 'home');
+  navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + tab));
+  const on = navLinks.find(a => a.classList.contains('on')), bar = on.parentNode;
+  bar.scrollTo({ left: on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2, behavior: jump ? 'smooth' : 'auto' });
+  if (jump) scrollTo({ top: 0 });
+}
+navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); history.replaceState(null, '', a.hash); showTab(a.hash.slice(1), true); }));
+showTab(location.hash.slice(1), false);
+`;
 const MOVE_JS = String.raw`// Roster-move buttons: ask first, then send the move to ESPN through the Cloudflare worker
 const WHY = {
   TRAN_LINEUP_LOCKED: "one of those players' games already started, so ESPN locked him",
@@ -1434,7 +1543,7 @@ for (const [id, p] of shown) {
     p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Vegas expects his team to score about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
   ].filter(Boolean).join(' ');
   pdata[id] = {
-    id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: p.teamName,
+    id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: p.teamName, free: t ? null : { wa: !!p.wa, locked: locked(p) },
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
@@ -1447,12 +1556,21 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
+const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', pickups: 'pickups', pending: 'pending', check: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
   if (text.replace(/<[^>]+>/g, '').length < 110 || cut < 0) return m;
   return `${h}<p class="sub">${text.slice(0, cut + 1)}</p><details class="intro"><summary>How to read this</summary><p class="sub">${text.slice(cut + 2)}</p></details>`;
 });
+html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', bestLineup.toString()));
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
+const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(1), +rate(p).toFixed(1), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p)];
+const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
+const rdata = { week: league.scoringPeriodId, me: me.id, moves: !!MOVE_URL, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
+  teams: teams.map(t => ({ id: t.id, name: t.name, ids: t.roster.map(p => p.id) })), fa: faList.map(p => p.id),
+  pl: Object.fromEntries([...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
+html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
 
 // Site password (GitHub secret SITE_PASSWORD): the published page is the real page encrypted
