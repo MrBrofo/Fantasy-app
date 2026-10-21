@@ -586,24 +586,35 @@ const qbThisWeek = team => slp.filter(x => x.team === team && x.pos === 'QB' && 
 // 1 = gives up the most points to that position
 const defRank = (pos, team) => { const t = rosSaved.allowed?.[pos]; return t?.[team] == null ? null : Object.values(t).filter(v => v > t[team]).length + 1; };
 const oppId = (p, wk) => { const g = pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[wk]?.[0]; return g && (g.homeProTeamId === p.proTeamId ? g.awayProTeamId : g.homeProTeamId); };
-const statusWord = st => ({ Questionable: 'might not play', Doubtful: 'probably won\'t play', IR: 'is on IR' }[st] ?? 'is out');
+// Injury status: ESPN's (the league's own) wins when ESPN has the player; Sleeper's otherwise.
+// Sleeper sometimes keeps last week's "Out" for days, so when the two disagree the note says so instead.
+const SLP_OUT = ['Out', 'IR', 'Doubtful', 'Sus', 'PUP', 'COV'];
+const ESPN_WORD = { OUT: 'is out', INJURY_RESERVE: 'is on IR', SUSPENSION: 'is suspended', DOUBTFUL: 'probably won\'t play', QUESTIONABLE: 'might not play' };
+const SLP_WORD = { Questionable: 'might not play', Doubtful: 'probably won\'t play', IR: 'is on IR', Sus: 'is suspended' };
+const espnStatus = new Map([...teams.flatMap(t => t.roster), ...allFa].map(p => [pkey(p.name, p.pos, p.team), p.status]));
+function statusOf(k) {
+  const e = espnStatus.get(k), sl = slpBy.get(k)?.inj ?? null;
+  if (e === undefined) return { out: SLP_OUT.includes(sl), maybe: sl === 'Questionable', word: SLP_WORD[sl] ?? 'is out' };
+  const out = [...HURT, 'DOUBTFUL'].includes(e);
+  return { out, maybe: e === 'QUESTIONABLE', word: ESPN_WORD[e] ?? 'is healthy', espnSays: e,
+    disagree: SLP_OUT.includes(sl) && !out ? `Injury reports disagree: ESPN says he ${ESPN_WORD[e] ?? 'is healthy'}, but Sleeper still lists him as ${sl === 'IR' ? 'on IR' : sl.toLowerCase()}. ESPN is usually more current. Check again before kickoff.` : null };
+}
 function notes(p) {
-  const team = TEAM(p.team), k = pkey(p.name, p.pos, p.team), out = [];
-  const espnOut = HURT.includes(p.status), slpInj = slpBy.get(k)?.inj;
-  if (espnOut || ['Out', 'IR', 'Sus', 'PUP', 'COV'].includes(slpInj)) {
+  const team = TEAM(p.team), k = pkey(p.name, p.pos, p.team), out = [], me_ = statusOf(k);
+  if (me_.out) {
     const still = [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null && v >= 3);
-    if (still.length) out.push(`Experts haven't caught up: he ${espnOut ? { OUT: 'is out', INJURY_RESERVE: 'is on IR', SUSPENSION: 'is suspended' }[p.status] : statusWord(slpInj)}, but ${still.map(([src, v]) => `${src} still expects ${n(v)}`).join(' and ')}. ${espnOut ? 'The site counts him as 0 this week.' : 'Don\'t start him unless that changes.'}`);
-  }
+    if (still.length) out.push(`Experts haven't caught up: he ${me_.word}, but ${still.map(([src, v]) => `${src} still expects ${n(v)}`).join(' and ')}. ${HURT.includes(p.status) ? 'The site counts him as 0 this week.' : 'Don\'t start him unless that changes.'}`);
+  } else if (me_.disagree) out.push(me_.disagree);
   if (!POS_PL[p.pos]) return out;
   if (p.pos === 'QB') {
     const q = qbThisWeek(team);
     if (q && q.k !== k && (slpBy.get(k)?.pts ?? 0) < q.pts / 2) out.push(`Not expected to start this week: ${q.name} is the starting QB.`);
   }
   for (const st of usualStarters(team)) {
-    const now = slpBy.get(st.k);
-    if (st.k === k || !now?.inj || !(OUT.includes(now.inj) || now.inj === 'Questionable')) continue;
-    const sure = OUT.includes(now.inj), status = statusWord(now.inj);
-    const lag = sure && (now.pts ?? 0) >= 3 ? ` Experts still project ${st.name} as if he plays, so ${p.name}'s number may not reflect this yet.` : '';
+    const now = statusOf(st.k);
+    if (st.k === k || !(now.out || now.maybe)) continue;
+    const sure = now.out, status = now.word;
+    const lag = sure && (slpBy.get(st.k)?.pts ?? 0) >= 3 ? ` Experts still project ${st.name} as if he plays, so ${p.name}'s number may not reflect this yet.` : '';
     if (st.pos === 'QB' && p.pos !== 'QB') {
       const q = qbThisWeek(team);
       out.push(`His usual QB, ${st.name}, ${status}.${sure && q && q.k !== st.k ? ` ${q.name} is expected to start instead. A backup QB usually means fewer points for his teammates.` : ''}${lag}`);
