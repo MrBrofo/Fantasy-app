@@ -707,6 +707,8 @@ const benchCheck = baseRoster.filter(p => p.slot === 'Bench').map(p => {
 // they start now, this week's projection, injury tags, bye weeks, and which spots each team is short or
 // deep at. Only the framing is salesy. Returns null when there's no honest, believable pitch, so an
 // obviously lopsided trade (worse player by every number they can see) never makes the list.
+// Brody's texting voice, from his own trade text: short and plain, normal capitals, "bro" now and then
+const VOICE = `short and plain, normal capitalization, little slang (I sometimes say "bro"). Example of how I text: "I'm thin at running back and need one, would you do Washington for Pollard?"`;
 function pitches(f) {
   const { give, take, d } = f, g = give[0], two = give.length > 1;
   const last = p => (p.pos === 'D/ST' ? p.name : p.name.replace(/ (Jr\.|Sr\.|II|III|IV|V)$/, '').split(' ').slice(-1)[0]);
@@ -720,24 +722,25 @@ function pitches(f) {
   if (f.theirWeek >= 2) facts.push([2, `it'd get you about ${Math.round(f.theirWeek)} more points this week too`]);
   const hurt = ['QUESTIONABLE', 'DOUBTFUL', 'OUT', 'INJURY_RESERVE'].includes(take.status);
   if (take.bye > week && take.bye <= week + 2) facts.push([1, `${last(take)} has his bye in week ${take.bye}`]);
-  const reason = myDepth.short.includes(take.pos) ? `i'm thin at ${posName(take.pos)} and need one` : myDepth.extra.some(([pos]) => give.some(p => p.pos === pos)) ? `i've got more ${posName(g.pos)}s than i can start` : '';
+  const reason = myDepth.short.includes(take.pos) ? `I'm thin at ${posName(take.pos)} and need one` : myDepth.extra.some(([pos]) => give.some(p => p.pos === pos)) ? `I've got more ${posName(g.pos)}s than I can start` : '';
   const strength = facts.reduce((s, [k]) => s + k, 0) + (hurt ? 2 : 0) + (reason ? 1 : 0);
   if (strength < 2 || !facts.length) return null; // 4+ passes the normal check; 2+ only the looser one
   const top = facts.sort((a, b) => b[0] - a[0]).slice(0, 2).map(([, t]) => t);
-  const close = ['', ' lmk', ' lmk what you think', ' open to tweaking it'][take.id % 4];
+  const cap = t => t[0].toUpperCase() + t.slice(1), say = (...parts) => parts.filter(Boolean).map(cap).join(' ');
+  const T = last(take), [s1, s2] = top.map(t => t + '.');
   const out = [
-    `would you do ${both} for ${last(take)}? ${top.join('. ')}.${close}`,
-    reason ? `${reason}, would you do ${both} for ${last(take)}? ${top.join('. ')}` : `you open to ${both} for ${last(take)}? ${top[0]}${top[1] ? `, plus ${top[1]}` : ''}`,
-    hurt ? `ngl this is kinda risky for me since ${last(take)} is banged up, but i'd do ${both} for him. ${top[0]}` : `thoughts on ${both} for ${last(take)}? ${top[0]}.${close}`,
-    `${top[0]}. any chance you'd do ${both} for ${last(take)}?`,
-    `trade idea: ${both} for ${last(take)}. ${top.join(', and ')}`,
-    `what would it take to get ${last(take)}? thinking ${both}. ${top[0]}`,
-    `${both} for ${last(take)}, you in? ${top[top.length - 1]}`,
+    say(`would you do ${both} for ${T}?`, s1, s2),
+    reason ? say(`${reason}, would you do ${both} for ${T}?`, s1) : say(`would you be open to ${both} for ${T}?`, s1),
+    hurt ? say(`this is kind of risky for me since ${T} is hurt, but I'd do ${both} for him.`, s1) : say(`what do you think about ${both} for ${T}?`, s1, s2),
+    say(s1, `would you do ${both} for ${T}?`),
+    say(`trade idea bro: ${both} for ${T}.`, s1),
+    say(`what would it take to get ${T}? I'd do ${both}.`, s1),
+    say(`${both} for ${T}?`, s2 ?? s1, 'let me know'),
   ];
   return { texts: [...new Set(out)], strength };
 }
 // what Claude needs to write its own version: the trade and only true facts
-const claudePrompt = f => `Write a short, casual text (1-3 sentences, lowercase, like a real person texting a friend) to my fantasy football league mate proposing this trade. I give: ${f.give.map(p => `${p.name} (${p.pos})`).join(' and ')}. I get: ${f.take.name} (${f.take.pos}). Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: ${[
+const claudePrompt = f => `Write a short text (1-3 sentences) in my voice to my fantasy football league mate proposing this trade. My voice: ${VOICE} I give: ${f.give.map(p => `${p.name} (${p.pos})`).join(' and ')}. I get: ${f.take.name} (${f.take.pos}). Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: ${[
   ...f.give.map(p => `${p.name} averages ${f1(p.avg)} points a game this season${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`),
   `${f.take.name} averages ${f1(f.take.avg)} a game${f.take.status && STATUS[f.take.status] ? ` and is listed as "${STATUS[f.take.status][0].toLowerCase()}"` : ''}${f.take.bye > week ? `, bye in week ${f.take.bye}` : ''}`,
   f.d.short.length ? `their team is short at ${f.d.short.map(p => POS_NAME[p].toLowerCase()).join(', ')}` : '',
@@ -1925,18 +1928,19 @@ function addHim(p) {
     if (give.length > take.length) facts.push("that's " + give.length + ' guys for ' + take.length + ', ' + avgSum(give).toFixed(1) + ' points a game combined');
     else if (avgSum(give) > avgSum(take)) facts.push(both + (give.length > 1 ? ' have' : ' has') + ' outscored ' + take.map(last).join(' and ') + ' so far this year (' + avgSum(give).toFixed(1) + ' vs ' + avgSum(take).toFixed(1) + ' a game)');
     if (theirWeek >= 2) facts.push("it'd get you about " + Math.round(theirWeek) + ' more points this week too');
-    const top = facts.slice(0, 2);
+    const top = facts.slice(0, 2), cap = t => t[0].toUpperCase() + t.slice(1), say = (...parts) => parts.filter(Boolean).map(cap).join(' ');
+    const T = take.map(last).join(' and '), s1 = top[0] && top[0] + '.', s2 = top[1] && top[1] + '.';
     return [...new Set([
-      'would you do ' + ask + '?' + (top.length ? ' ' + top.join('. ') + '.' : '') + ' lmk',
-      'you open to ' + ask + '?' + (top[0] ? ' ' + top[0] : ''),
-      'thoughts on ' + ask + '?' + (top[0] ? ' ' + top[0] + '.' : '') + ' open to tweaking it',
-      top[0] ? top[0] + ". any chance you'd do " + ask + '?' : 'any chance you would do ' + ask + '?',
-      'trade idea: ' + ask + '.' + (top.length ? ' ' + top.join(', and ') : ''),
-      'what would it take to get ' + take.map(last).join(' and ') + '? thinking ' + both + '.' + (top[0] ? ' ' + top[0] : ''),
-      ask + ', you in?' + (top.length ? ' ' + top[top.length - 1] : ''),
-    ])];
+      say('would you do ' + ask + '?', s1, s2),
+      say('would you be open to ' + ask + '?', s1),
+      say('what do you think about ' + ask + '?', s1, s2),
+      s1 ? say(s1, 'would you do ' + ask + '?') : '',
+      say('trade idea bro: ' + ask + '.', s1),
+      say('what would it take to get ' + T + "? I'd do " + both + '.', s1),
+      say(ask + '?', s2 || s1, 'let me know'),
+    ].filter(Boolean))];
   }
-  const tcPrompt = (give, take, team, theirWeek) => "Write a short, casual text (1-3 sentences, lowercase, like a real person texting a friend) to my fantasy football league mate proposing this trade. I give: " +
+  const tcPrompt = (give, take, team, theirWeek) => "Write a short text (1-3 sentences) in my voice to my fantasy football league mate proposing this trade. My voice: " + R.voice + " I give: " +
     give.map(p => p.name + ' (' + p.pos + ')').join(' and ') + '. I get: ' + take.map(p => p.name + ' (' + p.pos + ')').join(' and ') + ". Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: " +
     [...give, ...take].map(p => p.name + ' averages ' + (p.avg || 0).toFixed(1) + ' points a game this season' + (p.rank ? ', ranked ' + p.rank + ' at ' + p.pos : ''))
       .concat((team.short || []).length ? ['their team is short at ' + team.short.map(posWord).join(', ')] : [], theirWeek >= 1 ? ['it would add about ' + Math.round(theirWeek) + ' projected points to their lineup this week'] : [])
@@ -2236,7 +2240,7 @@ html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', best
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
-const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
+const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => ({ id: t.id, name: t.name, ids: t.roster.map(p => p.id), short: depth(t).short })), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
