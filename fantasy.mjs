@@ -46,11 +46,13 @@ const slotCounts = league.settings.rosterSettings.lineupSlotCounts;
 const playoffTeams = league.settings.scheduleSettings?.playoffTeamCount ?? 0;
 const lastWeek = league.settings.scheduleSettings?.matchupPeriodCount ?? 14;
 
-// --- Second opinions, so one site's guess doesn't decide everything. If either is down, ESPN alone is used.
+// --- Second opinions, so one site's guess doesn't decide everything. Any that fail are left out (and named on the page).
 // Players are matched by name + NFL team (positions differ between sites); defenses by team.
 const norm = s => s.toLowerCase().replace(/[^a-z ]/g, '').replace(/ (jr|sr|ii|iii|iv|v)$/, '').trim();
 const TEAM = t => ({ WSH: 'WAS' }[t?.toUpperCase()] ?? t?.toUpperCase());
 const pkey = (name, pos, team) => (pos === 'D/ST' ? `dst|${TEAM(team)}` : `${norm(name)}|${TEAM(team)}`);
+// Sources that failed this run; the page shows a warning banner listing them
+const down = [];
 // Sleeper's projections for this week (made by Rotowire, not ESPN), half-point PPR like this league
 const sleeper = new Map();
 try {
@@ -60,6 +62,7 @@ try {
     if (x.stats?.pts_half_ppr != null) sleeper.set(pkey(`${x.player.first_name} ${x.player.last_name}`, pos, x.team), x.stats.pts_half_ppr);
   }
 } catch (err) { console.warn('Sleeper projections skipped:', err.message); }
+if (!sleeper.size) down.push('Rotowire');
 // CBS Sports' projections. CBS has no free API, so this reads their stats pages, which can break when they
 // redesign. To go easy on them it's fetched at most once an hour; the copy is saved on the published site
 // (cbs.json) and the next run reuses it. (FantasyPros was tried first: it hides all but the top 10 without a login.)
@@ -88,7 +91,7 @@ if (!cbsSaved) try {
   }
   if (half.size < 200) throw new Error(`only ${half.size} players found, page layout probably changed`);
   cbsSaved = { week, at: Date.now(), rows: [...half.values()] };
-} catch (err) { console.warn('CBS projections skipped:', err.message); }
+} catch (err) { console.warn('CBS projections skipped:', err.message); down.push('CBS'); }
 for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, pos, team), pts);
 // Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
 const vegas = {};
@@ -102,7 +105,7 @@ try {
     vegas[TEAM(home.team.abbreviation)] = (o.overUnder - o.spread) / 2;
     vegas[TEAM(away.team.abbreviation)] = (o.overUnder + o.spread) / 2;
   }
-} catch (err) { console.warn('Vegas lines skipped:', err.message); }
+} catch (err) { console.warn('Vegas lines skipped:', err.message); down.push('Vegas lines'); }
 const vegasAvg = Object.values(vegas).reduce((s, v) => s + v, 0) / Math.max(1, Object.keys(vegas).length);
 // "Experts disagree" = the highest and lowest projection are 5+ points and 35%+ apart
 const split = v => v.length > 1 && Math.max(...v) - Math.min(...v) >= 5 && Math.max(...v) - Math.min(...v) >= 0.35 * Math.max(...v);
@@ -611,6 +614,8 @@ ${opp ? (() => {
 ${!live && fixedProj + weekPlanGain > myProj + 0.5 ? ` Doing the to-do list below gets you to about <b>${n(fixedProj + weekPlanGain)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>`;
 })() : ''}
+${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
+<div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
 <nav><a href="#todo">To-do</a><a href="#lineup">My team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#partners">Partners</a><a href="#trades">Trades</a><a href="#season">Season</a><a href="#league">League</a><a href="#help">How it works</a></nav>
 
