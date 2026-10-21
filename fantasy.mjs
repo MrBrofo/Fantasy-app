@@ -490,6 +490,41 @@ const partners = teams.filter(t => t !== me).map(depth).map(d => ({
   youHave: myDepth.extra.filter(([pos]) => d.short.includes(pos)), // what you can give them
 })).sort((a, b) => (b.theyHave.length && b.youHave.length) - (a.theyHave.length && a.youHave.length) || b.theyHave.length - a.theyHave.length);
 
+// --- Fleece finder: trades that look fair on the number most managers check (points per game so far),
+// but that the rest-of-season projections say clearly favor me. 1-for-1 and 2-for-1 (my two for their one).
+// ponytail: the other team's extra roster spot on a 2-for-1 isn't counted (they'd drop their worst bench player).
+const avgValue = p => (playable(p) ? p.avg ?? 0 : 0);
+const fleece = [];
+for (const d of partners) {
+  const mine = me.roster.filter(tradeable), theirs = d.t.roster.filter(tradeable);
+  const gives = [...mine.map(p => [p]), ...mine.flatMap((a, i) => mine.slice(i + 1).map(b => [a, b]))];
+  for (const give of gives) for (const take of theirs) {
+    const j = judge(give, [take], d.t);
+    if (j.mine < 2 || j.theirs > -1) continue;
+    // what they'd see: their best lineup scored with season-so-far averages
+    const looks = score([...d.t.roster.filter(p => p !== take), ...give], avgValue) - score(d.t.roster, avgValue);
+    if (looks >= 0) fleece.push({ d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks });
+  }
+}
+fleece.sort((a, b) => b.mine - b.theirs - (a.mine - a.theirs));
+const topFleece = [];
+for (const f of fleece) if (topFleece.length < 5 && !topFleece.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)))) topFleece.push(f);
+// A text to send: casual, every fact true (season averages, ranks, injury tags, bye weeks, their thin spots),
+// only the framing is salesy.
+function pitch(f) {
+  const { give, take } = f, g = give[0], posName = p => POS_NAME[p.pos].toLowerCase();
+  const facts = [];
+  const thin = [...new Set(give.map(p => p.pos))].filter(pos => f.d.short.includes(pos));
+  if (thin.length) facts.push(`you're thin at ${thin.map(p => POS_NAME[p].toLowerCase()).join(' and ')} right now`);
+  if (give.length > 1) facts.push(`you'd get two guys who can start for one: ${give.map(p => `${p.name} (${n(p.avg)} a game)`).join(' and ')}`);
+  else if ((g.avg ?? 0) > (take.avg ?? 0)) facts.push(`${g.name} is averaging ${n(g.avg)} a game this year, ${take.name} is at ${n(take.avg)}`);
+  if (g.rank && g.pos === take.pos && (!take.rank || g.rank < take.rank)) facts.push(`${g.name} is the ${ordinal(g.rank)}-best ${posName(g)} this season`);
+  if (['QUESTIONABLE', 'DOUBTFUL'].includes(take.status)) facts.push(`${take.name} is banged up right now`);
+  if (take.bye > week && take.bye <= week + 2) facts.push(`${take.name} has his bye in week ${take.bye}`);
+  const hedge = ['Honestly this one is kinda risky for me', 'Not gonna lie I\'m giving up a lot here', 'Lowkey this might come back to bite me'][take.id % 3];
+  return `yo would you do ${take.name} for ${give.map(p => p.name).join(' and ')}? ${hedge}, but ${facts.length ? facts.map((x, i) => (i ? x[0].toUpperCase() + x.slice(1) : x)).join('. ') : 'I think it helps both of us'}. lmk`;
+}
+
 // --- Luck check: "all-play" record = your record if you'd played every team every week
 const weekly = {}; // week -> { teamId: points }
 for (const g of league.schedule ?? []) {
@@ -987,6 +1022,8 @@ table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}ta
 .tools2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.tools2 .btn{margin:0;background:var(--chip);color:var(--fg)}
 .chip.bye{background:rgba(62,99,221,.14);color:#3e63dd}
 @media (prefers-color-scheme:dark){.chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}}
+.pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
+.pick .pic{width:34px;height:34px}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 </style></head><body>
 
@@ -1093,6 +1130,14 @@ ${pending.length ? pending.map(m => {
 <div class="card"><select id="tc-team" class="sel" aria-label="Team to trade with"></select>
 <div class="tc-cols"><div><div class="group">You give</div><div id="tc-give"></div></div><div><div class="group">You get</div><div id="tc-get"></div></div></div>
 <div id="tc-out"></div></div></section>
+
+<section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Every fact in the texts is true; only the wording is salesy.</p>
+${topFleece.length ? topFleece.map(f => `<div class="card"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
+  <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
+  <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
+  <p class="why">Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, they lose about ${n(-f.theirs)} a week.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
+  <div class="group">Text to send</div><p class="pitch">${esc(pitch(f))}</p><button type="button" class="btn" data-copy="${esc(pitch(f))}">Copy text</button></div>`).join('') : '<div class="card empty">No lopsided trades that look fair right now.</div>'}
+</section>
 
 <section id="partners"><h2>Trade partners</h2><p class="sub">Who's short at a position and who has extra. The best trades are with teams that have extra of what you're short on, and are short on what you have extra of.</p>
 <div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
@@ -1426,7 +1471,7 @@ function addHim(p) {
   // --- Trade checker: the same math as the trade ideas, for any players you pick
   const tcTeam = $('tc-team');
   tcTeam.innerHTML = '<option value="">Pick a team...</option>' + R.teams.filter(t => t.id !== R.me).map(t => '<option value="' + t.id + '">' + e(t.name) + '</option>').join('');
-  const box = (p, side) => '<label class="pick"><input type="checkbox" data-side="' + side + '" value="' + p.id + '"><span><b>' + e(p.name) + '</b><br><span class="tag">' + p.pos + ' &middot; ' + p.rate.toFixed(1) + ' per game</span></span></label>';
+  const box = (p, side) => '<label class="pick"><input type="checkbox" data-side="' + side + '" value="' + p.id + '">' + photo(p) + '<span><b>' + e(p.name) + '</b><br><span class="tag">' + p.pos + ' &middot; ' + p.rate.toFixed(1) + ' per game</span></span></label>';
   function tcLists() {
     const them = +tcTeam.value;
     $('tc-give').innerHTML = rosterOf(R.me).map(p => box(p, 'give')).join('');
@@ -1533,6 +1578,13 @@ function showTab(tab, jump) {
 }
 navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); history.replaceState(null, '', a.hash); showTab(a.hash.slice(1), true); }));
 showTab(location.hash.slice(1), false);
+
+// "Copy text" buttons: put the text on the clipboard
+document.addEventListener('click', ev => {
+  const c = ev.target.closest('[data-copy]');
+  if (!c) return;
+  navigator.clipboard.writeText(c.dataset.copy).then(() => { c.textContent = 'Copied'; setTimeout(() => { c.textContent = 'Copy text'; }, 2000); }, () => { c.textContent = 'Copy failed'; });
+});
 `;
 const MOVE_JS = String.raw`// Roster-move buttons: ask first, then send the move to ESPN through the Cloudflare worker
 const WHY = {
@@ -1610,7 +1662,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', pickups: 'pickups', pending: 'pending', check: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', pickups: 'pickups', pending: 'pending', check: 'trades', fleece: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
