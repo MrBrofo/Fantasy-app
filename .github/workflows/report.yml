@@ -29,6 +29,7 @@ jobs:
           node-version: 22
 
       - run: npm ci
+      - run: node check.mjs # lineup-lock self-check; a failure stops the run before anything is published
 
       # What alerts were already sent, carried from the last run (newest cache whose key starts with "alerts-")
       - uses: actions/cache/restore@v4
