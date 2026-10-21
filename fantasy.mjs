@@ -355,8 +355,8 @@ const repl = Object.fromEntries(Object.keys(FA_SLOT).map(pos => [pos, healthyFa(
 const vor = p => Math.max(0, rate(p) - (repl[p.pos] ?? 0));
 // Who would start at a position (best by season average) in a roster
 const myStartersAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map(x => x.player).filter(p => p.pos === pos).sort((a, b) => rate(b) - rate(a));
-// "Stefon Diggs (9.4) and Malik Washington (8.2)"
-const startersText = ps => ps.map(p => `${esc(p.name)} (${n(rate(p))})`).join(' and ');
+// "Stefon Diggs (9.4), Jakobi Meyers (9.1) and Malik Washington (8.2)"
+const startersText = ps => ps.map(p => `${esc(p.name)} (${n(rate(p))})`).join(', ').replace(/, (?=[^,]*$)/, ' and ');
 // Effect of a trade on both teams. give = players I send, take = players I get.
 function judge(give, take, them) {
   const mineAfter = [...me.roster.filter(p => !give.includes(p)), ...take];
