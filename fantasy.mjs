@@ -392,16 +392,18 @@ for (const tr of trades) {
 // --- Adds / drops / trades around the league, last 3 weeks. Also my pending claims and trade
 // offers, and other teams' offers and claims that didn't happen (ESPN's app hides those).
 const moves = [], pendingTx = new Map(), intel = new Map(), othersPending = new Map(), myFailed = [];
-const involvesMe = tx => tx.items.some(i => i.toTeamId === me.id || i.fromTeamId === me.id);
+const involvesMe = tx => (tx.items ?? []).some(i => i.toTeamId === me.id || i.fromTeamId === me.id);
 const waiverRuns = []; // when ESPN processed claims (ms), to show the real waiver time
+// What's really still pending: my claims and offers, and trades between other teams (offered, or in league review)
+for (const tx of (await get(`${LEAGUE}?view=mPendingTransactions`)).pendingTransactions ?? []) {
+  if (!tx.isPending || tx.status !== 'PENDING') continue;
+  if (['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && involvesMe(tx)) pendingTx.set(tx.id, tx);
+  else if (tx.type.startsWith('TRADE') && !involvesMe(tx) && (tx.items ?? []).some(i => i.type === 'TRADE')) othersPending.set(tx.id, tx);
+}
 for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
   const d = await get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${wk}`);
   for (const tx of d.transactions ?? []) {
-    // old weeks keep stale "PENDING" rows; only this week's with isPending are real
-    if (wk === week && tx.isPending && tx.status === 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && involvesMe(tx)) pendingTx.set(tx.id, tx);
-    // trades between two other teams that are waiting (offered, or accepted and in league review)
-    else if (wk === week && tx.isPending && tx.type.startsWith('TRADE') && !involvesMe(tx) && tx.items.some(i => i.type === 'TRADE')) othersPending.set(tx.id, tx);
-    else if (tx.type === 'WAIVER' && tx.status?.startsWith('FAILED') && tx.teamId === me.id) myFailed.push(tx);
+    if (tx.type === 'WAIVER' && tx.status?.startsWith('FAILED') && tx.teamId === me.id) myFailed.push(tx);
     else if (tx.status !== 'EXECUTED' && tx.status !== 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && !involvesMe(tx)) intel.set(tx.id, tx);
     if (tx.type === 'WAIVER' && tx.processDate && !tx.isPending) waiverRuns.push(tx.processDate);
     if (tx.status !== 'EXECUTED' || !['FREEAGENT', 'WAIVER', 'TRADE_ACCEPT'].includes(tx.type)) continue;
@@ -440,12 +442,25 @@ const pending = [...pendingTx.values()].map(tx => {
 // suggest a second pickup for the same hole, or a player I've already claimed.
 const claims = pending.filter(m => m.kind === 'waiver');
 const baseRoster = [...me.roster.filter(p => !claims.some(m => m.drop.some(d => d.id === p.id))), ...claims.flatMap(m => m.add.map(a => ({ ...a, slot: 'Bench' })))];
+const rosterSpots = Object.entries(slotCounts).filter(([id]) => +id !== 21).reduce((t, [, k]) => t + k, 0);
+const fills = [];
+while (rosterSpots - baseRoster.filter(p => p.slot !== 'IR').length > 0 && fills.length < 5) {
+  const taken = new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]);
+  const best = allFa.filter(c => !taken.has(c.id) && !locked(c) && playable(c)).map(c => {
+    const r = [...baseRoster, { ...c, slot: 'Bench' }];
+    return { add: c, week: weekScore(r) - weekScore(baseRoster), season: score(r, seasonValue) - score(baseRoster, seasonValue) };
+  // this week's points count double the weekly season gain; ties go to the better rest-of-season player (depth)
+  }).sort((a, b) => b.week + 2 * b.season + 0.1 * rate(b.add) - (a.week + 2 * a.season + 0.1 * rate(a.add)))[0];
+  if (!best) break;
+  fills.push(best);
+  baseRoster.push({ ...best.add, slot: 'Bench' });
+}
 // One plan, done in order: each step is applied before picking the next, so every step
 // drops a different player and players added earlier in the plan are never dropped.
 const plan = [];
 {
   let roster = [...baseRoster];
-  const used = new Set(claims.flatMap(m => m.add.map(a => a.id)));
+  const used = new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]);
   for (const [kind, value] of [['week', weekValue], ['season', seasonValue]]) {
     while (plan.length < 5) {
       const opts = bestSwap(roster, value, used);
@@ -639,6 +654,9 @@ for (const p of starters(me)) {
   else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`, bestMove]);
 }
 for (const [i, p] of benchIn.entries()) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(p.proj)}${sitOut[i] ? `, more than ${sitOut[i].name} (${n(weekValue(sitOut[i]))})` : ''}.`, bestMove]);
+const fillMove = f => ({ label: `Add ${f.add.name} on ESPN`, type: f.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: f.add.id }] });
+for (const f of fills) todo.push([f.week >= 1 ? 'urgent' : 'week', `Add ${f.add.name} (empty roster spot)`,
+  `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''} He's expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : ', a backup for byes and injuries'}.${f.add.wa ? ' He\'s on waivers, so this is a claim.' : ''}`, fillMove(f)]);
 for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
     s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`, locked(s.add) || locked(s.drop) ? null : pickupMove(s)]);
@@ -1146,8 +1164,10 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
   : `<div class="card empty">Nobody out there beats what you have${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
 ${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
+${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><div class="list">${fills.map(f => `<div class="card"><div class="row">${player(f.add)}${big(rate(f.add), 'per game, rest of season', null, f.add, 'season')}</div>
+  <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : ' A backup for byes and injuries.'}</p>
+  ${MOVE_URL && !locked(f.add) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...fillMove(f), week: league.scoringPeriodId }))}">${f.add.wa ? 'Put in a claim for him on ESPN' : 'Add him on ESPN'}</button>` : ''}</div>`).join('')}</div>` : ''}
 </section>
-
 <section id="pending"><h2>Your pending moves</h2><p class="sub">Waiver claims and trade offers that haven't gone through yet, checked with the same math as everything else.</p>
 ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
