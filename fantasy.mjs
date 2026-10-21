@@ -72,15 +72,17 @@ try {
   const old = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/cbs.json?t=${Date.now()}`)).json();
   if (old.week === week && Date.now() - old.at < 3600e3) cbsSaved = old;
 } catch {}
-if (!cbsSaved) try {
-  const half = new Map(); // key -> [name, pos, team, points]; CBS has PPR and no-PPR pages, half PPR is the average
+// Reads every CBS page for one time span (a week number, or 'restofseason') into [name, pos, team, points] rows.
+// The last number in each row is the points (the week's total, or per game for rest of season).
+async function cbsRows(span) {
+  const half = new Map(); // key -> row; CBS has PPR and no-PPR pages, half PPR is the average
   // Defenses are skipped: CBS scores them much higher than this league does (Texans: CBS 15, Rotowire 9).
   for (const scoring of ['ppr', 'nonppr']) for (const pos of ['QB', 'RB', 'WR', 'TE', 'K']) {
-    const r = await fetch(`https://www.cbssports.com/fantasy/football/stats/${pos}/${SEASON}/${week}/projections/${scoring}/`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const r = await fetch(`https://www.cbssports.com/fantasy/football/stats/${pos}/${SEASON}/${span}/projections/${scoring}/`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!r.ok) throw new Error(`${r.status} on ${pos}`);
     for (const tr of (await r.text()).split('<tr class="TableBase-bodyTr').slice(1)) {
       const row = tr.split('</tr>')[0];
-      // full name link, then <span class="CellPlayerName-team"> LAR; last number = fantasy points
+      // full name link, then <span class="CellPlayerName-team"> LAR
       const name = row.match(/CellPlayerName--long[\s\S]*?<a[^>]*>([^<]+)<\/a>/)?.[1];
       const team = row.match(/CellPlayerName-team">\s*([A-Z]+)/)?.[1];
       const pts = Number([...row.matchAll(/--number[^>]*>\s*([-\d.]+)\s*</g)].pop()?.[1]);
@@ -90,9 +92,42 @@ if (!cbsSaved) try {
     }
   }
   if (half.size < 200) throw new Error(`only ${half.size} players found, page layout probably changed`);
-  cbsSaved = { week, at: Date.now(), rows: [...half.values()] };
+  return [...half.values()];
+}
+if (!cbsSaved) try {
+  cbsSaved = { week, at: Date.now(), rows: await cbsRows(week) };
 } catch (err) { console.warn('CBS projections skipped:', err.message); down.push('CBS'); }
 for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, pos, team), pts);
+// Rest of season: points per game each source expects from this week to the end. Used for anything
+// longer than this week (season pickups, trades, bye fill-ins). Rotowire's comes from Sleeper one week
+// at a time (12 big downloads), so like CBS it's refreshed at most once an hour and saved as ros.json.
+let rosSaved = null;
+try {
+  const old = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
+  if (old.week === week && Date.now() - old.at < 3600e3) rosSaved = old;
+} catch {}
+if (!rosSaved) {
+  rosSaved = { week, at: Date.now(), roto: [], cbs: [] };
+  try {
+    const sum = new Map(); // key -> [points, games]
+    for (let wk = week; wk <= 18; wk++) {
+      const r = await fetch(`https://api.sleeper.app/projections/nfl/${SEASON}/${wk}?season_type=regular&${['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map(p => `position[]=${p}`).join('&')}`);
+      for (const x of await r.json()) {
+        const pos = x.player?.position === 'DEF' ? 'D/ST' : x.player?.position, pts = x.stats?.pts_half_ppr;
+        if (pts == null || !x.stats?.gp) continue; // no game that week (bye)
+        const k = pkey(`${x.player.first_name} ${x.player.last_name}`, pos, x.team), t = sum.get(k) ?? [0, 0];
+        sum.set(k, [t[0] + pts, t[1] + 1]);
+      }
+    }
+    rosSaved.roto = [...sum].map(([k, [pts, games]]) => [k, pts / games]);
+  } catch (err) { console.warn('Rotowire rest-of-season skipped:', err.message); }
+  try {
+    rosSaved.cbs = (await cbsRows('restofseason')).map(([name, pos, team, ppg]) => [pkey(name, pos, team), ppg]);
+  } catch (err) { console.warn('CBS rest-of-season skipped:', err.message); }
+}
+if (!rosSaved.roto.length) down.push('Rotowire rest-of-season');
+if (!rosSaved.cbs.length) down.push('CBS rest-of-season');
+const rosRoto = new Map(rosSaved.roto), rosCbs = new Map(rosSaved.cbs);
 // Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
 const vegas = {};
 try {
@@ -123,12 +158,16 @@ function row(p, ratings) {
   const espn = proj?.appliedTotal ?? null, k = pkey(p.fullName, pos, team);
   const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null;
   const all = [espn, roto, cb].filter(v => v != null);
+  // ESPN's rest-of-season projection is statSourceId 1, statSplitTypeId 0 (per game = appliedAverage)
+  const rosBy = [stat(p, 1, 0)?.appliedAverage ?? null, rosRoto.get(k) ?? null, rosCbs.get(k) ?? null];
+  const rosAll = rosBy.filter(v => v != null);
   return {
     id: p.id, name: p.fullName, pos, proTeamId: p.proTeamId,
     team, teamName: proName[p.proTeamId] ?? 'No team', bye: proBye[p.proTeamId] ?? null,
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
     proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length : null, espn, roto, cbs: cb, split: split(all), vegas: vegas[TEAM(team)] ?? null,
+    ros: rosAll.length ? rosAll.reduce((s, v) => s + v, 0) / rosAll.length : null, rosBy,
     owned: p.ownership?.percentOwned ?? null, trend: p.ownership?.percentChange ?? 0, rank: ratings?.[0]?.positionalRanking || null,
   };
 }
@@ -171,7 +210,9 @@ function bestLineup(players, value) {
 }
 const playable = p => p.slot !== 'IR' && !HURT.includes(p.status);
 const weekValue = p => (playable(p) ? p.proj ?? 0 : 0);
-const seasonValue = p => (playable(p) ? p.avg ?? 0 : 0);
+// Long-term value: rest-of-season points per game (average of the sources), else his average so far
+const rate = p => p.ros ?? p.avg ?? 0;
+const seasonValue = p => (playable(p) ? rate(p) : 0);
 const score = (players, value) => bestLineup(players, value).total;
 const starters = t => t.roster.filter(p => p.slot !== 'Bench' && p.slot !== 'IR');
 const lineupProj = t => starters(t).reduce((s, p) => s + weekValue(p), 0);
@@ -205,7 +246,7 @@ const sitOut = starters(me).filter(p => !bestIds.has(p.id));
 // --- Waiver pickups: add each free agent, drop whichever player hurts least.
 // Injured players are never suggested as drops (they come back), unless out for the season.
 // A this-week pickup also pays for any season-long points it costs, so a star on bye is never the drop.
-const weakness = p => (p.inj?.season ? -1 : p.avg ?? 0); // tie-break: drop out-for-season players first
+const weakness = p => (p.inj?.season ? -1 : rate(p)); // tie-break: drop out-for-season players first
 function bestSwap(roster, value, used = new Set()) {
   const base = score(roster, value);
   const seasonBase = score(roster, seasonValue);
@@ -257,11 +298,11 @@ const weekPlanGain = plan.filter(s => s.kind === 'week').reduce((t, s) => t + s.
 // --- Trades. Managers judge a player by "value over replacement": how much better he is than the
 // best player free on waivers at his position. A great tight end is rare, so he's worth more than
 // his raw points say; raw points alone made swapping an elite TE for a RB look fair when it isn't.
-const healthyFa = pos => (fa[pos] ?? []).filter(p => !HURT.includes(p.status)).map(p => p.avg ?? 0).sort((a, b) => b - a);
+const healthyFa = pos => (fa[pos] ?? []).filter(p => !HURT.includes(p.status)).map(rate).sort((a, b) => b - a);
 const repl = Object.fromEntries(Object.keys(FA_SLOT).map(pos => [pos, healthyFa(pos)[1] ?? healthyFa(pos)[0] ?? 0]));
-const vor = p => Math.max(0, (p.avg ?? 0) - (repl[p.pos] ?? 0));
+const vor = p => Math.max(0, rate(p) - (repl[p.pos] ?? 0));
 // Who would start at a position (best by season average) in a roster
-const starterAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map(x => x.player).filter(p => p.pos === pos).sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0))[0];
+const starterAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map(x => x.player).filter(p => p.pos === pos).sort((a, b) => rate(b) - rate(a))[0];
 // Effect of a trade on both teams. give = players I send, take = players I get.
 function judge(give, take, them) {
   const mineAfter = [...me.roster.filter(p => !give.includes(p)), ...take];
@@ -277,7 +318,7 @@ function judge(give, take, them) {
 
 // Trade ideas: 1-for-1, worth 2+ points a week to me, and fair to them on value over replacement.
 // ponytail: 1-for-1 only; add 2-for-1 if this gets used a lot.
-const tradeable = p => playable(p) && !['K', 'D/ST'].includes(p.pos) && (p.avg ?? 0) > 0;
+const tradeable = p => playable(p) && !['K', 'D/ST'].includes(p.pos) && rate(p) > 0;
 const trades = [];
 for (const t of teams) {
   if (t === me) continue;
@@ -342,11 +383,11 @@ const TRADE_POS = ['QB', 'RB', 'WR', 'TE'];
 const lineups = new Map(teams.map(t => [t, bestLineup(t.roster, seasonValue).lineup]));
 const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 // only the position's own slots count (a TE playing FLEX is not the team's TE)
-const typical = Object.fromEntries(TRADE_POS.map(pos => [pos, median([...lineups.values()].flat().filter(x => x.slot === pos).map(x => x.player.avg ?? 0))]));
+const typical = Object.fromEntries(TRADE_POS.map(pos => [pos, median([...lineups.values()].flat().filter(x => x.slot === pos).map(x => rate(x.player)))]));
 const depth = t => {
   const starters = lineups.get(t).map(x => x.player);
-  const short = TRADE_POS.filter(pos => { const s = lineups.get(t).filter(x => x.slot === pos).map(x => x.player); return !s.length || Math.min(...s.map(p => p.avg ?? 0)) < typical[pos]; });
-  const extra = TRADE_POS.map(pos => [pos, t.roster.filter(p => p.pos === pos && playable(p) && !starters.includes(p) && (p.avg ?? 0) >= 0.85 * typical[pos])]).filter(([, ps]) => ps.length);
+  const short = TRADE_POS.filter(pos => { const s = lineups.get(t).filter(x => x.slot === pos).map(x => x.player); return !s.length || Math.min(...s.map(rate)) < typical[pos]; });
+  const extra = TRADE_POS.map(pos => [pos, t.roster.filter(p => p.pos === pos && playable(p) && !starters.includes(p) && rate(p) >= 0.85 * typical[pos])]).filter(([, ps]) => ps.length);
   const count = Object.fromEntries(['QB', 'RB', 'WR', 'TE', 'K', 'D/ST'].map(pos => [pos, t.roster.filter(p => p.pos === pos && p.slot !== 'IR').length]));
   return { t, short, extra, count };
 };
@@ -413,8 +454,8 @@ const afterPlan = [...me.roster.filter(p => !plan.some(s => s.drop === p)), ...p
 for (let wk = week + 1; wk <= lastWeek; wk++) {
   for (const pos of ['QB', 'TE', 'K', 'D/ST']) {
     if (afterPlan.some(p => p.pos === pos && !HURT.includes(p.status) && p.slot !== 'IR' && p.bye !== wk)) continue;
-    const sub = fa[pos].filter(p => p.bye !== wk && !HURT.includes(p.status)).sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0))[0];
-    todo.push(['later', `Week ${wk}: get a ${POS_NAME[pos].toLowerCase()}`, `None of yours play that week.${sub ? ` Best one available: ${sub.name} (${sub.teamName}, ${n(sub.avg)} points per game).` : ''}`]);
+    const sub = fa[pos].filter(p => p.bye !== wk && !HURT.includes(p.status)).sort((a, b) => rate(b) - rate(a))[0];
+    todo.push(['later', `Week ${wk}: get a ${POS_NAME[pos].toLowerCase()}`, `None of yours play that week.${sub ? ` Best one available: ${sub.name} (${sub.teamName}, expected ${n(rate(sub))} per game).` : ''}`]);
   }
 }
 
@@ -546,7 +587,7 @@ const statusWords = p => p.inj?.season ? 'out for the season' : p.bye === week ?
 const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: statusWords(p), slot: p.slot === 'Bench' ? 'bench' : p.slot === 'IR' ? 'IR' : 'starting', pr: Math.round((p.proj ?? 0) * 10) / 10 }]));
 
 // Everything Claude needs to answer questions about this team, as plain text to paste
-const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`;
+const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`;
 const facts = [
   `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's, Rotowire's and CBS Sports' projections. Facts from ESPN, Sleeper (Rotowire), CBS Sports and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
   `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
@@ -555,8 +596,8 @@ const facts = [
   `Bench:\n${me.roster.filter(p => p.slot === 'Bench').map(p => `- ${line(p)}`).join('\n')}`,
   me.roster.some(p => p.slot === 'IR') ? `IR:\n${me.roster.filter(p => p.slot === 'IR').map(p => `- ${line(p)}`).join('\n')}` : '',
   pending.length ? `Pending moves:\n${pending.map(m => m.kind === 'waiver' ? `- Waiver claim: add ${m.add.map(p => p.name).join(', ')}, drop ${m.drop.map(p => p.name).join(', ')}`
-    : `- Trade ${m.mineOffer ? 'I offered' : 'offered to me by'} ${m.them.name}: I give ${m.give.map(p => `${p.name} (${p.pos}, ${n(p.avg)}/g)`).join(', ')}; I get ${m.take.map(p => `${p.name} (${p.pos}, ${n(p.avg)}/g)`).join(', ')}`).join('\n')}` : '',
-  `Best free agents (points per game, expected this week):\n${Object.entries(fa).map(([pos, list]) => `- ${pos}: ${[...list].filter(p => !HURT.includes(p.status)).sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)).slice(0, 4).map(p => `${p.name} ${n(p.avg)}/g, ${n(p.proj)} exp`).join('; ')}`).join('\n')}`,
+    : `- Trade ${m.mineOffer ? 'I offered' : 'offered to me by'} ${m.them.name}: I give ${m.give.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}; I get ${m.take.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}`).join('\n')}` : '',
+  `Best free agents (points per game expected rest of season, expected this week):\n${Object.entries(fa).map(([pos, list]) => `- ${pos}: ${[...list].filter(p => !HURT.includes(p.status)).sort((a, b) => rate(b) - rate(a)).slice(0, 4).map(p => `${p.name} ${n(rate(p))}/g ahead, ${n(p.proj)} exp`).join('; ')}`).join('\n')}`,
   ahead.length ? `My remaining schedule: ${ahead.map(g => `wk ${g.week} ${g.t.name} (${g.t.w}-${g.t.l}, ${n(g.avg)} pts/wk)`).join('; ')}.` : '',
   'Explain things simply, I\'m new to football. My question:',
 ].filter(Boolean).join('\n\n');
@@ -731,15 +772,15 @@ ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.sl
 <p class="tag" style="margin-bottom:0">When two teams claim the same player, the one higher on this list gets him. ${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'} Free agents (not on waivers) go to whoever adds them first.</p></div>
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
   <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'helps this week' : 'helps rest of season'}</div>
-  <div class="row">${player(s.add)}${big(wk ? s.add.proj : s.add.avg, wk ? 'expected' : 'per game')}</div>
-  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : s.drop.avg)} ${wk ? 'expected' : 'per game'}).<br>
+  <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'expected' : 'per game ahead')}</div>
+  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'expected' : 'per game ahead'}).<br>
   <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
   ${s.add.wa ? (() => { const r = rivalsFor(s.add, wk ? weekValue : seasonValue); return r.length
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
     : '<br><span class="tag" style="color:var(--good)">No team that picks before you needs him, so you\'ll probably get him.</span>'; })() : ''}
-  ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : a.add.avg)})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
+  ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
   : '<div class="card empty">Nobody out there beats what you have.</div>'}
-${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}</div>
+${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 </section>
 
@@ -748,14 +789,14 @@ ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
     const v = m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : ['meh', 'Barely matters'];
     return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
-    <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}</div>
+    <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}</div>
     <p class="why">This week: <b>${m.week >= 0 ? '+' : ''}${n(m.week)}</b> points. Rest of season: <b>${m.season >= 0 ? '+' : ''}${n(m.season)}</b> per week.</p></div>`;
   }
   const v = m.mine >= 1 ? ['good', m.mineOffer ? 'Good offer' : 'Accept'] : m.mine <= -1 ? ['bad', m.mineOffer ? 'Bad for you, cancel it' : 'Decline'] : ['meh', 'About even'];
-  const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = starterAt(m.after, pos); return s && !m.give.includes(s) ? `your ${POS_NAME[pos]?.toLowerCase()} would be ${esc(s.name)} (${n(s.avg)})` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
+  const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = starterAt(m.after, pos); return s && !m.give.includes(s) ? `your ${POS_NAME[pos]?.toLowerCase()} would be ${esc(s.name)} (${n(rate(s))})` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
   return `<div class="card"><div class="vhead"><span class="tag">${m.mineOffer ? 'You offered' : 'Offered to you by'} <b>${esc(m.them.name)}</b></span><span class="verdict-${v[0]}">${v[1]}</span></div>
-  <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}
-  <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(p.avg, 'per game')}</div>`).join('')}</div>
+  <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}
+  <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}</div>
   <p class="why">Rest of season: <b>${m.mine >= 0 ? '+' : ''}${n(m.mine)}</b> points per week for you, ${m.theirs >= 0 ? '+' : ''}${n(m.theirs)} for them. This week: ${m.mineWeek >= 0 ? '+' : ''}${n(m.mineWeek)}.
   ${m.mineWeek > 2 && m.mine < -1 ? '<br><b>Trap:</b> it only helps this week (your players are on bye or hurt). After that you\'re worse off.' : ''}
   ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
@@ -775,11 +816,11 @@ ${pending.length ? pending.map(m => {
 
 <section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
 ${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
-  <div class="row">${player(t.give, '')}${big(t.give.avg, 'per game')}</div>
+  <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game ahead')}</div>
   <div class="arrow">for</div>
-  <div class="row">${player(t.take, '')}${big(t.take.avg, 'per game')}</div></div>
+  <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game ahead')}</div></div>
   <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
-  <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(s.avg)} per game)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
+  <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(rate(s))} per game ahead)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
 </section>
 
 <section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
@@ -829,7 +870,8 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Expected points</dt><dd>ESPN's guess for how many points a player will score this week. It's a guess, not a promise, but it's the best simple way to decide who to start.</dd>
 <dt>"Up to" number</dt><dd>What he'd score if he has a great game. A big gap between expected and "up to" means he's boom-or-bust.</dd>
 <dt>Win chance</dt><dd>How likely you are to win this week, worked out from the same averaged projections (ESPN, Rotowire, CBS) as the scores. Once games start it switches to ESPN's live estimate, which follows the real score.</dd>
-<dt>Points per game</dt><dd>How many points he's actually scored each week on average this season. Better for judging who's good long-term.</dd>
+<dt>Points per game</dt><dd>How many points he's actually scored each week on average this season.</dd>
+<dt>Per game ahead</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
 <dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 50/50, usually plays. <b>Probably won't play</b> (doubtful). <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
@@ -898,6 +940,7 @@ function render(p) {
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
     (p.sources ? '<div class="group">Where "expected" comes from</div><p class="why" style="margin:0">' + e(p.sources) + '</p>' : '') +
+    (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
     (p.games.length ? '<div class="group">Last games (fantasy points)</div><div class="bars">' + p.games.map(g =>
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
@@ -1037,7 +1080,8 @@ for (const [id, p] of shown) {
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
-    trend, sources, games, news: news.get(id) ?? [],
+    trend, sources, games,
+    rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: news.get(id) ?? [],
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
   };
   // a defense is a whole team: "they", not "he"
@@ -1052,6 +1096,7 @@ fs.writeFileSync(path.join(dir, 'site', 'index.html'), html);
 // App icons (Home Screen, browser tab) and the manifest that names the installed app
 fs.cpSync(path.join(dir, 'icons'), path.join(dir, 'site'), { recursive: true });
 if (cbsSaved) fs.writeFileSync(path.join(dir, 'site', 'cbs.json'), JSON.stringify(cbsSaved));
+fs.writeFileSync(path.join(dir, 'site', 'ros.json'), JSON.stringify(rosSaved));
 fs.copyFileSync(path.join(dir, 'sw.js'), path.join(dir, 'site', 'sw.js'));
 
 // Send new alerts. Needs GitHub secrets PUSH_SUB (code from the app's "Turn on alerts") and VAPID_PRIVATE.
