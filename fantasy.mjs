@@ -577,7 +577,9 @@ if (week > 1) try {
   const [mine, theirs] = g.home.teamId === me.id ? [g.home, g.away] : [g.away, g.home];
   const ps = mine.rosterForMatchupPeriod.entries.map(e => ({ id: e.playerId, name: e.playerPoolEntry.player.fullName, pos: POS[e.playerPoolEntry.player.defaultPositionId], pts: e.playerPoolEntry.appliedStatTotal ?? 0, slot: SLOT[e.lineupSlotId] }));
   const started = ps.filter(p => p.slot !== 'Bench' && p.slot !== 'IR'), got = started.reduce((t, p) => t + p.pts, 0);
-  const bestL = bestLineup(ps.filter(p => p.slot !== 'IR'), p => p.pts);
+  // +100 so players who scored 0 or less still fill a spot (bestLineup skips values <= 0); the total uses real points
+  const bestL = bestLineup(ps.filter(p => p.slot !== 'IR'), p => p.pts + 100);
+  bestL.total = bestL.lineup.reduce((t, x) => t + x.player.pts, 0);
   const shouldIn = bestL.lineup.map(x => x.player).filter(p => !started.includes(p)).sort((a, b) => b.pts - a.pts);
   const shouldOut = started.filter(p => !bestL.lineup.some(x => x.player === p)).sort((a, b) => a.pts - b.pts);
   const advised = memo.advice?.[week - 1];
