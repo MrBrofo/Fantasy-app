@@ -296,7 +296,7 @@ for (const tr of trades) {
 
 // --- Adds / drops / trades around the league, last 3 weeks. Also my pending claims and trade
 // offers, and other teams' offers and claims that didn't happen (ESPN's app hides those).
-const moves = [], pendingTx = new Map(), intel = new Map(), othersPending = new Map();
+const moves = [], pendingTx = new Map(), intel = new Map(), othersPending = new Map(), myFailed = [];
 const involvesMe = tx => tx.items.some(i => i.toTeamId === me.id || i.fromTeamId === me.id);
 for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
   const d = await get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${wk}`);
@@ -305,6 +305,7 @@ for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
     if (wk === week && tx.isPending && tx.status === 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && involvesMe(tx)) pendingTx.set(tx.id, tx);
     // trades between two other teams that are waiting (offered, or accepted and in league review)
     else if (wk === week && tx.isPending && tx.type.startsWith('TRADE') && !involvesMe(tx) && tx.items.some(i => i.type === 'TRADE')) othersPending.set(tx.id, tx);
+    else if (tx.type === 'WAIVER' && tx.status?.startsWith('FAILED') && tx.teamId === me.id) myFailed.push(tx);
     else if (tx.status !== 'EXECUTED' && tx.status !== 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && !involvesMe(tx)) intel.set(tx.id, tx);
     if (tx.status !== 'EXECUTED' || !['FREEAGENT', 'WAIVER', 'TRADE_ACCEPT'].includes(tx.type)) continue;
     for (const it of tx.items) if (['ADD', 'DROP', 'TRADE'].includes(it.type)) moves.push({ date: tx.processDate ?? tx.proposedDate, type: it.type, playerId: it.playerId, team: it.type === 'DROP' ? it.fromTeamId : it.toTeamId, from: it.fromTeamId });
@@ -415,6 +416,72 @@ for (let wk = week + 1; wk <= lastWeek; wk++) {
     const sub = fa[pos].filter(p => p.bye !== wk && !HURT.includes(p.status)).sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0))[0];
     todo.push(['later', `Week ${wk}: get a ${POS_NAME[pos].toLowerCase()}`, `None of yours play that week.${sub ? ` Best one available: ${sub.name} (${sub.teamName}, ${n(sub.avg)} points per game).` : ''}`]);
   }
+}
+
+// --- Phone alerts. Each alert has a key; keys already sent are remembered in alerts.json on the published
+// site, so the every-minute runs don't repeat them. Urgent alerts also go out during quiet hours (11pm-8am ET).
+const VAPID_PUBLIC = 'BARgoktdqvKVCNGSMWSNgihh0VeG29ic9R9phwQIM2C0cb5tzZj6CQfoeigkrXC0-7rQ9BXE6IHjN_ua-akcKEw';
+const etNow = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(new Date());
+const etHour = Number(etNow.find(x => x.type === 'hour').value), etDay = etNow.find(x => x.type === 'weekday').value;
+const kickoff = p => pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[week]?.[0]?.date ?? null;
+const notStarted = p => kickoff(p) > Date.now();
+const soon = (p, hours) => notStarted(p) && kickoff(p) - Date.now() < hours * 3600e3;
+// memo.sent = key -> when sent; memo.q = my players who were questionable last run; memo.downSince = source -> since when
+let memo = { sent: {}, q: {}, downSince: {} }, memoOk = false;
+try {
+  const r = await fetch(`https://mrbrofo.github.io/Fantasy-app/alerts.json?t=${Date.now()}`);
+  if (r.status === 404) memoOk = true; // first run ever
+  else if (r.ok) { memo = { ...memo, ...await r.json() }; memoOk = true; }
+} catch {}
+const alerts = []; // [key, title, body, urgent]
+if (process.env.PUSH_SUB) alerts.push([`hello:${JSON.parse(process.env.PUSH_SUB).endpoint.slice(-16)}`, 'Alerts are on', 'You\'ll get a notification when something on your team needs you.', true]);
+// A questionable player's status gets decided about 90 minutes before kickoff
+const decided = new Set();
+for (const p of me.roster) {
+  if (!memo.q[p.id] || p.status === 'QUESTIONABLE' || p.slot === 'IR' || !notStarted(p)) continue;
+  decided.add(p.id);
+  const starting = p.slot !== 'Bench';
+  alerts.push(!p.status
+    ? [`q:${week}:${p.id}`, `${p.name} is playing`, bestIds.has(p.id) ? (starting ? 'He\'s in your lineup. Keep him there.' : 'Start him: he\'s in your best lineup.') : (starting ? 'He\'s playing, but someone on your bench is expected to score more. Check your to-do list.' : 'Keep him on your bench.'), true]
+    : [`q:${week}:${p.id}`, `${p.name} ${p.status === 'DOUBTFUL' ? 'probably won\'t play' : p.status === 'OUT' ? 'is out' : 'won\'t play'}`, starting ? 'He\'s in your lineup, so swap him out now in the ESPN app.' : 'He\'s on your bench, so there\'s nothing to do.', true]);
+}
+memo.q = Object.fromEntries(me.roster.filter(p => p.status === 'QUESTIONABLE' && notStarted(p)).map(p => [p.id, 1]));
+// Starter who won't play (bye, out, doubtful, IR, suspended)
+for (const p of starters(me)) {
+  const bye = p.bye === week;
+  if (decided.has(p.id) || !(bye || (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && notStarted(p)))) continue;
+  alerts.push([`out:${week}:${p.id}`, `Bench ${p.name}`, `${bye ? 'His team has no game this week, so he\'d score 0.' : `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`} Your to-do list shows who to start instead.`, !bye && soon(p, 3)]);
+}
+// Better lineup, within 2.5 hours of kickoff, when both players can still be moved
+for (const [i, p] of benchIn.entries()) {
+  const out = sitOut[i];
+  if ((out && !playable(out)) || decided.has(p.id)) continue; // the alerts above already cover it
+  if (!notStarted(p) || (out && !notStarted(out)) || !(soon(p, 2.5) || (out && soon(out, 2.5)))) continue;
+  if (p.proj - (out ? weekValue(out) : 0) < 2) continue;
+  alerts.push([`start:${week}:${p.id}:${out?.id}`, `Start ${p.name}`, out ? `He's expected to score ${n(p.proj)}, more than ${out.name} (${n(weekValue(out))}). Games start soon.` : `You have an empty lineup spot. He's expected to score ${n(p.proj)}.`, true]);
+}
+// Trade offers to me
+[...pendingTx.values()].forEach((tx, i) => {
+  const m = pending[i];
+  if (m.kind !== 'trade' || m.mineOffer) return;
+  alerts.push([`trade:${tx.id}`, `Trade offer from ${m.them.name}`, `You'd give ${m.give.map(p => p.name).join(', ')} for ${m.take.map(p => p.name).join(', ')}. ${m.mine >= 0 ? 'Looks good for you' : 'Looks bad for you'} (${m.mine >= 0 ? '+' : ''}${n(m.mine)} points a week). Details in the app under Pending.`, false]);
+});
+// My waiver claims that failed in the last 3 days
+for (const tx of myFailed) {
+  if (Date.now() - (tx.processDate ?? 0) > 3 * 864e5) continue;
+  const add = tx.items.find(i => i.type === 'ADD');
+  alerts.push([`wfail:${tx.id}`, 'Waiver claim didn\'t go through', `You didn't get ${names[add?.playerId] ?? byId.get(add?.playerId)?.name ?? 'the player you claimed'}. Open the app for other pickups.`, false]);
+}
+// Waiver reminder Tuesday evening, before claims process overnight
+if (etDay === 'Tue' && etHour >= 18 && plan.length) {
+  const s = plan[0];
+  alerts.push([`wrem:${week}`, 'Waivers run tonight', `Claim ${s.add.name} and drop ${s.drop.name}: ${s.kind === 'week' ? `about ${n(s.gain)} more points this week` : `about ${n(s.gain)} more points per week`}. More ideas in the app.`, false]);
+}
+// A source that's been down for 6+ hours (one alert per outage)
+for (const src of Object.keys(memo.downSince)) if (!down.includes(src)) delete memo.downSince[src];
+for (const src of down) {
+  const since = (memo.downSince[src] ??= Date.now());
+  if (Date.now() - since >= 6 * 3600e3) alerts.push([`down:${src}:${since}`, `${src} has been down for 6 hours`, 'Expected points are using the other sources. If it lasts another day, ask Claude to check it.', false]);
 }
 
 // --- HTML
@@ -625,6 +692,13 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Copies all your team's facts. Paste them into Claude, then type your question.</p></div>
 <button type="button" id="askbtn" class="btn">Copy facts &amp; open Claude</button></div></section>
 
+<section id="alerts" hidden><div class="card"><b>Phone alerts</b>
+<p class="tag" style="margin:2px 0 0">Get a notification when a starter won't play, a hurt player's status is decided before kickoff, a trade offer comes in, and more.</p>
+<button type="button" id="alertbtn" class="btn">Turn on alerts</button>
+<div id="alertcode" hidden><p class="tag">Last step: copy this code, then in GitHub open your Fantasy-app repo &rsaquo; Settings &rsaquo; Secrets and variables &rsaquo; Actions &rsaquo; New repository secret. Name it <b>PUSH_SUB</b> and paste the code. You'll get an "Alerts are on" notification within a few minutes.</p>
+<textarea id="alerttext" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
+<button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
+
 <section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
 ${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
@@ -745,7 +819,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 50/50, usually plays. <b>Probably won't play</b> (doubtful). <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
-<dt>Where these tips come from</dt><dd>This page does the math on ESPN's projections and season stats. It doesn't know about news ESPN hasn't added yet, so for big decisions it's worth a second opinion.</dd>
+<dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
 
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
@@ -842,6 +916,24 @@ else {
 document.getElementById('seen').onclick = () => { saveSeen(); document.getElementById('changes').hidden = true; };
 
 // Ask Claude: copy the facts, then open Claude to paste them
+// Phone alerts: work in the Home Screen app (iPhone needs iOS 16.4+). The code it shows goes into GitHub as the PUSH_SUB secret.
+if ('serviceWorker' in navigator && 'PushManager' in window) {
+  const btn = document.getElementById('alertbtn');
+  const show = sub => { document.getElementById('alerttext').value = JSON.stringify(sub); document.getElementById('alertcode').hidden = false; };
+  navigator.serviceWorker.register('sw.js');
+  document.getElementById('alerts').hidden = false;
+  navigator.serviceWorker.ready.then(r => r.pushManager.getSubscription()).then(s => { if (s) { btn.textContent = 'Alerts allowed. Show my code again'; btn.onclick = () => show(s); } });
+  btn.onclick = async () => {
+    if (await Notification.requestPermission() !== 'granted') { btn.textContent = 'Alerts are blocked. Turn them on in iPhone Settings > Notifications'; return; }
+    const key = Uint8Array.from(atob('${VAPID_PUBLIC}'.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    show(await (await navigator.serviceWorker.ready).pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+  };
+  document.getElementById('alertcopy').onclick = async () => {
+    const t = document.getElementById('alerttext');
+    try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand('copy'); }
+    document.getElementById('alertcopy').textContent = '✓ Copied';
+  };
+}
 document.getElementById('askbtn').onclick = async () => {
   const facts = JSON.parse(document.getElementById('facts').textContent);
   const b = document.getElementById('askbtn');
@@ -935,6 +1027,23 @@ fs.writeFileSync(path.join(dir, 'site', 'index.html'), html);
 // App icons (Home Screen, browser tab) and the manifest that names the installed app
 fs.cpSync(path.join(dir, 'icons'), path.join(dir, 'site'), { recursive: true });
 if (cbsSaved) fs.writeFileSync(path.join(dir, 'site', 'cbs.json'), JSON.stringify(cbsSaved));
+fs.copyFileSync(path.join(dir, 'sw.js'), path.join(dir, 'site', 'sw.js'));
+
+// Send new alerts. Needs GitHub secrets PUSH_SUB (code from the app's "Turn on alerts") and VAPID_PRIVATE.
+if (process.env.PUSH_SUB && process.env.VAPID_PRIVATE) {
+  // Without the memory of what was sent, every alert would go out again, so stop and keep the old page instead
+  if (!memoOk) throw new Error('Could not read alerts.json, so alerts were not sent (this run is skipped)');
+  const { default: webpush } = await import('web-push');
+  webpush.setVapidDetails('https://mrbrofo.github.io/Fantasy-app/', VAPID_PUBLIC, process.env.VAPID_PRIVATE);
+  const awake = etHour >= 8 && etHour < 23;
+  for (const [key, title, body, urgent] of alerts) {
+    if (memo.sent[key] || !(urgent || awake)) continue;
+    try { await webpush.sendNotification(JSON.parse(process.env.PUSH_SUB), JSON.stringify({ title, body, tag: key })); memo.sent[key] = Date.now(); console.log(`Alert sent: ${title}`); }
+    catch (err) { console.warn(`Alert not sent (${err.statusCode ?? err.message}): ${title}`); }
+  }
+}
+for (const [k, t] of Object.entries(memo.sent)) if (Date.now() - t > 21 * 864e5) delete memo.sent[k]; // forget after 3 weeks
+fs.writeFileSync(path.join(dir, 'site', 'alerts.json'), JSON.stringify(memo));
 fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
   name: me.name, short_name: 'Fantasy', start_url: '.', display: 'standalone', background_color: '#0b1530', theme_color: '#0b1530',
   icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],

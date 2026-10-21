@@ -28,12 +28,16 @@ jobs:
         with:
           node-version: 22
 
+      - run: npm ci
+
       - name: Build report
         run: node fantasy.mjs
         env:
           ESPN_S2: ${{ secrets.ESPN_S2 }}
           SWID: ${{ secrets.SWID }}
           LEAGUE_ID: ${{ secrets.LEAGUE_ID }}
+          PUSH_SUB: ${{ secrets.PUSH_SUB }} # phone alerts: code from the app's "Turn on alerts"
+          VAPID_PRIVATE: ${{ secrets.VAPID_PRIVATE }}
           SEASON: "2026"
 
       - uses: actions/configure-pages@v5
