@@ -64,6 +64,8 @@ const proName = Object.fromEntries(pro.map(t => [t.id, t.id ? `${t.location} ${t
 const proBye = Object.fromEntries(pro.map(t => [t.id, t.byeWeek]));
 const slotCounts = league.settings.rosterSettings.lineupSlotCounts;
 const playoffTeams = league.settings.scheduleSettings?.playoffTeamCount ?? 0;
+// Widget data sits outside the site lock, so with a password its file name is secret (derived from it)
+const WIDGET = process.env.SITE_PASSWORD ? `widget-${crypto.createHmac('sha256', process.env.SITE_PASSWORD).update('widget').digest('hex').slice(0, 16)}.json` : 'widget.json';
 const lastWeek = league.settings.scheduleSettings?.matchupPeriodCount ?? 14;
 
 // --- Second opinions, so one site's guess doesn't decide everything. Any that fail are left out (and named on the page).
@@ -527,7 +529,8 @@ const avgValue = p => (playable(p) ? p.avg ?? 0 : 0);
 const fleece = [];
 for (const d of tradesOpen ? partners : []) {
   // "looks fair on points per game" means nothing for a player who hasn't played yet
-  const mine = me.roster.filter(p => tradeable(p) && p.avg > 0), theirs = d.t.roster.filter(p => tradeable(p) && p.avg > 0);
+  // and nobody ESPN projects at 0 this week while not on bye (benched): his old average won't sell him
+  const mine = me.roster.filter(p => tradeable(p) && p.avg > 0 && !(p.espn === 0 && p.bye !== week)), theirs = d.t.roster.filter(p => tradeable(p) && p.avg > 0);
   const gives = [...mine.map(p => [p]), ...mine.flatMap((a, i) => mine.slice(i + 1).map(b => [a, b]))];
   for (const give of gives) for (const take of theirs) {
     const j = judge(give, [take], d.t);
@@ -1000,7 +1003,7 @@ h1{font-size:26px;font-weight:800;margin:4px 0 2px;letter-spacing:-.02em}
 .bar{grid-column:1/-1;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;margin-bottom:6px}.bar i{display:block;height:100%;border-radius:3px}
 .verdict{margin-top:8px;font-size:14px}
 /* Bottom bar, frosted glass like iOS. Fixed so it's always one tap away. */
-nav{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 8px);max-width:696px;margin:0 auto;z-index:10;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:6px;border-radius:999px;background:var(--glass);border:1px solid var(--glassline);box-shadow:0 8px 30px rgba(0,0,0,.18);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
+nav{position:fixed;left:12px;right:68px;bottom:calc(env(safe-area-inset-bottom) + 8px);max-width:696px;margin:0 auto;z-index:10;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:6px;border-radius:999px;background:var(--glass);border:1px solid var(--glassline);box-shadow:0 8px 30px rgba(0,0,0,.18);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
 nav::-webkit-scrollbar{display:none}
 nav a{flex:none;white-space:nowrap;padding:9px 14px;border-radius:999px;color:var(--fg);text-decoration:none;font-weight:600;font-size:13px;transition:background .2s,color .2s}
 nav a.on{background:var(--brand2);color:#fff}
@@ -1100,7 +1103,7 @@ table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}ta
 @media (prefers-color-scheme:dark){.chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}}
 .pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
 .pick .pic{width:34px;height:34px}
-#fab{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom) + 84px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
+#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
 #fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 </style></head><body>
@@ -1310,7 +1313,8 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Points per game</dt><dd>How many points he's actually scored each week on average this season.</dd>
 <dt>Per game, rest of season</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
-<dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. The % on each player uses his practices this week from the official NFL injury report: 86% play after a full practice, 71% after a limited one, 29% after none. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' count of QB, RB, WR and TE injury reports, 2017 to 2024.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
+<dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. The % on each player uses his practices this week from the official NFL injury report: 86% play after a full practice, 71% after a limited one, 29% after none. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' count of QB, RB, WR and TE injury reports, 2017 to 2024.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot. <b>Day to day</b>: a minor injury ESPN is watching; he hasn't been ruled out, so check his tag again before kickoff.</dd>
+<dt>Phone widget</dt><dd>The Home Screen widget (Scriptable) reads <code style="overflow-wrap:anywhere">https://mrbrofo.github.io/Fantasy-app/${WIDGET}</code>. The name is secret so only you can read it; it changes if the site password changes.</dd>
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}${runMin != null ? `, starting as early as ${clock(runMin)} Pacific (get claims in before then)` : ''}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
@@ -1453,7 +1457,7 @@ document.addEventListener('click', ev => {
 // Sign out: forget the saved passwords on this phone and go back to the lock screen
 document.getElementById('signout')?.addEventListener('click', () => {
   if (!confirm('Sign out? You will need the password to get back in.')) return;
-  try { localStorage.removeItem('sitePw'); localStorage.removeItem('moveKey'); } catch {}
+  try { localStorage.removeItem('siteKey'); localStorage.removeItem('sitePw'); localStorage.removeItem('moveKey'); } catch {}
   location.reload();
 });
 __MOVEJS__
@@ -1814,7 +1818,8 @@ html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'))
 // the password. The phone keeps the password, so it's asked once. The head stays readable (no team
 // data in it) so the update check can still read the build time.
 async function lockPage(page, password) {
-  const { subtle } = crypto.webcrypto, salt = crypto.randomBytes(16), iv = crypto.randomBytes(12);
+  // fixed salt so the key (which the phone saves) stays the same between builds; the iv is new every build
+  const { subtle } = crypto.webcrypto, salt = crypto.createHash('sha256').update('Fantasy-app site lock').digest().subarray(0, 16), iv = crypto.randomBytes(12);
   const base = await subtle.importKey('raw', Buffer.from(password), 'PBKDF2', false, ['deriveKey']);
   const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
   const data = Buffer.from(await subtle.encrypt({ name: 'AES-GCM', iv }, key, Buffer.from(page))).toString('base64');
@@ -1967,23 +1972,29 @@ body.auto .ring,body.auto .corner,body.auto #field{display:none}
     ok.classList.add('gone');
     await wait(700);
   }
-  async function unlock(pass, show) {
+  // The phone keeps the derived key, not the password (the salt is the same every build, so the key is too)
+  async function keyOf(pass) {
     const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(LOCK.salt), iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(LOCK.salt), iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+  }
+  async function unlock(key, show) {
     let page = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(LOCK.iv) }, key, bytes(LOCK.data)));
-    try { localStorage.setItem('sitePw', pass); } catch {}
+    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key));
+    try { localStorage.setItem('siteKey', btoa(String.fromCharCode(...raw))); localStorage.removeItem('sitePw'); } catch {}
     // after the animation, the site fades in from black
     if (show) { await granted(); page = page.replace('</head>', '<style>@keyframes sitein{from{opacity:0}}body{animation:sitein .7s ease-out}</style></head>'); }
     alive = false; timers.forEach(clearInterval);
     document.open(); document.write(page); document.close();
   }
-  let saved = null;
-  try { saved = localStorage.getItem('sitePw'); } catch {}
-  if (saved) unlock(saved).catch(() => { try { localStorage.removeItem('sitePw'); } catch {} start(); });
+  let savedKey = null, savedPw = null; // sitePw: phones signed in before the key was saved instead
+  try { savedKey = localStorage.getItem('siteKey'); savedPw = localStorage.getItem('sitePw'); } catch {}
+  const forget = () => { try { localStorage.removeItem('siteKey'); localStorage.removeItem('sitePw'); } catch {} start(); };
+  if (savedKey) crypto.subtle.importKey('raw', bytes(savedKey), 'AES-GCM', true, ['decrypt']).then(k => unlock(k)).catch(forget);
+  else if (savedPw) keyOf(savedPw).then(k => unlock(k)).catch(forget);
   else start();
   form.addEventListener('submit', ev => {
     ev.preventDefault();
-    unlock(pw.value, true).catch(() => {
+    keyOf(pw.value).then(k => unlock(k, true)).catch(() => {
       $('bad').hidden = false; pw.value = ''; showMask();
       // red flash over the screen; title, prompt and line stay red until you type again
       form.classList.remove('shake'); document.body.classList.remove('flash'); void form.offsetWidth;
@@ -2020,7 +2031,7 @@ fs.writeFileSync(path.join(dir, 'site', 'alerts.json'), JSON.stringify(memo));
 fs.mkdirSync(path.dirname(memoFile), { recursive: true });
 fs.writeFileSync(memoFile, JSON.stringify(memo));
 // Small summary for the iPhone Home Screen widget (Scriptable).
-fs.writeFileSync(path.join(dir, 'site', 'widget.json'), JSON.stringify({
+fs.writeFileSync(path.join(dir, 'site', WIDGET), JSON.stringify({
   week, me: me.name, opp: opp?.name ?? null, myProj: n(myProj), oppProj: n(oppProj), win: winPct, live: isLive, updated: Date.now(),
   todo: todo.map(([lvl, title]) => ({ lvl, title })),
 }));
