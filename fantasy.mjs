@@ -421,8 +421,12 @@ const pending = [...pendingTx.values()].map(tx => {
   const p = id => byId.get(id) ?? { id, name: names[id] ?? 'Unknown', pos: '?', teamName: '', avg: 0, proj: 0 };
   if (tx.type === 'WAIVER') {
     const add = tx.items.filter(i => i.type === 'ADD').map(i => p(i.playerId)), drop = tx.items.filter(i => i.type === 'DROP').map(i => p(i.playerId));
-    const after = [...me.roster.filter(r => !drop.some(d => d.id === r.id)), ...add.map(a => ({ ...a, slot: 'Bench' }))];
-    return { kind: 'waiver', add, drop, week: weekScore(after) - weekScore(me.roster), season: score(after, seasonValue) - score(me.roster, seasonValue) };
+    const base = me.roster.filter(r => !drop.some(d => d.id === r.id));
+    const gain = list => { const r = [...base, ...list.map(a => ({ ...a, slot: 'Bench' }))]; return { week: weekScore(r) - weekScore(me.roster), season: score(r, seasonValue) - score(me.roster, seasonValue) }; };
+    const mine = gain(add);
+    // same drop, any other free agent: is someone better than the player I claimed?
+    const alt = add.length !== 1 ? null : allFa.filter(c => c.id !== add[0].id && !locked(c) && playable(c)).map(c => ({ c, ...gain([c]) })).sort((a, b) => b.season - a.season)[0];
+    return { kind: 'waiver', id: tx.id, add, drop, ...mine, better: alt && alt.season > mine.season + 0.5 ? alt : null };
   }
   const them = teams.find(t => t.id === tx.items.map(i => (i.fromTeamId === me.id ? i.toTeamId : i.fromTeamId)).find(id => id !== me.id));
   const give = tx.items.filter(i => i.fromTeamId === me.id).map(i => me.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
@@ -679,7 +683,7 @@ const pic = p => p.id < 0 || p.pos === 'D/ST'
 // Injury chip, with what's wrong and when he's expected back when ESPN knows
 function chip(p) {
   const out = [];
-  if (p.bye === week && !p.inj?.season) out.push('<span class="chip bad">No game this week</span>');
+  if (p.bye === week && !p.inj?.season) out.push('<span class="chip bye">Bye week: no game</span>');
   const s = STATUS[p.status];
   if (p.inj?.season) out.push(`<span class="chip bad">Out for the season${p.inj.type ? ` (${esc(p.inj.type.toLowerCase())})` : ''}</span>`);
   else if (s) {
@@ -974,6 +978,15 @@ body:not(.home) header{padding-bottom:22px}body:not(.home) .match{display:none}
 .tc-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pick{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:8px 0;border-bottom:1px solid var(--line);line-height:1.3}.pick input{margin-top:3px;flex:none}
 table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}table.cmp td.win{color:var(--good);font-weight:800}
+.cmp-picks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.cmp-slot,.pickrow{display:flex;gap:8px;align-items:center;text-align:left;min-width:0;color:var(--fg);font:14px Inter,system-ui,sans-serif;cursor:pointer}
+.cmp-slot{justify-content:flex-start;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--chip);min-height:64px}
+.cmp-slot .pic,.pickrow .pic{width:40px;height:40px}
+.cmp-who{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.cmp-res{max-height:50vh;overflow:auto;margin-bottom:8px}.pickrow{width:100%;padding:8px 4px;background:none;border:0;border-bottom:1px solid var(--line)}
+.tools2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.tools2 .btn{margin:0;background:var(--chip);color:var(--fg)}
+.chip.bye{background:rgba(62,99,221,.14);color:#3e63dd}
+@media (prefers-color-scheme:dark){.chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 </style></head><body>
 
@@ -991,7 +1004,7 @@ ${opp ? (() => {
   const [a, b] = live ? [mySide.totalProjectedPointsLive, oppSide.totalProjectedPointsLive] : [myProj, oppProj];
   const wp = winPct;
   return `<div class="match"><h3>This week vs ${esc(opp.name)}${live ? '<span class="live">LIVE</span>' : ''}</h3>
-  <div class="wp"><b style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--fg)'}">${wp}%</b><span>chance you win <span class="tag">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
+  <div class="wp"><b style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
   ${live ? `<div class="tag" style="margin-bottom:8px">Score right now: <b>${n(mySide.totalPointsLive)}</b> to <b>${n(oppSide.totalPointsLive)}</b>. Final guess below.</div>` : ''}
   <div class="vs">
   <div class="t">You</div><div class="p">${n(a)}</div><div class="bar"><i style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--brand2)"></i></div>
@@ -1058,7 +1071,9 @@ ${pending.length ? pending.map(m => {
     const v = m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : ['meh', 'Barely matters'];
     return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
     <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
-    <p class="why"><b>${Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}</b></p></div>`;
+    <p class="why"><b>${Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}</b></p>
+    ${m.better ? `<p class="why" style="color:var(--warn)"><b>Better option:</b> ${lnk(m.better.c)} (${m.better.c.wa ? 'on waivers' : 'free agent, no waiting'}) would add about ${n(m.better.season)} a week instead of ${n(m.season)}, dropping the same player. To switch: cancel this claim, then tap him and use Add him.</p>` : ''}
+    ${MOVE_URL ? `<button type="button" class="btn do" style="background:var(--chip);color:var(--fg)" data-move="${esc(JSON.stringify({ label: 'Cancel this claim on ESPN', type: 'WAIVER', cancel: true, related: m.id, items: [], week: league.scoringPeriodId }))}">Cancel this claim on ESPN</button>` : ''}</div>`;
   }
   const v = m.mine >= 1 ? ['good', m.mineOffer ? 'Good for you' : 'Good for you: accept'] : m.mine <= -1 ? ['bad', m.mineOffer ? 'Bad for you: cancel it' : 'Bad for you: decline'] : ['meh', 'About even'];
   const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = starterAt(m.after, pos); return s && !m.give.includes(s) ? `your ${POS_NAME[pos]?.toLowerCase()} would be ${esc(s.name)} (${n(rate(s))})` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
@@ -1070,7 +1085,7 @@ ${pending.length ? pending.map(m => {
   ${m.mineWeek > 2 && m.mine < -1 ? '<br><b>Trap:</b> it only helps this week (your players are on bye or hurt). After that you\'re worse off.' : ''}
   ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
   ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p>
-  ${MOVE_URL && !m.mineOffer ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: 'Decline this trade on ESPN', type: 'TRADE_DECLINE', related: m.id, items: [], week: league.scoringPeriodId }))}">Decline this trade on ESPN</button>` : ''}</div>`;
+  ${MOVE_URL && !m.mineOffer ? `<div class="tools2"><button type="button" class="btn do" style="background:var(--good);color:#fff" data-move="${esc(JSON.stringify({ label: 'Accept this trade on ESPN (it can\'t be undone)', type: 'TRADE_ACCEPT', related: m.id, items: [], week: league.scoringPeriodId }))}">Accept</button><button type="button" class="btn do" style="background:var(--bad);color:#fff" data-move="${esc(JSON.stringify({ label: 'Decline this trade on ESPN', type: 'TRADE_DECLINE', related: m.id, items: [], week: league.scoringPeriodId }))}">Decline</button></div>` : ''}</div>`;
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
 
@@ -1099,8 +1114,10 @@ ${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.po
   <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(rate(s))} per game, rest of season)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
 </section>
 
-<section id="compare"><h2>Compare players</h2><p class="sub">Pick any two players. Green = better.</p>
-<div class="card"><select id="cmp-a" class="sel" aria-label="First player"></select><select id="cmp-b" class="sel" aria-label="Second player"></select><div id="cmp-out"></div></div></section>
+<section id="compare"><h2>Compare players</h2><p class="sub">Tap a box, then search for any player. Green = better.</p>
+<div class="card"><div class="cmp-picks"><button type="button" class="cmp-slot" id="cmp-a"></button><button type="button" class="cmp-slot" id="cmp-b"></button></div>
+<div id="cmp-search" hidden><input id="cmp-q" class="sel" type="search" placeholder="Search any player" autocomplete="off" aria-label="Search players"><div id="cmp-res" class="cmp-res"></div></div>
+<div id="cmp-out"></div></div></section>
 
 <section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
 ${week > lastWeek ? '' : `<div class="card"><div class="group" style="margin:0 0 10px">Playoff chances</div><div class="stat">
@@ -1242,7 +1259,7 @@ function render(p) {
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
     (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b><small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
-    (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + addHim(p);
+    (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
 function openSheet(id) { const p = P[id]; if (!p) return; body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
@@ -1380,7 +1397,10 @@ for (const p of me.roster) for (const x of blurbs.get(p.id) ?? []) {
 }
 const TOOLS_JS = String.raw`// Data for Compare, the trade checker and Add buttons: every rostered player and the free agents
 const R = JSON.parse(document.getElementById('rdata').textContent);
-const plOf = id => { const a = R.pl[id]; return a && { id: +id, name: a[0], pos: a[1], team: a[2], proj: a[3], rate: a[4], playable: a[5], locked: a[6], slot: a[7], rank: a[8], ceiling: a[9], avg: a[10], bye: a[11], status: a[12] }; };
+const plOf = id => { const a = R.pl[id]; return a && { id: +id, name: a[0], pos: a[1], team: a[2], proj: a[3], rate: a[4], playable: a[5], locked: a[6], slot: a[7], rank: a[8], ceiling: a[9], avg: a[10], bye: a[11], status: a[12], abbr: a[13] }; };
+const photo = p => p.id < 0 || p.pos === 'D/ST' ? '<span class="pic logo"><img src="https://a.espncdn.com/i/teamlogos/nfl/500/' + e((p.abbr || '').toLowerCase()) + '.png" alt=""></span>' : '<span class="pic" data-i="' + e(p.name.split(' ').map(w => w[0]).join('').slice(0, 2)) + '"><img src="https://a.espncdn.com/i/headshots/nfl/players/full/' + p.id + '.png" alt="" onerror="this.remove()"></span>';
+// Compare / Trade buttons on a player page
+const toolBtns = p => { const x = plOf(p.id); if (!x) return ''; const onTeam = R.teams.some(t => t.ids.includes(x.id)); return '<div class="tools2"><button type="button" class="btn" data-cmp="' + x.id + '">Compare</button>' + (onTeam ? '<button type="button" class="btn" data-trade="' + x.id + '">Trade check</button>' : '') + '</div>'; };
 const rosterOf = teamId => R.teams.find(t => t.id === teamId).ids.map(plOf).filter(Boolean);
 // "Add him" on a free agent's page: one button per player you could drop (lowest rest-of-season first)
 function addHim(p) {
@@ -1436,17 +1456,28 @@ function addHim(p) {
   $('check').addEventListener('change', ev => { if (ev.target.matches('input[type=checkbox]')) tcCheck(); });
   tcLists();
 
-  // --- Compare two players side by side
-  const groups = '<optgroup label="Your team">' + rosterOf(R.me).map(opt).join('') + '</optgroup>' +
-    '<optgroup label="Free agents">' + R.fa.map(plOf).filter(Boolean).map(opt).join('') + '</optgroup>' +
-    R.teams.filter(t => t.id !== R.me).map(t => '<optgroup label="' + e(t.name) + '">' + rosterOf(t.id).map(opt).join('') + '</optgroup>').join('');
-  const ca = $('cmp-a'), cb = $('cmp-b');
-  ca.innerHTML = groups; cb.innerHTML = groups;
-  const mineIds = rosterOf(R.me);
-  ca.value = mineIds[0] ? mineIds[0].id : ''; cb.value = (R.fa.map(plOf).find(p => p && mineIds[0] && p.pos === mineIds[0].pos) || mineIds[1] || {}).id || '';
+  // --- Compare two players side by side: tap a box, search by name, tap the player
   const ownerOf = id => { const t = R.teams.find(t => t.ids.includes(id)); return t ? (t.id === R.me ? 'You' : t.name) : 'Free agent'; };
+  const all = Object.keys(R.pl).map(plOf);
+  const pick = { a: null, b: null };
+  let picking = 'a';
+  function drawPick(k) {
+    const p = plOf(pick[k]);
+    $('cmp-' + k).innerHTML = p ? photo(p) + '<span class="cmp-who"><b>' + e(p.name) + '</b><span class="tag">' + p.pos + ' &middot; ' + e(ownerOf(p.id)) + '</span></span>' : '<span class="tag">Tap to pick a player</span>';
+  }
+  function setPick(k, id) { pick[k] = id; drawPick(k); compare(); }
+  function results(q) {
+    q = q.trim().toLowerCase();
+    const list = all.filter(p => !q || p.name.toLowerCase().includes(q)).sort((x, y) => y.rate - x.rate).slice(0, 25);
+    $('cmp-res').innerHTML = list.map(p => '<button type="button" class="pickrow" data-id="' + p.id + '">' + photo(p) + '<span class="cmp-who"><b>' + e(p.name) + '</b><span class="tag">' + p.pos + ' &middot; ' + e(ownerOf(p.id)) + ' &middot; ' + p.rate.toFixed(1) + ' per game</span></span></button>').join('') || '<p class="tag">No player by that name.</p>';
+  }
+  ['a', 'b'].forEach(k => $('cmp-' + k).addEventListener('click', () => {
+    picking = k; $('cmp-search').hidden = false; $('cmp-q').value = ''; results(''); $('cmp-q').focus();
+  }));
+  $('cmp-q').addEventListener('input', ev => results(ev.target.value));
+  $('cmp-res').addEventListener('click', ev => { const b = ev.target.closest('[data-id]'); if (!b) return; $('cmp-search').hidden = true; setPick(picking, +b.dataset.id); });
   function compare() {
-    const a = plOf(ca.value), b = plOf(cb.value);
+    const a = plOf(pick.a), b = plOf(pick.b);
     if (!a || !b) { $('cmp-out').innerHTML = ''; return; }
     const rows = [
       ['Expected this week', a.proj, b.proj, 1],
@@ -1456,17 +1487,38 @@ function addHim(p) {
       ['Rank at his position', a.rank || '-', b.rank || '-', -1],
       ['Status', a.status, b.status, 0],
       ['Bye week', a.bye || '-', b.bye || '-', 0],
-      ['Team in your league', ownerOf(a.id), ownerOf(b.id), 0],
     ];
-    const cell = (v, o, dir) => '<td class="num' + (dir && typeof v === 'number' && typeof o === 'number' && (dir > 0 ? v > o : v < o) ? ' win' : '') + '">' + e(typeof v === 'number' && dir ? (dir > 0 ? v.toFixed(1) : v) : v) + '</td>';
+    const cell = (v, o, dir) => '<td class="num' + (dir && typeof v === 'number' && typeof o === 'number' && (dir > 0 ? v > o : v < o) ? ' win' : '') + '">' + e(typeof v === 'number' && dir > 0 ? v.toFixed(1) : v) + '</td>';
     const wk = a.proj === b.proj ? 'Even this week.' : 'This week: ' + e((a.proj > b.proj ? a : b).name) + ' (by ' + Math.abs(a.proj - b.proj).toFixed(1) + ').';
     const ros = a.rate === b.rate ? 'Even for the rest of the season.' : 'Rest of season: ' + e((a.rate > b.rate ? a : b).name) + ' (by ' + Math.abs(a.rate - b.rate).toFixed(1) + ' per game).';
-    $('cmp-out').innerHTML = '<table class="cmp"><tr><td></td><td class="num"><b>' + e(a.name) + '</b></td><td class="num"><b>' + e(b.name) + '</b></td></tr>' +
+    $('cmp-out').innerHTML = '<table class="cmp"><tr><td></td><td class="num"><b>' + e(a.name.split(' ').slice(-1)[0]) + '</b></td><td class="num"><b>' + e(b.name.split(' ').slice(-1)[0]) + '</b></td></tr>' +
       rows.map(([k, x, y, dir]) => '<tr><td>' + k + '</td>' + cell(x, y, dir) + cell(y, x, dir) + '</tr>').join('') + '</table>' +
       '<p class="why"><b>Better pick</b><br>' + wk + '<br>' + ros + '</p>';
   }
-  ca.addEventListener('change', compare); cb.addEventListener('change', compare);
-  compare();
+  const mine = rosterOf(R.me);
+  pick.a = mine[0] ? mine[0].id : null;
+  pick.b = (R.fa.map(plOf).find(p => p && mine[0] && p.pos === mine[0].pos) || mine[1] || {}).id || null;
+  drawPick('a'); drawPick('b'); compare();
+
+  // --- From any player's page: "Compare" puts him in a compare box, "Trade" ticks him in the trade checker
+  function compareWith(id) {
+    setPick(rosterOf(R.me).some(p => p.id === id) ? 'a' : 'b', id);
+    closeSheet(); history.replaceState(null, '', '#compare'); showTab('compare', true);
+  }
+  function tradeFor(id) {
+    const t = R.teams.find(t => t.ids.includes(id));
+    if (!t) return;
+    if (t.id !== R.me) { tcTeam.value = t.id; tcLists(); }
+    const box = document.querySelector('#check input[data-side=' + (t.id === R.me ? 'give' : 'get') + '][value="' + id + '"]');
+    if (box) box.checked = true;
+    tcCheck();
+    closeSheet(); history.replaceState(null, '', '#trades'); showTab('trades', true);
+  }
+  document.addEventListener('click', ev => {
+    const c = ev.target.closest('[data-cmp]'), t = ev.target.closest('[data-trade]');
+    if (c) compareWith(+c.dataset.cmp);
+    if (t) tradeFor(+t.dataset.trade);
+  });
 })();
 // One section at a time: the bottom bar picks which tab shows, like pages in an app
 const navLinks = [...document.querySelectorAll('nav a')];
@@ -1567,7 +1619,7 @@ html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, t
 });
 html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', bestLineup.toString()));
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
-const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(1), +rate(p).toFixed(1), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p)];
+const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(1), +rate(p).toFixed(1), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? ''];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
 const rdata = { week: league.scoringPeriodId, me: me.id, moves: !!MOVE_URL, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => ({ id: t.id, name: t.name, ids: t.roster.map(p => p.id) })), fa: faList.map(p => p.id),

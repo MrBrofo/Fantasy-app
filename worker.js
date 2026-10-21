@@ -5,7 +5,7 @@
 const SITE = 'https://mrbrofo.github.io';
 const cors = { 'Access-Control-Allow-Origin': SITE, 'Access-Control-Allow-Headers': 'content-type,x-key', 'Access-Control-Allow-Methods': 'POST' };
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } });
-const ITEM_TYPES = { ROSTER: ['LINEUP', 'DROP'], FREEAGENT: ['ADD', 'DROP'], WAIVER: ['ADD', 'DROP'], TRADE_DECLINE: [] };
+const ITEM_TYPES = { ROSTER: ['LINEUP', 'DROP'], FREEAGENT: ['ADD', 'DROP'], WAIVER: ['ADD', 'DROP'], TRADE_DECLINE: [], TRADE_ACCEPT: [] };
 
 export default {
   async fetch(req, env) {
@@ -16,9 +16,10 @@ export default {
     try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
     const team = Number(env.TEAM_ID), allowed = ITEM_TYPES[m.type];
     if (!allowed || !Array.isArray(m.items) || !Number.isInteger(m.week)) return reply(400, { error: 'Bad move' });
-    // a trade decline names the offer and has no players; every other move needs players
-    const decline = m.type === 'TRADE_DECLINE';
-    if (decline ? !/^[0-9a-f-]{36}$/.test(m.related ?? '') || m.items.length : !m.items.length) return reply(400, { error: 'Bad move' });
+    // accept/decline a trade offer, or cancel a waiver claim: names that transaction and has no players.
+    // Every other move needs players.
+    const cancel = m.type === 'WAIVER' && m.cancel === true, byId = cancel || m.type === 'TRADE_DECLINE' || m.type === 'TRADE_ACCEPT';
+    if (byId ? !/^[0-9a-f-]{36}$/.test(m.related ?? '') || m.items.length : !m.items.length) return reply(400, { error: 'Bad move' });
     const items = [];
     for (const x of m.items) {
       if (!allowed.includes(x.type) || !Number.isInteger(x.playerId)) return reply(400, { error: 'Bad move' });
@@ -29,7 +30,7 @@ export default {
     const r = await fetch(`https://lm-api-writes.fantasy.espn.com/apis/v3/games/ffl/seasons/${env.SEASON}/segments/0/leagues/${env.LEAGUE_ID}/transactions/`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: `espn_s2=${env.ESPN_S2}` },
-      body: JSON.stringify({ isLeagueManager: false, teamId: team, type: m.type, scoringPeriodId: m.week, executionType: 'EXECUTE', ...(decline ? { relatedTransactionId: m.related } : { items }) }),
+      body: JSON.stringify({ isLeagueManager: false, teamId: team, type: m.type, scoringPeriodId: m.week, executionType: cancel ? 'CANCEL' : 'EXECUTE', ...(byId ? { relatedTransactionId: m.related } : { items }) }),
     });
     const out = await r.json().catch(() => ({}));
     // ESPN says why it refused in details[0].type, e.g. TRAN_LINEUP_LOCKED
