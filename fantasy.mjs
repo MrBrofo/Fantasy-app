@@ -1497,10 +1497,14 @@ ${pending.length ? pending.map(m => {
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
 
-<section id="check"><h2>Trade checker</h2><p class="sub">Pick a team, then tick who you'd give and who you'd get.</p>
-<div class="card"><select id="tc-team" class="sel" aria-label="Team to trade with"></select>
-<div class="tc-cols"><div><div class="group">You give</div><div id="tc-give"></div></div><div><div class="group">You get</div><div id="tc-get"></div></div></div>
-<div id="tc-out"></div></div></section>
+<section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
+${topTrades.length ? topTrades.map(t => { const s = myStartersAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
+  <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game, rest of season', null, t.give, 'season')}</div>
+  <div class="arrow">for</div>
+  <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
+  <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
+  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : `<div class="card empty">${tradesOpen ? 'No trades right now that clearly help you and look fair to the other team.' : 'The trade deadline has passed.'}</div>`}
+</section>
 
 <section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Only trades with a believable, true pitch show up.</p>
 ${topFleece.length ? topFleece.map(f => `<div class="card"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
@@ -1524,19 +1528,16 @@ ${(() => { const card = d => `<div class="card"><div class="vhead"><b>${esc(d.t.
   return `<div class="list">${partners.slice(0, 3).map(card).join('')}</div>${partners.length > 3 ? `<details class="all"><summary>All ${partners.length} teams</summary><div class="list">${partners.slice(3).map(card).join('')}</div></details>` : ''}`; })()}
 </section>
 
-<section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
-${topTrades.length ? topTrades.map(t => { const s = myStartersAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
-  <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game, rest of season', null, t.give, 'season')}</div>
-  <div class="arrow">for</div>
-  <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
-  <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
-  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : `<div class="card empty">${tradesOpen ? 'No trades right now that clearly help you and look fair to the other team.' : 'The trade deadline has passed.'}</div>`}
-</section>
-
 <section id="compare"><h2>Compare players</h2><p class="sub">Tap a box, then search for any player. Green = better.</p>
 <div class="card"><div class="cmp-picks"><button type="button" class="cmp-slot" id="cmp-a"></button><button type="button" class="cmp-slot" id="cmp-b"></button></div>
 <div id="cmp-search" hidden><input id="cmp-q" class="sel" type="search" placeholder="Search any player" autocomplete="off" aria-label="Search players"><div id="cmp-res" class="cmp-res"></div></div>
 <div id="cmp-out"></div></div></section>
+
+<section id="check"><h2>Trade checker</h2><p class="sub">Pick a team, then tick who you'd give and who you'd get.</p>
+<div class="card"><select id="tc-team" class="sel" aria-label="Team to trade with"></select>
+<div class="tc-cols"><div><div class="group">You give</div><div id="tc-give"></div></div><div><div class="group">You get</div><div id="tc-get"></div></div></div>
+<div id="tc-out"></div></div></section>
+
 
 <section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
 ${week > lastWeek ? '' : `<div class="card"><div class="group" style="margin:0 0 10px">Playoff chances</div><div class="stat">
@@ -1956,7 +1957,7 @@ function addHim(p) {
     const box = document.querySelector('#check input[data-side=' + (t.id === R.me ? 'give' : 'get') + '][value="' + id + '"]');
     if (box) box.checked = true;
     tcCheck();
-    closeSheet(); history.replaceState(null, '', '#trades'); showTab('trades', true);
+    closeSheet(); history.replaceState(null, '', '#compare'); showTab('compare', true); $('check').scrollIntoView({ behavior: 'smooth' });
   }
   document.addEventListener('click', ev => {
     const c = ev.target.closest('[data-cmp]'), t = ev.target.closest('[data-trade]');
@@ -2102,7 +2103,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', pickups: 'pickups', pending: 'pending', check: 'trades', fleece: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
