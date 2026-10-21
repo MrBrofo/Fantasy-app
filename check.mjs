@@ -205,6 +205,15 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert.equal(qbSplit('wr', 'qb', { 1: wk(20, true), 2: wk(10, false), 3: wk(10, false) }), null, 'one game with him is too few');
 }
 
+// usage: last 3 games vs before, as a share of his team's targets; red zone needs 10+ team chances
+{
+  const usageOf = new Function('rosSaved', cut('function usageOf(', "pct(sum(games, 'rz'), sum(games, 'rzAll')) : null };\n}") + '\nreturn usageOf;')({});
+  const wk = (snap, tgt, rz) => ({ 'a|X': [snap, 'Y', 10, tgt, 0, rz], 'b|X': [90, 'Y', 10, 10 - tgt, 0, 3 - rz] });
+  const u = usageOf('a|X', 'X', 'WR', { 1: wk(50, 2, 1), 2: wk(50, 2, 1), 3: wk(90, 5, 2), 4: wk(90, 5, 2), 5: wk(90, 5, 2) });
+  assert.deepEqual([u.snapNow, u.snapBefore, u.shareNow, u.shareBefore, u.rz], [90, 50, 50, 20, 53], JSON.stringify(u));
+  assert.equal(usageOf('a|X', 'X', 'WR', { 1: wk(50, 2, 1) }), null, 'one game: nothing');
+}
+
 // why a past week went the way it did
 {
   const K = n => `${n}|CIN`;

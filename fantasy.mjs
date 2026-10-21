@@ -129,10 +129,10 @@ for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, po
 let rosSaved = null, rosPrev = null;
 try {
   const old = rosPrev = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
-  if (old.week === week && Date.now() - old.at < 3600e3 && old.practice && old.weeks && old.depth && old.weather) rosSaved = old;
+  if (old.week === week && Date.now() - old.at < 3600e3 && old.v === 2 && old.practice && old.weeks && old.depth && old.weather) rosSaved = old;
 } catch {}
 if (!rosSaved) {
-  rosSaved = { week, at: Date.now(), roto: [], cbs: [] };
+  rosSaved = { v: 2, week, at: Date.now(), roto: [], cbs: [] };
   try {
     const sum = new Map(); // key -> [points, games]
     for (let wk = week; wk <= 18; wk++) {
@@ -150,7 +150,7 @@ if (!rosSaved) {
   // and each player's points so far, to know who a team's usual starters are
   try {
     const allowed = {}, usual = new Map(); // allowed[pos][team] = [points, Set of weeks]
-    const weeks = {}; // weeks[wk][player key] = [% of his team's plays he was on, opponent, points]: who played, for whyWeek() and qbSplit()
+    const weeks = {}; // weeks[wk][player key] = [% of his team's plays he was on, opponent, points, targets, carries, red-zone targets + carries]: who played, for whyWeek() and qbSplit()
     for (let wk = 1; wk < week; wk++) {
       const r = await fetch(`https://api.sleeper.app/stats/nfl/${SEASON}/${wk}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`);
       for (const x of await r.json()) {
@@ -160,7 +160,7 @@ if (!rosSaved) {
         a[0] += pts; a[1].add(wk);
         const name = `${x.player.first_name} ${x.player.last_name}`, k = pkey(name, pos, x.team), u = usual.get(k) ?? [k, name, pos, TEAM(x.team), 0];
         u[4] += pts; usual.set(k, u);
-        (weeks[wk] ??= {})[k] = [x.stats.tm_off_snp ? Math.round((x.stats.off_snp ?? 0) / x.stats.tm_off_snp * 100) : null, TEAM(x.opponent), +pts.toFixed(1)];
+        (weeks[wk] ??= {})[k] = [x.stats.tm_off_snp ? Math.round((x.stats.off_snp ?? 0) / x.stats.tm_off_snp * 100) : null, TEAM(x.opponent), +pts.toFixed(1), x.stats.rec_tgt ?? 0, x.stats.rush_att ?? 0, (x.stats.rec_rz_tgt ?? 0) + (x.stats.rush_rz_att ?? 0)];
       }
     }
     rosSaved.weeks = weeks;
@@ -1170,6 +1170,24 @@ function statusOf(k) {
     disagree: SLP_OUT.includes(sl) && !out ? `Injury reports disagree: ESPN says he ${ESPN_WORD[e] ?? 'is healthy'}, but Sleeper still lists him as ${sl === 'IR' ? 'on IR' : sl.toLowerCase()}. Check again before kickoff; teams announce who's out about 90 minutes before the game.` : null };
 }
 const gameStatusOf = new Map(rosSaved.gameStatus ?? []);
+// His share of his team's snaps, targets (WR/TE) or carries (RB), and red-zone chances: last 3 games he played vs
+// the games before. Usage is the stickiest thing in fantasy (target share most of all), so a role change matters.
+// ponytail: a player traded mid-season only counts games under his current team.
+function usageOf(k, team, pos, weeks = rosSaved.weeks ?? {}) {
+  const i = pos === 'RB' ? 4 : 3, games = [];
+  for (const wk of Object.keys(weeks).sort((a, b) => a - b)) {
+    const wd = weeks[wk], me = wd[k];
+    if (!me || me[3] == null) continue;
+    const mates = Object.entries(wd).filter(([key]) => key.endsWith('|' + team)).map(([, v]) => v);
+    games.push({ snap: me[0], mine: me[i], all: mates.reduce((t, v) => t + (v[i] ?? 0), 0), rz: me[5], rzAll: mates.reduce((t, v) => t + (v[5] ?? 0), 0) });
+  }
+  if (games.length < 2) return null;
+  const pct = (a, b) => (b > 0 ? Math.round(a / b * 100) : null), sum = (g, f) => g.reduce((t, x) => t + (x[f] ?? 0), 0);
+  const snapAvg = g => { const v = g.map(x => x.snap).filter(x => x != null); return v.length ? Math.round(v.reduce((t, x) => t + x, 0) / v.length) : null; };
+  const now = games.slice(-3), before = games.length >= 4 ? games.slice(0, -3) : null;
+  return { kind: pos === 'RB' ? 'carries' : 'targets', snapNow: snapAvg(now), snapBefore: before && snapAvg(before), shareNow: pct(sum(now, 'mine'), sum(now, 'all')),
+    shareBefore: before && pct(sum(before, 'mine'), sum(before, 'all')), rz: sum(games, 'rzAll') >= 10 ? pct(sum(games, 'rz'), sum(games, 'rzAll')) : null };
+}
 function notes(p) {
   const team = TEAM(p.team), k = pkey(p.name, p.pos, p.team), out = [], me_ = statusOf(k);
   if (me_.out) {
@@ -1227,6 +1245,24 @@ function notes(p) {
   const easy = next.filter(x => x <= 10).length, hard = next.filter(x => x > teamsRanked - 10).length;
   if (next.length >= 3 && easy >= 3) out.push(`Easy schedule ahead: ${easy} of his next ${next.length} games are against defenses that give up lots of points to ${POS_PL[p.pos]}.`);
   else if (next.length >= 3 && hard >= 3) out.push(`Tough schedule ahead: ${hard} of his next ${next.length} games are against defenses that give up few points to ${POS_PL[p.pos]}.`);
+  // role: what the experts' numbers rest on, shown so a change is easy to spot (not counted again)
+  const u = p.pos !== 'QB' && usageOf(k, team, p.pos);
+  if (u) {
+    if (u.snapBefore != null && u.snapNow != null && Math.abs(u.snapNow - u.snapBefore) >= 15) out.push(`${u.snapNow > u.snapBefore ? 'Bigger' : 'Smaller'} role lately: on the field for ${u.snapNow}% of plays over his last 3 games, vs ${u.snapBefore}% before.`);
+    if (u.shareBefore != null && u.shareNow != null && Math.abs(u.shareNow - u.shareBefore) >= 7) out.push(`He's getting ${u.shareNow}% of his team's ${u.kind} lately, vs ${u.shareBefore}% before.`);
+    else if (u.shareNow >= 25) out.push(`He gets ${u.shareNow}% of his team's ${u.kind}, a big share. Steady volume like that is the most reliable thing in fantasy.`);
+    if (u.rz >= 25) out.push(`He gets ${u.rz}% of his team's chances near the goal line, so he's a real touchdown threat.`);
+  }
+  // offensive line: two or more starters out hurts the run game and the QB
+  if (['RB', 'QB'].includes(p.pos)) {
+    const oline = depth.filter(([d, o, name, inj]) => o === 1 && ['LT', 'LG', 'C', 'RG', 'RT'].includes(d) && ['Out', 'Doubtful', 'IR', 'PUP', 'Sus'].includes(gameStatusOf.get(pkey(name, '', team)) ?? inj));
+    if (oline.length >= 2) out.push(`His team is missing ${oline.length} starting offensive linemen (${oline.map(x => x[2]).join(', ')}), which tends to hurt ${p.pos === 'RB' ? 'the run game' : 'the QB: more pressure, fewer clean throws'}.`);
+  }
+  // game script: big favorites run more, big underdogs throw more (from the Vegas lines)
+  const oppVegas = opp && vegas[TEAM(proAbbr[opp])], line = p.vegas != null && oppVegas != null ? p.vegas - oppVegas : null;
+  if (line != null && Math.abs(line) >= 7) out.push(line > 0
+    ? `His team is a big favorite (by about ${Math.round(line)}). Teams with a lead run more late, ${p.pos === 'RB' ? 'which helps him' : 'so fewer passes'}.`
+    : `His team is a big underdog (by about ${Math.round(-line)}). Teams that trail throw more, ${p.pos === 'RB' ? 'which can cut his carries (catching backs do better)' : 'which helps the passing game'}.`);
   return out;
 }
 // Tapping a player opens his detail sheet; every player shown is remembered so the sheet data
