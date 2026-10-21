@@ -99,6 +99,19 @@ for (const t of [r, early]) {
 }
 assert.equal(r.bestMove, null, 'nothing to move on Sunday: the low starters are locked');
 assert.equal(early.bestMove.items.length, 4, 'two in, two out');
+
+// waiver rivals for bye-week fill-ins: a team ahead of me whose only kicker is on bye next week takes the best waiver kicker
+{
+  const lostOnWaivers = new Function('teams', 'me', 'week', 'playable', 'slotCounts', 'FA_SLOT', 'allFa', 'nextValue',
+    cut('const shortNextWeek = ', '  return k > 0 &&') + ' allFa.filter(o => o.wa && o.pos === c.pos && o.id !== c.id && !taken.has(o.id) && nextValue(o) > nextValue(c)).length < k;\n};\nreturn lostOnWaivers;');
+  const k = (id, bye, wa, next) => ({ id, pos: 'K', slot: 'Bench', bye, wa, next });
+  const me = { waiver: 11, roster: [k(1, 8)] }, ahead = { waiver: 2, roster: [k(2, 8)] }, fine = { waiver: 3, roster: [k(3, 9)] };
+  const loop = k(10, 13, true, 9.8), smack = k(11, 11, true, 9.1), mcl = k(12, 10, false, 9.2);
+  const run = (teams, fa) => lostOnWaivers(teams, me, 7, () => true, { 17: 1 }, { K: 17 }, fa, p => p.next);
+  const one = run([me, ahead, fine], [loop, smack, mcl]);
+  assert(one(loop, new Set()) && !one(smack, new Set()) && !one(mcl, new Set()), 'one rival takes the top waiver kicker; free agents are never lost');
+  assert(!run([me, fine], [loop])(loop, new Set()), 'no rival short at kicker: claim is safe');
+}
 console.log('ok');
 
 // site lock: the published page can't be read without the password, and the password opens it
