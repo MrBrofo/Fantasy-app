@@ -190,6 +190,21 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert(!by.rb4.keep && by.rb4.swap?.add === freeTe && Math.round(by.rb4.swap.gain) === 12 && by.rb4.trade?.take.id === 'x', 'spare: swap for the better TE (+3 x 4 weeks) and a trade');
 }
 
+// wind cuts passing and kicking outdoors only; a QB split needs games both ways and is pulled toward no change
+{
+  const { windFactor, qbSplit } = new Function('rosSaved', cut('const WIND_CUT = ', '  return { ratio, games: wo.length, with: avg(w), without: avg(wo) };\n}') + '\nreturn { windFactor, qbSplit };')({});
+  assert.equal(windFactor('WR', { wind: 18 }), 0.93);
+  assert.equal(windFactor('K', { wind: 25 }), 0.88);
+  assert.equal(windFactor('RB', { wind: 25 }), 1, 'runners not cut');
+  assert.equal(windFactor('QB', { wind: 25, indoor: true }), 1, 'dome: no wind');
+  assert.equal(windFactor('QB', { wind: 10 }), 1);
+  const wk = (me, qb) => ({ wr: [80, 'X', me], ...(qb ? { qb: [100, 'X', 20] } : {}) });
+  const weeks = { 1: wk(20, true), 2: wk(20, true), 3: wk(10, false), 4: wk(10, false) };
+  const sp = qbSplit('wr', 'qb', weeks);
+  assert(sp && sp.games === 2 && Math.abs(sp.ratio - (1 - 0.5 * 2 / 6)) < 1e-9, 'half as good without him, 2 games: pulled to ' + sp?.ratio);
+  assert.equal(qbSplit('wr', 'qb', { 1: wk(20, true), 2: wk(10, false), 3: wk(10, false) }), null, 'one game with him is too few');
+}
+
 // why a past week went the way it did
 {
   const K = n => `${n}|CIN`;

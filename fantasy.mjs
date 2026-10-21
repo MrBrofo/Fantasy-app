@@ -126,10 +126,10 @@ for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, po
 // Rest of season: points per game each source expects from this week to the end. Used for anything
 // longer than this week (season pickups, trades, bye fill-ins). Rotowire's comes from Sleeper one week
 // at a time (12 big downloads), so like CBS it's refreshed at most once an hour and saved as ros.json.
-let rosSaved = null;
+let rosSaved = null, rosPrev = null;
 try {
-  const old = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
-  if (old.week === week && Date.now() - old.at < 3600e3 && old.practice && old.weeks) rosSaved = old;
+  const old = rosPrev = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
+  if (old.week === week && Date.now() - old.at < 3600e3 && old.practice && old.weeks && old.depth && old.weather) rosSaved = old;
 } catch {}
 if (!rosSaved) {
   rosSaved = { week, at: Date.now(), roto: [], cbs: [] };
@@ -150,7 +150,7 @@ if (!rosSaved) {
   // and each player's points so far, to know who a team's usual starters are
   try {
     const allowed = {}, usual = new Map(); // allowed[pos][team] = [points, Set of weeks]
-    const weeks = {}; // weeks[wk][player key] = [% of his team's plays he was on, opponent]: who played, for whyWeek()
+    const weeks = {}; // weeks[wk][player key] = [% of his team's plays he was on, opponent, points]: who played, for whyWeek() and qbSplit()
     for (let wk = 1; wk < week; wk++) {
       const r = await fetch(`https://api.sleeper.app/stats/nfl/${SEASON}/${wk}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`);
       for (const x of await r.json()) {
@@ -160,7 +160,7 @@ if (!rosSaved) {
         a[0] += pts; a[1].add(wk);
         const name = `${x.player.first_name} ${x.player.last_name}`, k = pkey(name, pos, x.team), u = usual.get(k) ?? [k, name, pos, TEAM(x.team), 0];
         u[4] += pts; usual.set(k, u);
-        (weeks[wk] ??= {})[k] = [x.stats.tm_off_snp ? Math.round((x.stats.off_snp ?? 0) / x.stats.tm_off_snp * 100) : null, TEAM(x.opponent)];
+        (weeks[wk] ??= {})[k] = [x.stats.tm_off_snp ? Math.round((x.stats.off_snp ?? 0) / x.stats.tm_off_snp * 100) : null, TEAM(x.opponent), +pts.toFixed(1)];
       }
     }
     rosSaved.weeks = weeks;
@@ -174,7 +174,7 @@ if (!rosSaved) {
     if (!r.ok) throw new Error(`${r.status}`);
     const nick = Object.fromEntries(pro.filter(t => t.id).map(t => [t.name, t.abbrev]));
     const text = s => s.replace(/<[^>]+>/g, '').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, '&').trim();
-    rosSaved.practice = [];
+    rosSaved.practice = []; rosSaved.gameStatus = [];
     for (const part of (await r.text()).split('<div class="d3-o-section-sub-title"><span>').slice(1)) {
       const team = nick[text(part.slice(0, part.indexOf('</span>')))];
       if (!team) continue;
@@ -182,9 +182,41 @@ if (!rosSaved) {
         const td = [...tr.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(m => text(m[1]));
         const pr = /^Full/.test(td[3]) ? 'Full' : /^Limited/.test(td[3]) ? 'Limited' : /^Did Not/.test(td[3]) ? 'DNP' : null;
         if (pr) rosSaved.practice.push([pkey(td[0], td[1], team), pr]);
+        const gs = /^(Out|Doubtful|Questionable)/.exec(td[4] ?? '')?.[1];
+        if (gs) rosSaved.gameStatus.push([pkey(td[0], td[1], team), gs]);
       }
     }
-  } catch (err) { console.warn('NFL injury report skipped:', err.message); rosSaved.practice = []; }
+  } catch (err) { console.warn('NFL injury report skipped:', err.message); rosSaved.practice = []; rosSaved.gameStatus = []; }
+  // Depth charts (Sleeper, every team, defense too): the top 2 at each spot, with injury status. Sleeper asks
+  // that its full player list be downloaded at most once a day, so the last one is reused for 24 hours.
+  if (rosPrev?.depth && Date.now() - rosPrev.depthAt < 864e5) Object.assign(rosSaved, { depth: rosPrev.depth, depthAt: rosPrev.depthAt });
+  else try {
+    const all = await (await fetch('https://api.sleeper.app/v1/players/nfl')).json();
+    rosSaved.depth = {}; rosSaved.depthAt = Date.now();
+    for (const x of Object.values(all)) if (x.team && x.depth_chart_position && x.depth_chart_order <= 2)
+      (rosSaved.depth[TEAM(x.team)] ??= []).push([x.depth_chart_position, x.depth_chart_order, x.full_name ?? `${x.first_name} ${x.last_name}`, x.injury_status ?? null]);
+  } catch (err) { console.warn('Depth charts skipped:', err.message); rosSaved.depth = {}; }
+  // This week's stadiums and weather, by team: ESPN says whether the game is indoors; Open-Meteo gives the
+  // forecast at kickoff (wind, gusts, rain, temperature) for outdoor games.
+  try {
+    rosSaved.weather = {};
+    const STATE = { AZ: 'Arizona', CA: 'California', CO: 'Colorado', FL: 'Florida', GA: 'Georgia', IL: 'Illinois', IN: 'Indiana', LA: 'Louisiana', MA: 'Massachusetts', MD: 'Maryland', MI: 'Michigan', MN: 'Minnesota', MO: 'Missouri', NC: 'North Carolina', NJ: 'New Jersey', NV: 'Nevada', NY: 'New York', OH: 'Ohio', PA: 'Pennsylvania', TN: 'Tennessee', TX: 'Texas', WA: 'Washington', WI: 'Wisconsin' };
+    const sb = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&dates=${SEASON}`)).json();
+    for (const ev of sb.events ?? []) {
+      // SoFi has a fixed roof with open sides; ESPN calls it outdoor, but the weather barely reaches the field
+      const c = ev.competitions[0], v = c.venue ?? {}, w = { indoor: !!v.indoor || /SoFi/.test(v.fullName ?? ''), place: v.fullName ?? '' };
+      if (!v.indoor && v.address?.city) try {
+        const hits = (await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(v.address.city)}&count=10`)).json()).results ?? [];
+        const g = hits.find(r => r.admin1 === STATE[v.address.state]) ?? hits[0];
+        if (g) {
+          const f = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}&hourly=wind_speed_10m,wind_gusts_10m,precipitation,temperature_2m&wind_speed_unit=mph&temperature_unit=fahrenheit&timezone=UTC&forecast_days=16`)).json();
+          const i = f.hourly?.time.indexOf(new Date(ev.date).toISOString().slice(0, 13) + ':00') ?? -1;
+          if (i >= 0) Object.assign(w, { wind: Math.round(f.hourly.wind_speed_10m[i]), gust: Math.round(f.hourly.wind_gusts_10m[i]), rain: f.hourly.precipitation[i], temp: Math.round(f.hourly.temperature_2m[i]) });
+        }
+      } catch (err) { console.warn(`Weather for ${v.fullName} skipped:`, err.message); }
+      for (const t of c.competitors) rosSaved.weather[TEAM(t.team.abbreviation)] = w;
+    }
+  } catch (err) { console.warn('Weather skipped:', err.message); rosSaved.weather = {}; }
   try {
     rosSaved.cbs = (await cbsRows('restofseason')).map(([name, pos, team, ppg]) => [pkey(name, pos, team), ppg]);
   } catch (err) { console.warn('CBS rest-of-season skipped:', err.message); }
@@ -225,6 +257,25 @@ const split = v => v.length > 1 && Math.max(...v) - Math.min(...v) >= 5 && Math.
 // Stats also include last season's totals, so filter by seasonId.
 const stat = (p, src, split) => p.stats?.find(s => s.seasonId === SEASON && s.statSourceId === src && s.statSplitTypeId === split && (split === 0 || s.scoringPeriodId === week));
 
+// Wind at kickoff, outdoor games: about 15 mph is where passing and kicking start to suffer, 20+ much more
+// (fewer passes and worse efficiency; shorter, missed kicks). Sizes are rough, from betting and fantasy analysis
+// (Covers, 4for4, Sharp Football). Runners aren't cut: windy games lean on the run.
+// ponytail: a rough step, not a fitted model; a source that already priced the wind in gets it twice.
+const WIND_CUT = { QB: [0.93, 0.85], WR: [0.93, 0.85], TE: [0.93, 0.85], K: [0.95, 0.88] };
+const windFactor = (pos, w) => (!w || w.indoor || !(w.wind >= 15) || !WIND_CUT[pos] ? 1 : WIND_CUT[pos][w.wind >= 20 ? 1 : 0]);
+// His points per game without his usual QB vs with him, this season (Sleeper results), pulled toward "no change"
+// when there are few games: on average pass catchers barely change with a backup QB (FantasyPoints, 2023: -1%),
+// but single players swing a lot (DJ Moore: -50%), so only his own games say which way he goes.
+function qbSplit(k, qbK, weeks = rosSaved.weeks ?? {}) {
+  const w = [], wo = [];
+  for (const wd of Object.values(weeks)) if (wd[k]?.[2] != null) (wd[qbK] ? w : wo).push(wd[k][2]);
+  if (w.length < 2 || wo.length < 2) return null;
+  const avg = a => a.reduce((s, v) => s + v, 0) / a.length;
+  if (!(avg(w) > 0)) return null;
+  const raw = avg(wo) / avg(w), ratio = Math.min(1.3, Math.max(0.6, 1 + (raw - 1) * wo.length / (wo.length + 4)));
+  return { ratio, games: wo.length, with: avg(w), without: avg(wo) };
+}
+
 // ratings[0] = season-long; positionalRanking = e.g. 14th-best QB so far
 function row(p, ratings) {
   const season = stat(p, 0, 0);
@@ -233,7 +284,7 @@ function row(p, ratings) {
   // expected points = average of ESPN, Rotowire and CBS, whichever have a number (none if ESPN has none, e.g. bye)
   const espn = proj?.appliedTotal ?? null, k = team === 'FA' && pos !== 'D/ST' ? [...sleeper.keys(), ...cbs.keys()].find(x => x.startsWith(`${norm(p.fullName)}|`)) ?? pkey(p.fullName, pos, team) : pkey(p.fullName, pos, team);
   const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null;
-  const all = [espn, roto, cb].filter(v => v != null);
+  const all = [espn, roto, cb].filter(v => v != null), wind = windFactor(pos, rosSaved.weather?.[TEAM(team)]);
   // ESPN's rest-of-season projection is statSourceId 1, statSplitTypeId 0 (per game = appliedAverage)
   const rosBy = [stat(p, 1, 0)?.appliedAverage ?? null, rosRoto.get(k) ?? null, rosCbs.get(k) ?? null];
   const rosAll = rosBy.filter(v => v != null);
@@ -242,7 +293,7 @@ function row(p, ratings) {
     team, teamName: proName[p.proTeamId] ?? 'No team', bye: proBye[p.proTeamId] ?? null,
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
-    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length : null, espn, roto, cbs: cb, split: split(all), vegas: vegas[TEAM(team)] ?? null,
+    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length * wind : null, wind, espn, roto, cbs: cb, split: split(all), vegas: vegas[TEAM(team)] ?? null,
     ros: rosAll.length ? rosAll.reduce((s, v) => s + v, 0) / rosAll.length : null, rosBy,
     owned: p.ownership?.percentOwned ?? null, trend: p.ownership?.percentChange ?? 0, rank: ratings?.[0]?.positionalRanking || null,
   };
@@ -322,6 +373,24 @@ for (const [pos, slot] of Object.entries(FA_SLOT)) {
   fa[pos] = d.players.map(x => { names[x.player.id] = x.player.fullName; return { ...row(x.player, x.ratings), wa: x.status === 'WAIVERS', slot: 'FA' }; });
 }
 const allFa = Object.values(fa).flat();
+
+// Experts lagging on a QB injury: the team's starting QB (depth chart) is out, but a source still projects
+// him 3+ points (as if he plays), so his receivers' numbers likely still assume him too. Then a WR or TE
+// with enough games both ways this season gets his own with/without-QB ratio. Nobody else changes.
+{
+  const espnOf = new Map([...teams.flatMap(t => t.roster), ...allFa].map(p => [pkey(p.name, p.pos, p.team), p]));
+  const slpOf = new Map(slp.map(x => [x.k, x]));
+  for (const p of [...teams.flatMap(t => t.roster), ...allFa]) {
+    if (!['WR', 'TE'].includes(p.pos) || !(p.proj > 0)) continue;
+    const qb = (rosSaved.depth?.[TEAM(p.team)] ?? []).find(([d, o]) => d === 'QB' && o === 1);
+    if (!qb) continue;
+    const qk = pkey(qb[2], 'QB', p.team), e = espnOf.get(qk), sl = slpOf.get(qk);
+    const out = e ? ['OUT', 'INJURY_RESERVE', 'SUSPENSION', 'DOUBTFUL'].includes(e.status) : ['Out', 'IR', 'Doubtful', 'Sus', 'PUP'].includes(sl?.inj);
+    const lag = (e?.espn ?? 0) >= 3 || (sl?.pts ?? 0) >= 3;
+    const sp = out && lag && qbSplit(pkey(p.name, p.pos, p.team), qk);
+    if (sp) { p.qbAdj = { qb: qb[2], from: p.proj, ...sp }; p.proj *= sp.ratio; }
+  }
+}
 
 // Next week's projection, for picking bye-week fill-ins. Only ESPN projects that far ahead, so this one is ESPN alone.
 const nextProj = new Map();
@@ -1099,13 +1168,37 @@ function statusOf(k) {
   return { out, maybe: e === 'QUESTIONABLE', word: ESPN_WORD[e] ?? 'is healthy', espnSays: e,
     disagree: SLP_OUT.includes(sl) && !out ? `Injury reports disagree: ESPN says he ${ESPN_WORD[e] ?? 'is healthy'}, but Sleeper still lists him as ${sl === 'IR' ? 'on IR' : sl.toLowerCase()}. Check again before kickoff; teams announce who's out about 90 minutes before the game.` : null };
 }
+const gameStatusOf = new Map(rosSaved.gameStatus ?? []);
 function notes(p) {
   const team = TEAM(p.team), k = pkey(p.name, p.pos, p.team), out = [], me_ = statusOf(k);
   if (me_.out) {
     const still = [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null && v >= 3);
     if (still.length) out.push(`Experts haven't caught up: he ${me_.word}, but ${still.map(([src, v]) => `${src} still expects ${n(v)}`).join(' and ')}. ${HURT.includes(p.status) ? 'The site counts him as 0 this week.' : 'Don\'t start him unless that changes.'}`);
   } else if (me_.disagree) out.push(me_.disagree);
+  const w = p.bye === week ? null : rosSaved.weather?.[team];
+  if (w && ['QB', 'RB', 'WR', 'TE', 'K'].includes(p.pos)) {
+    if (w.indoor) out.push(`Indoor game${w.place ? ` (${w.place})` : ''}, so weather won't matter.`);
+    else if (w.wind != null) out.push(`Forecast at kickoff${w.place ? ` (${w.place})` : ''}: ${w.wind} mph wind${w.gust >= w.wind + 8 ? `, gusts ${w.gust}` : ''}, ${w.temp}°F${w.rain >= 1 ? ', rain' : ''}.`
+      + (p.wind < 1 ? ` Wind over 15 mph cuts ${p.pos === 'K' ? 'kicking' : 'passing'}, so his number is lowered ${Math.round((1 - p.wind) * 100)}%.` : p.pos === 'RB' && w.wind >= 15 ? ' Windy games lean on the run, which can help him.' : ''));
+  }
+  if (p.qbAdj) out.push(`His usual QB, ${p.qbAdj.qb}, is out and the experts haven't updated yet. In ${p.qbAdj.games} games without him this season he averaged ${n(p.qbAdj.without)} (vs ${n(p.qbAdj.with)} with him), so his number is changed from ${n(p.qbAdj.from)} to ${n(p.proj)}.`);
   if (!POS_PL[p.pos]) return out;
+  // depth chart: who's ahead of him, and whether that player is out
+  const depth = rosSaved.depth?.[team] ?? [], spot = depth.find(([, , name]) => norm(name) === norm(p.name));
+  const outNow = name => { const g = gameStatusOf.get(pkey(name, '', team)) ?? depth.find(x => x[2] === name)?.[3]; return ['Out', 'Doubtful', 'IR', 'PUP', 'Sus'].includes(g); };
+  if (spot && spot[1] === 2) {
+    const ahead = depth.find(([d, o]) => d === spot[0] && o === 1);
+    if (ahead) out.push(outNow(ahead[2]) ? `${ahead[2]}, ahead of him on the depth chart, is out, so he should start.` : `Backup: ${ahead[2]} is ahead of him on the depth chart.`);
+  }
+  // the defense he faces: starters it's missing (not counted in his number; one missing defender rarely moves scoring much)
+  const opp = p.bye === week ? null : oppId(p, week), DEF_WORD = { LCB: 'cornerback', RCB: 'cornerback', NB: 'nickel cornerback', FS: 'safety', SS: 'safety', LDE: 'defensive end', RDE: 'defensive end', LDT: 'defensive tackle', RDT: 'defensive tackle', NT: 'nose tackle', MLB: 'linebacker', LILB: 'linebacker', RILB: 'linebacker', LOLB: 'linebacker', ROLB: 'linebacker', WLB: 'linebacker', SLB: 'linebacker' };
+  const vsPass = ['LCB', 'RCB', 'NB', 'FS', 'SS'], vsRun = ['LDE', 'RDE', 'LDT', 'RDT', 'NT', 'MLB', 'LILB', 'RILB', 'LOLB', 'ROLB', 'WLB', 'SLB'];
+  if (opp) {
+    const oteam = TEAM(proAbbr[opp]), oDepth = rosSaved.depth?.[oteam] ?? [];
+    const want = p.pos === 'RB' ? vsRun : p.pos === 'QB' ? [...vsPass, 'LDE', 'RDE'] : vsPass;
+    const gone = oDepth.filter(([d, o, name, inj]) => o === 1 && want.includes(d) && ['Out', 'Doubtful', 'IR', 'PUP', 'Sus'].includes(gameStatusOf.get(pkey(name, '', oteam)) ?? inj));
+    if (gone.length) out.push(`The ${proName[opp]} are missing ${gone.length > 1 ? 'starters' : 'a starter'}: ${gone.map(([d, , name]) => `${DEF_WORD[d] ?? d} ${name}`).join(', ')}. ${gone.length >= 2 ? 'That should make it an easier matchup' : 'A little easier matchup'}, but it isn't counted in his number.`);
+  }
   if (p.pos === 'QB') {
     const q = qbThisWeek(team);
     if (q && q.k !== k && (slpBy.get(k)?.pts ?? 0) < q.pts / 2) out.push(`Not expected to start this week: ${q.name} is the starting QB.`);
