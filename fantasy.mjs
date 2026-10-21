@@ -575,7 +575,6 @@ const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new In
 // --- Why a player's numbers are what they are: injured teammates, depth chart, matchups. These explain the
 // experts' projections (which already include all of this); they don't change any number, so nothing counts twice.
 const slpBy = new Map(slp.map(x => [x.k, x]));
-const OUT = ['Out', 'IR', 'Doubtful', 'Sus', 'PUP', 'COV'];
 const POS_PL = { QB: 'quarterbacks', RB: 'running backs', WR: 'receivers', TE: 'tight ends' };
 const usualBy = new Map();
 for (const [k, name, pos, team, pts] of rosSaved.usual ?? []) (usualBy.get(`${team}|${pos}`) ?? usualBy.set(`${team}|${pos}`, []).get(`${team}|${pos}`)).push({ k, name, pos, pts });
