@@ -108,6 +108,11 @@ assert.equal(sim()(), sim()(), 'same week, same numbers');
 const swaps = r.bestSwap(base, r.weekValue);
 assert(swaps.length && swaps.every(x => x.add.id === 31), 'only the free agent who plays later');
 assert(swaps.every(x => !r.locked(x.drop)), 'never drops a player whose game has started');
+// a long-term keeper (rest of season well above any free agent) is never dropped for a one-week pickup
+{
+  const keep = swaps[0].drop, roster = base.map(p => (p.id === keep.id ? { ...p, ros: 20 } : p));
+  assert(r.bestSwap(roster, r.weekValue).every(x => x.drop.id !== keep.id), 'kept the long-term player');
+}
 // a bye-week fill-in (worth points only in the next 2 weeks) is never the drop
 {
   const keep = swaps[0].drop, guarded = { ...consts, byeScore: roster => (roster.some(p => p.id === keep.id) ? 10 : 0) };

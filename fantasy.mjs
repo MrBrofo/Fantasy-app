@@ -455,7 +455,11 @@ function bestSwap(roster, value, used = new Set()) {
   // week looked free to drop, since it doesn't start this week or in the season-long lineup)
   const byeBase = byeScore(roster);
   // the league locks transactions: a player whose game has kicked off can't be added or dropped until next week
-  const drops = roster.filter(p => p.slot !== 'IR' && (!HURT.includes(p.status) || p.inj?.season) && !used.has(p.id) && !locked(p));
+  // A this-week pickup only uses a spare bench spot: a player worth keeping long-term (1.5+ a game better rest of
+  // season than the best free agent at his position, so he'd be hard to get back) is never dropped for one week.
+  const freeBest = pos => { const o = faBest.find(o => o.pos === pos); return o ? seasonValue(o) : 0; };
+  const keeper = p => value === weekValue && seasonValue(p) >= freeBest(p.pos) + 1.5;
+  const drops = roster.filter(p => p.slot !== 'IR' && (!HURT.includes(p.status) || p.inj?.season) && !used.has(p.id) && !locked(p) && !keeper(p));
   const out = [];
   for (const add of allFa) {
     if (value(add) <= 0 || used.has(add.id) || locked(add)) continue;
@@ -1637,14 +1641,14 @@ ${benchCheck.length ? `<div class="list">${benchCheck.map(b => `<div class="card
   ].filter(Boolean).join(' ')}</p></div>`).join('')}</div>` : '<div class="card empty">Nobody on your bench.</div>'}
 </section>
 
-<section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. In ESPN: Players &rarr; find him &rarr; Add.</p>
+<section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. Two kinds: <b>this week only</b> (a better start this week, using a spare bench spot, never costing you a long-term player or a bye-week fill-in) and <b>long-term upgrade</b> (better for the rest of the season). In ESPN: Players &rarr; find him &rarr; Add.</p>
 <div class="card"><div class="vhead"><span class="group" style="margin:0">Waiver order</span><span class="verdict-meh">You pick ${ordinal(me.waiver)} of ${teams.length}</span></div>
 <details class="all" style="margin:-4px 0 4px"><summary>See the full order</summary><div class="worder">${[...teams].sort((a, b) => a.waiver - b.waiver).map(t => `<span class="${t === me ? 'me' : t.waiver < me.waiver ? 'ahead' : ''}">${t.waiver}. ${esc(t.name)}</span>`).join('')}</div></details>
 ${nextRun ? `<p class="why" style="margin:0 0 6px"><b>Next waiver run: ${nextRun}.</b></p>` : ''}<p class="tag" style="margin-bottom:0">When two teams claim the same player, the one higher on this list gets him. ${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'} Free agents (not on waivers) go to whoever adds them first.</p></div>
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
-  <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'helps this week' : 'helps rest of season'}</div>
+  <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'this week only (uses a spare bench spot)' : 'long-term upgrade'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'this week' : 'per game, rest of season', null, s.add, wk ? 'week' : 'season')}</div>
-  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).<br>
+  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close), so this spot is for streaming. Your long-term players are never dropped for one week.` : ''}<br>
   <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
   ${s.add.wa ? (() => { const r = rivalsFor(s.add, wk ? weekValue : seasonValue); return r.length
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
