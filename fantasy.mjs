@@ -60,6 +60,36 @@ try {
     if (x.stats?.pts_half_ppr != null) sleeper.set(pkey(`${x.player.first_name} ${x.player.last_name}`, pos, x.team), x.stats.pts_half_ppr);
   }
 } catch (err) { console.warn('Sleeper projections skipped:', err.message); }
+// CBS Sports' projections. CBS has no free API, so this reads their stats pages, which can break when they
+// redesign. To go easy on them it's fetched at most once an hour; the copy is saved on the published site
+// (cbs.json) and the next run reuses it. (FantasyPros was tried first: it hides all but the top 10 without a login.)
+const cbs = new Map();
+let cbsSaved = null;
+try {
+  const old = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/cbs.json?t=${Date.now()}`)).json();
+  if (old.week === week && Date.now() - old.at < 3600e3) cbsSaved = old;
+} catch {}
+if (!cbsSaved) try {
+  const half = new Map(); // key -> [name, pos, team, points]; CBS has PPR and no-PPR pages, half PPR is the average
+  // Defenses are skipped: CBS scores them much higher than this league does (Texans: CBS 15, Rotowire 9).
+  for (const scoring of ['ppr', 'nonppr']) for (const pos of ['QB', 'RB', 'WR', 'TE', 'K']) {
+    const r = await fetch(`https://www.cbssports.com/fantasy/football/stats/${pos}/${SEASON}/${week}/projections/${scoring}/`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) throw new Error(`${r.status} on ${pos}`);
+    for (const tr of (await r.text()).split('<tr class="TableBase-bodyTr').slice(1)) {
+      const row = tr.split('</tr>')[0];
+      // full name link, then <span class="CellPlayerName-team"> LAR; last number = fantasy points
+      const name = row.match(/CellPlayerName--long[\s\S]*?<a[^>]*>([^<]+)<\/a>/)?.[1];
+      const team = row.match(/CellPlayerName-team">\s*([A-Z]+)/)?.[1];
+      const pts = Number([...row.matchAll(/--number[^>]*>\s*([-\d.]+)\s*</g)].pop()?.[1]);
+      if (!name || !team || Number.isNaN(pts)) continue;
+      const k = pkey(name, pos, team), prev = half.get(k);
+      half.set(k, prev ? [name, pos, team, (prev[3] + pts) / 2] : [name, pos, team, pts]);
+    }
+  }
+  if (half.size < 200) throw new Error(`only ${half.size} players found, page layout probably changed`);
+  cbsSaved = { week, at: Date.now(), rows: [...half.values()] };
+} catch (err) { console.warn('CBS projections skipped:', err.message); }
+for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, pos, team), pts);
 // Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
 const vegas = {};
 try {
@@ -74,8 +104,8 @@ try {
   }
 } catch (err) { console.warn('Vegas lines skipped:', err.message); }
 const vegasAvg = Object.values(vegas).reduce((s, v) => s + v, 0) / Math.max(1, Object.keys(vegas).length);
-// "Experts disagree" = the two projections are 5+ points and 35%+ apart
-const split = (a, b) => a != null && b != null && Math.abs(a - b) >= 5 && Math.abs(a - b) >= 0.35 * Math.max(a, b);
+// "Experts disagree" = the highest and lowest projection are 5+ points and 35%+ apart
+const split = v => v.length > 1 && Math.max(...v) - Math.min(...v) >= 5 && Math.max(...v) - Math.min(...v) >= 0.35 * Math.max(...v);
 
 // statSourceId 0 = actual, 1 = projected; statSplitTypeId 0 = season, 1 = one week.
 // Stats also include last season's totals, so filter by seasonId.
@@ -86,14 +116,16 @@ function row(p, ratings) {
   const season = stat(p, 0, 0);
   const proj = stat(p, 1, 1);
   const pos = POS[p.defaultPositionId] ?? '?', team = proAbbr[p.proTeamId] ?? 'FA';
-  // expected points = average of ESPN and Rotowire; ESPN alone when Rotowire has no number (or ESPN has none, e.g. bye)
-  const espn = proj?.appliedTotal ?? null, roto = espn == null ? null : sleeper.get(pkey(p.fullName, pos, team)) ?? null;
+  // expected points = average of ESPN, Rotowire and CBS, whichever have a number (none if ESPN has none, e.g. bye)
+  const espn = proj?.appliedTotal ?? null, k = pkey(p.fullName, pos, team);
+  const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null;
+  const all = [espn, roto, cb].filter(v => v != null);
   return {
     id: p.id, name: p.fullName, pos, proTeamId: p.proTeamId,
     team, teamName: proName[p.proTeamId] ?? 'No team', bye: proBye[p.proTeamId] ?? null,
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
-    proj: roto == null ? espn : (espn + roto) / 2, espn, roto, split: split(espn, roto), vegas: vegas[TEAM(team)] ?? null,
+    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length : null, espn, roto, cbs: cb, split: split(all), vegas: vegas[TEAM(team)] ?? null,
     owned: p.ownership?.percentOwned ?? null, trend: p.ownership?.percentChange ?? 0, rank: ratings?.[0]?.positionalRanking || null,
   };
 }
@@ -353,6 +385,8 @@ const rivalsFor = (add, value) => teams.filter(t => t !== me && t.waiver < me.wa
 
 // --- To-do list, most urgent first. Each item: [level, title, why]
 const n = v => (v == null ? '-' : v.toFixed(1));
+// "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
+const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
 const todo = [];
 for (const p of starters(me)) {
   if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`]);
@@ -397,7 +431,7 @@ function chip(p) {
     const when = p.inj?.back && wks > 0 ? ` &middot; back ~${dateStr(p.inj.back)}${wks > 1 ? ` (${wks} wks)` : ''}` : '';
     out.push(`<span class="chip ${s[1]}">${s[0]}${p.inj?.type && p.inj.type !== 'Undisclosed' ? ` (${esc(p.inj.type.toLowerCase())})` : ''}${p.status === 'QUESTIONABLE' ? '' : when}</span>`);
   }
-  if (p.split && !out.length) out.push(`<span class="chip warn">Experts disagree: ESPN ${n(p.espn)}, Rotowire ${n(p.roto)}</span>`);
+  if (p.split && !out.length) out.push(`<span class="chip warn">Experts disagree: ${srcText(p)}</span>`);
   return out.join(' ');
 }
 const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new Intl.PluralRules('en-US', { type: 'ordinal' }).select(k)];
@@ -430,9 +464,9 @@ const statusWords = p => p.inj?.season ? 'out for the season' : p.bye === week ?
 const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: statusWords(p), slot: p.slot === 'Bench' ? 'bench' : p.slot === 'IR' ? 'IR' : 'starting', pr: Math.round((p.proj ?? 0) * 10) / 10 }]));
 
 // Everything Claude needs to answer questions about this team, as plain text to paste
-const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null ? ` (ESPN ${n(p.espn)}, Rotowire ${n(p.roto)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''},${n(p.avg)} per game, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`;
+const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}`;
 const facts = [
-  `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's and Rotowire's projections. Facts from ESPN, Sleeper (Rotowire) and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
+  `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's, Rotowire's and CBS Sports' projections. Facts from ESPN, Sleeper (Rotowire), CBS Sports and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
   `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
   opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, ESPN win chance ${Math.round((mySide?.winProbability ?? 0) * 100)}%.` : '',
   `Starters:\n${starters(me).map(p => `- ${p.slot}: ${line(p)}`).join('\n')}`,
@@ -873,7 +907,7 @@ for (const [id, p] of shown) {
   const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`
     : recent < p.avg * 0.75 ? `Cold: ${n(recent)} per game over his last ${played.length} games, worse than his season average.` : '';
   const sources = [
-    p.roto != null ? `ESPN says ${n(p.espn)}, Rotowire says ${n(p.roto)}, so we use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
+    p.roto != null || p.cbs != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
     p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Vegas expects his team to score about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
   ].filter(Boolean).join(' ');
   pdata[id] = {
@@ -895,6 +929,7 @@ fs.mkdirSync(path.join(dir, 'site'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'site', 'index.html'), html);
 // App icons (Home Screen, browser tab) and the manifest that names the installed app
 fs.cpSync(path.join(dir, 'icons'), path.join(dir, 'site'), { recursive: true });
+if (cbsSaved) fs.writeFileSync(path.join(dir, 'site', 'cbs.json'), JSON.stringify(cbsSaved));
 fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
   name: me.name, short_name: 'Fantasy', start_url: '.', display: 'standalone', background_color: '#0b1530', theme_color: '#0b1530',
   icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
