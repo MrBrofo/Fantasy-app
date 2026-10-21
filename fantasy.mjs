@@ -1301,6 +1301,18 @@ for (const [k, t] of Object.entries(memo.sent)) if (Date.now() - t > 21 * 864e5)
 fs.writeFileSync(path.join(dir, 'site', 'alerts.json'), JSON.stringify(memo));
 fs.mkdirSync(path.dirname(memoFile), { recursive: true });
 fs.writeFileSync(memoFile, JSON.stringify(memo));
+// TEMP: league settings and last week's box score shape, to build the waiver reminder and weekly recap. Remove after.
+try {
+  const bx = await get(`${LEAGUE}?view=mBoxscore&view=mMatchupScore&scoringPeriodId=${week - 1}`);
+  const g = bx.schedule.find(x => x.matchupPeriodId === week - 1 && (x.home?.teamId === me.id || x.away?.teamId === me.id));
+  const side = g && (g.home.teamId === me.id ? g.home : g.away);
+  fs.writeFileSync(path.join(dir, 'site', 'debug.json'), JSON.stringify({
+    acq: league.settings.acquisitionSettings, sched: league.settings.scheduleSettings,
+    sideKeys: side && Object.keys(side), rosterKeys: side && Object.keys(side).filter(k => /roster/i.test(k)).map(k => [k, Object.keys(side[k] ?? {})]),
+    entries: side && (side.rosterForCurrentScoringPeriod ?? side.rosterForMatchupPeriod)?.entries?.slice(0, 3).map(e => ({ slot: e.lineupSlotId, keys: Object.keys(e), ppeKeys: Object.keys(e.playerPoolEntry ?? {}), applied: e.playerPoolEntry?.appliedStatTotal, name: e.playerPoolEntry?.player?.fullName, pos: e.playerPoolEntry?.player?.defaultPositionId })),
+    total: side?.totalPoints,
+  }));
+} catch (err) { fs.writeFileSync(path.join(dir, 'site', 'debug.json'), JSON.stringify({ err: err.message })); }
 // Small summary for the iPhone Home Screen widget (Scriptable).
 fs.writeFileSync(path.join(dir, 'site', 'widget.json'), JSON.stringify({
   week, me: me.name, opp: opp?.name ?? null, myProj: n(myProj), oppProj: n(oppProj), win: winPct, live: isLive, updated: Date.now(),
