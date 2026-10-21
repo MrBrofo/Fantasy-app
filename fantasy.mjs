@@ -446,7 +446,8 @@ const rosterSpots = Object.entries(slotCounts).filter(([id]) => +id !== 21).redu
 // A backup's worth = the points he'd add over the rest of the season, week by week with everyone's bye
 // weeks taken out (a second kicker only helps on your kicker's bye; a defense helps when yours is off).
 // Small extra for RB/WR/TE: they get hurt most, so a backup there covers injuries too.
-const restWeeks = Array.from({ length: Math.max(0, lastWeek - week) }, (_, i) => week + 1 + i);
+// only the next 2 weeks: a bye further out can be covered by grabbing someone that week
+const restWeeks = Array.from({ length: Math.max(0, Math.min(2, lastWeek - week)) }, (_, i) => week + 1 + i);
 const byeScore = roster => restWeeks.reduce((t, w) => t + score(roster.filter(p => p.bye !== w), seasonValue), 0);
 const fills = [];
 while (rosterSpots - baseRoster.filter(p => p.slot !== 'IR').length > 0 && fills.length < 5) {
@@ -662,7 +663,7 @@ for (const p of starters(me)) {
 for (const [i, p] of benchIn.entries()) todo.push(['urgent', `Start ${p.name}`, `He's expected to score ${n(p.proj)}${sitOut[i] ? `, more than ${sitOut[i].name} (${n(weekValue(sitOut[i]))})` : ''}.`, bestMove]);
 const fillMove = f => ({ label: `Add ${f.add.name} on ESPN`, type: f.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: f.add.id }] });
 for (const f of fills) todo.push([f.week >= 1 ? 'urgent' : 'week', `Add ${f.add.name} (empty roster spot)`,
-  `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''} He's expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup he adds about ${Math.round(f.rest)} points over the rest of the season by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ' He\'s on waivers, so this is a claim.' : ''}`, fillMove(f)]);
+  `You have an empty spot on your roster, so nobody has to be dropped.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''} He's expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup he adds about ${Math.round(f.rest)} points over the next two weeks by filling in when your starters are on bye` : ', a backup for injuries'}.${f.add.wa ? ' He\'s on waivers, so this is a claim.' : ''}`, fillMove(f)]);
 for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
     s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`, locked(s.add) || locked(s.drop) ? null : pickupMove(s)]);
@@ -1171,7 +1172,7 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
 ${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><div class="list">${fills.map(f => `<div class="card"><div class="row">${player(f.add)}${big(rate(f.add), 'per game, rest of season', null, f.add, 'season')}</div>
-  <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the rest of the season covering your starters' bye weeks.` : ' A backup for injuries.'}</p>
+  <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the next two weeks covering your starters' bye weeks.` : ' A backup for injuries.'}</p>
   ${MOVE_URL && !locked(f.add) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...fillMove(f), week: league.scoringPeriodId }))}">${f.add.wa ? 'Put in a claim for him on ESPN' : 'Add him on ESPN'}</button>` : ''}</div>`).join('')}</div>` : ''}
 </section>
 <section id="pending"><h2>Your pending moves</h2><p class="sub">Waiver claims and trade offers that haven't gone through yet, checked with the same math as everything else.</p>
