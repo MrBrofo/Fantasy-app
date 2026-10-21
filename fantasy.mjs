@@ -644,7 +644,17 @@ const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="play
   ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}${chip(p)}${extra}</div></div>`; };
 // a tappable player name in running text
 const lnk = p => { shown.set(p.id, p); return `<span data-pid="${p.id}" class="lnk">${esc(p.name)}</span>`; };
-const big = (v, label, ceiling) => `<div class="big"><b>${n(v)}</b><small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`;
+// Strong / average / weak: compared with what the league's starters at that position score. "Average" = would
+// start on a typical team here (16 teams x starting spots, FLEX split across RB/WR/TE); "strong" = top third of those.
+const tierPool = [...teams.flatMap(t => t.roster), ...allFa];
+const startersAt = pos => teams.length * ((slotCounts[FA_SLOT[pos]] ?? 1) + (['RB', 'WR', 'TE'].includes(pos) ? (slotCounts[23] ?? 0) / 3 : 0));
+const tierCut = {};
+for (const kind of ['week', 'season']) for (const pos of Object.keys(FA_SLOT)) {
+  const vals = tierPool.filter(p => p.pos === pos).map(kind === 'week' ? weekValue : seasonValue).sort((a, b) => b - a), k = startersAt(pos);
+  tierCut[`${kind}|${pos}`] = [vals[Math.max(0, Math.floor(k / 3) - 1)] ?? Infinity, vals[Math.max(0, Math.floor(k) - 1)] ?? 0];
+}
+const tier = (v, p, kind) => { const c = p && tierCut[`${kind}|${p.pos}`]; return !c || !(v > 0) ? null : v >= c[0] ? ['good', 'strong'] : v >= c[1] ? ['avg', 'average'] : ['weak', 'weak']; };
+const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"><b${t ? ` class="t-${t[0]}"` : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
 
 const myRank = [...teams].sort((a, b) => b.w - a.w || b.pf - a.pf).indexOf(me) + 1;
 const standings = [...teams].sort((a, b) => b.w - a.w || b.pf - a.pf);
@@ -743,6 +753,7 @@ section{margin-top:22px}h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-
 .slot{flex:none;width:44px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase}
 .big{flex:none;text-align:right}.big b{display:block;font-size:20px;font-weight:800;line-height:1.1}.big small{display:block;font-size:11px;color:var(--muted)}
 .big small.up{color:var(--good);font-weight:600}
+.big .t-good{color:var(--good)}.big .t-weak{color:var(--bad)}.big small.tw{font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:10px}
 .rank{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .btn{background:var(--brand2);color:#fff;border:0;border-radius:12px;padding:11px 16px;font:700 14px Inter,system-ui,sans-serif;cursor:pointer;width:100%;margin-top:10px}
 .ask{display:grid;gap:2px}
@@ -843,10 +854,10 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 ${todo.length ? todo.map(([lvl, title, why]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b><p>${esc(why)}</p></div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
-<section id="lineup"><h2>My team</h2><p class="sub">Big number = points ESPN expects him to score this week. Green "up to" = his score if he has a great game. Tap any player to see if he plays, when, his last games and news.</p>
+<section id="lineup"><h2>My team</h2><p class="sub">Big number = points he's expected to score this week (average of ESPN, Rotowire and CBS). Strong, average or weak compares him with the players who start at his position across your league. Green "up to" = his score if he has a great game. Tap any player to see if he plays, when, his last games and news.</p>
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
   const ps = lineupRows.filter(f);
-  return ps.length ? `<div class="group">${label}</div><div class="list">${ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p)}${big(weekValue(p), 'expected', weekValue(p) > 0 ? p.ceiling : null)}</div>`).join('')}</div>` : '';
+  return ps.length ? `<div class="group">${label}</div><div class="list">${ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p)}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`).join('')}</div>` : '';
 }).join('')}
 </section>
 
@@ -856,8 +867,8 @@ ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.sl
 <p class="tag" style="margin-bottom:0">When two teams claim the same player, the one higher on this list gets him. ${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'} Free agents (not on waivers) go to whoever adds them first.</p></div>
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
   <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'helps this week' : 'helps rest of season'}</div>
-  <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'expected' : 'per game ahead')}</div>
-  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'expected' : 'per game ahead'}).<br>
+  <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'this week' : 'per game, rest of season', null, s.add, wk ? 'week' : 'season')}</div>
+  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).<br>
   <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
   ${s.add.wa ? (() => { const r = rivalsFor(s.add, wk ? weekValue : seasonValue); return r.length
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
@@ -865,7 +876,7 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
   ${notes(s.add).map(t => `<br><span class="tag">&#9432; ${esc(t)}</span>`).join('')}
   ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
   : '<div class="card empty">Nobody out there beats what you have.</div>'}
-${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}</div>
+${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 </section>
 
@@ -874,15 +885,16 @@ ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
     const v = m.week >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : ['meh', 'Barely matters'];
     return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
-    <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}</div>
-    <p class="why">This week: <b>${m.week >= 0 ? '+' : ''}${n(m.week)}</b> points. Rest of season: <b>${m.season >= 0 ? '+' : ''}${n(m.season)}</b> per week.</p></div>`;
+    <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
+    <p class="why"><b>${Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? ', about the same after that.' : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}</b></p></div>`;
   }
-  const v = m.mine >= 1 ? ['good', m.mineOffer ? 'Good offer' : 'Accept'] : m.mine <= -1 ? ['bad', m.mineOffer ? 'Bad for you, cancel it' : 'Decline'] : ['meh', 'About even'];
+  const v = m.mine >= 1 ? ['good', m.mineOffer ? 'Good for you' : 'Good for you: accept'] : m.mine <= -1 ? ['bad', m.mineOffer ? 'Bad for you: cancel it' : 'Bad for you: decline'] : ['meh', 'About even'];
   const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = starterAt(m.after, pos); return s && !m.give.includes(s) ? `your ${POS_NAME[pos]?.toLowerCase()} would be ${esc(s.name)} (${n(rate(s))})` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
   return `<div class="card"><div class="vhead"><span class="tag">${m.mineOffer ? 'You offered' : 'Offered to you by'} <b>${esc(m.them.name)}</b></span><span class="verdict-${v[0]}">${v[1]}</span></div>
-  <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}
-  <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game ahead')}</div>`).join('')}</div>
-  <p class="why">Rest of season: <b>${m.mine >= 0 ? '+' : ''}${n(m.mine)}</b> points per week for you, ${m.theirs >= 0 ? '+' : ''}${n(m.theirs)} for them. This week: ${m.mineWeek >= 0 ? '+' : ''}${n(m.mineWeek)}.
+  <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
+  <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
+  <p class="why"><b style="color:var(--${v[0] === 'meh' ? 'fg' : v[0]})">${Math.abs(m.mine) < 1 ? 'About even for you' : `You'd ${m.mine > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.mine))} point${Math.round(Math.abs(m.mine)) === 1 ? '' : 's'} a week`} for the rest of the season.</b>
+  ${Math.abs(m.mineWeek) >= 1 ? `This week alone: ${m.mineWeek > 0 ? '+' : ''}${n(m.mineWeek)} points.` : ''} They'd ${Math.abs(m.theirs) < 1 ? 'come out about even' : `${m.theirs > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.theirs))} a week`}.
   ${m.mineWeek > 2 && m.mine < -1 ? '<br><b>Trap:</b> it only helps this week (your players are on bye or hurt). After that you\'re worse off.' : ''}
   ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
   ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p></div>`;
@@ -893,7 +905,7 @@ ${pending.length ? pending.map(m => {
 <div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
 <p class="why" style="margin:0">Short on: <b>${myDepth.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}</b>. Extra: <b>${myDepth.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(p => esc(p.name)).join(', ')})`).join('; ') || 'nothing'}</b>.</p></div>
 <div class="list">${partners.map(d => `<div class="card"><div class="vhead"><b>${esc(d.t.name)}</b>${d.theyHave.length && d.youHave.length ? '<span class="verdict-good">Good match</span>' : d.theyHave.length ? '<span class="verdict-meh">Has what you need</span>' : ''}</div>
-  <div class="worder" style="margin:0 0 6px">${Object.entries(d.count).map(([pos, k]) => `<span>${pos} ${k}</span>`).join('')}</div>
+  <div class="worder" style="margin:0 0 6px"><span>Has:</span>${Object.entries(d.count).map(([pos, k]) => `<span>${k} ${pos}${k === 1 ? '' : 's'}</span>`).join('')}</div>
   <p class="tag" style="margin:0">Short on: ${d.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}.
   ${d.extra.length ? `Extra: ${d.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(lnk).join(', ')})`).join('; ')}.` : 'No extra starters.'}
   ${d.theyHave.length && d.youHave.length ? `<br><b style="color:var(--good)">Pitch:</b> your extra ${d.youHave.map(([pos]) => POS_NAME[pos].toLowerCase()).join('/')} for their extra ${d.theyHave.map(([pos]) => POS_NAME[pos].toLowerCase()).join('/')}.` : ''}</p></div>`).join('')}</div>
@@ -901,24 +913,24 @@ ${pending.length ? pending.map(m => {
 
 <section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
 ${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
-  <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game ahead')}</div>
+  <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game, rest of season', null, t.give, 'season')}</div>
   <div class="arrow">for</div>
-  <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game ahead')}</div></div>
+  <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
   <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
-  <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(rate(s))} per game ahead)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
+  <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(rate(s))} per game, rest of season)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
 </section>
 
 <section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
 <div class="card"><div class="group" style="margin:0 0 10px">Luck check</div><div class="stat">
   <div><b>${me.w}-${me.l}</b><small>your real record</small></div>
-  <div><b>${apW}-${apL}</b><small>if you played every team every week</small></div>
+  <div><b>${apW} of ${apW + apL}</b><small>teams you'd have beaten if you played everyone every week</small></div>
   <div><b>${ordinal(pfRank)}</b><small>most points of ${teams.length} teams</small></div>
-  <div><b>${n(me.pf / gamesPlayed)}</b><small>your points per week (league: ${n(leagueAvg)})</small></div></div>
+  <div><b>${Math.round(me.pf / gamesPlayed)}</b><small>your points per week (league average: ${Math.round(leagueAvg)})</small></div></div>
   <p class="why">${apPct > realPct + 0.08 ? 'You\'ve been <b>unlucky</b>: you\'ve played better than your record shows, so wins should come.'
     : apPct < realPct - 0.08 ? 'You\'ve been <b>lucky</b>: your record is better than your points. Keep improving the lineup.'
     : 'Your record matches how you\'ve played.'}${pfRank > teams.length / 2 ? ' Your team scores less than most, so pickups and trades matter.' : ''}</p></div>
 ${ahead.length ? `<div class="card"><div class="group" style="margin:0 0 4px">Your schedule ahead</div><table>
-${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><td>${esc(g.t.name)} <span class="tag">${g.t.w}-${g.t.l}</span></td><td class="num">${n(g.avg)}/wk</td><td style="text-align:right"><span class="lv ${g.level}">${g.level}</span></td></tr>`).join('')}</table>
+${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><td>${esc(g.t.name)} <span class="tag">${g.t.w}-${g.t.l}</span></td><td class="num">scores ~${Math.round(g.avg)}/wk</td><td style="text-align:right"><span class="lv ${g.level}">${g.level}</span></td></tr>`).join('')}</table>
 <p class="tag">Hard = they score a lot more than average. Easy weeks are the ones you should win.</p></div>` : ''}
 </section>
 
@@ -952,11 +964,12 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <span class="pos pos-K">K</span> Kicker: kicks field goals and extra points.<br>
 <span class="pos pos-DST">D/ST</span> Defense: a whole team's defense. Scores for sacks, turnovers and holding the other team to few points.<br>
 <b>FLEX</b>: one extra spot that can be an RB, WR or TE.</dd>
-<dt>Expected points</dt><dd>ESPN's guess for how many points a player will score this week. It's a guess, not a promise, but it's the best simple way to decide who to start.</dd>
+<dt>Expected points</dt><dd>How many points a player should score this week: the average of ESPN's, Rotowire's and CBS's guesses. It's a guess, not a promise, but it's the best simple way to decide who to start.</dd>
+<dt>Strong, average, weak</dt><dd>How a number compares with the players who start at that position across your league. <b>Strong</b>: top third of starters. <b>Average</b>: good enough to start on a typical team. <b>Weak</b>: below that, a bench player.</dd>
 <dt>"Up to" number</dt><dd>What he'd score if he has a great game. A big gap between expected and "up to" means he's boom-or-bust.</dd>
 <dt>Win chance</dt><dd>How likely you are to win this week, worked out from the same averaged projections (ESPN, Rotowire, CBS) as the scores. Once games start it switches to ESPN's live estimate, which follows the real score.</dd>
 <dt>Points per game</dt><dd>How many points he's actually scored each week on average this season.</dd>
-<dt>Per game ahead</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
+<dt>Per game, rest of season</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
 <dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 50/50, usually plays. <b>Probably won't play</b> (doubtful). <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
