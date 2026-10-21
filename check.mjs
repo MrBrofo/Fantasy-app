@@ -171,6 +171,28 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert.equal(adviceCheck(ctx({ claims: [{ add: [mcl] }], lost: p => p === mcl })).length, 1, 'catches an unflagged claim a team ahead will win');
   assert.equal(adviceCheck(ctx({ fills: [{ add: cmdrs, byeFor: [texans] }], allFa: [lions, cmdrs] })).length, 0, 'good advice: no warnings');
 }
+// why a past week went the way it did
+{
+  const K = n => `${n}|CIN`;
+  const weeks = { 1: { [K('wr a')]: [90, 'DEN'], [K('qb a')]: [100, 'DEN'], [K('wr b')]: [80, 'DEN'] }, // normal week, tough defense
+    2: { [K('wr a')]: [30, 'BAL'], [K('qb b')]: [100, 'BAL'], [K('wr b')]: [80, 'BAL'] }, // starter QB out, few snaps
+    3: { [K('qb a')]: [100, 'KC'], [K('wr b')]: [80, 'KC'] }, // he missed it
+    4: { 'x|PIT': [80, 'CLE'] } }; // CIN on bye
+  const allowed = { WR: Object.fromEntries(['DEN', 'BAL', 'KC', ...'ABCDEFGHIJ'].map((t, i) => [t, t === 'DEN' ? 1 : 10 + i])) };
+  const usual = [[K('qb a'), 'QB A', 'QB', 'CIN', 50], [K('qb b'), 'QB B', 'QB', 'CIN', 10], [K('wr a'), 'WR A', 'WR', 'CIN', 40], [K('wr b'), 'WR B', 'WR', 'CIN', 30]];
+  const whyWeek = new Function('rosSaved', 'ordinal', 'norm', 'TEAM', 'pkey', 'POS_PL', 'usualBy',
+    cut('const usualStarters = ', '\n') + cut('const defRank = ', '\n') + cut('const POS_ONE = ', '  return out;\n}') + '\nreturn whyWeek;');
+  const usualBy = new Map();
+  for (const [k, name, pos, team, pts] of usual) (usualBy.get(`${team}|${pos}`) ?? usualBy.set(`${team}|${pos}`, []).get(`${team}|${pos}`)).push({ k, name, pos, pts });
+  const f = whyWeek({ weeks, allowed }, k => k + 'th', s => s.toLowerCase(), t => t, (name, pos, team) => `${name.toLowerCase()}|${team}`, { WR: 'receivers' }, usualBy);
+  const p = { name: 'WR A', pos: 'WR', team: 'CIN', avg: 10 };
+  const w1 = f(p, 1, 5), w2 = f(p, 2, 3);
+  assert(w1.length === 1 && /toughest/.test(w1[0]), 'tough defense named: ' + w1);
+  assert(w2.some(t => /QB A, didn't play/.test(t)) && w2.some(t => /only 30%/.test(t)), 'QB out and snap drop named: ' + w2);
+  assert.deepEqual(f(p, 3, null), ["He didn't play (hurt or inactive)."]);
+  assert.deepEqual(f(p, 4, null), [], 'bye week: nothing');
+  assert(!f({ ...p, name: 'WR B' }, 1, 30).some(t => /QB B/.test(t)), "a backup who hadn't played yet isn't \"missing\"");
+}
 console.log('ok');
 
 // site lock: the published page can't be read without the password, and the password opens it

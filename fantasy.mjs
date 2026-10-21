@@ -129,7 +129,7 @@ for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, po
 let rosSaved = null;
 try {
   const old = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
-  if (old.week === week && Date.now() - old.at < 3600e3 && old.practice) rosSaved = old;
+  if (old.week === week && Date.now() - old.at < 3600e3 && old.practice && old.weeks) rosSaved = old;
 } catch {}
 if (!rosSaved) {
   rosSaved = { week, at: Date.now(), roto: [], cbs: [] };
@@ -150,6 +150,7 @@ if (!rosSaved) {
   // and each player's points so far, to know who a team's usual starters are
   try {
     const allowed = {}, usual = new Map(); // allowed[pos][team] = [points, Set of weeks]
+    const weeks = {}; // weeks[wk][player key] = [% of his team's plays he was on, opponent]: who played, for whyWeek()
     for (let wk = 1; wk < week; wk++) {
       const r = await fetch(`https://api.sleeper.app/stats/nfl/${SEASON}/${wk}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`);
       for (const x of await r.json()) {
@@ -159,8 +160,10 @@ if (!rosSaved) {
         a[0] += pts; a[1].add(wk);
         const name = `${x.player.first_name} ${x.player.last_name}`, k = pkey(name, pos, x.team), u = usual.get(k) ?? [k, name, pos, TEAM(x.team), 0];
         u[4] += pts; usual.set(k, u);
+        (weeks[wk] ??= {})[k] = [x.stats.tm_off_snp ? Math.round((x.stats.off_snp ?? 0) / x.stats.tm_off_snp * 100) : null, TEAM(x.opponent)];
       }
     }
+    rosSaved.weeks = weeks;
     rosSaved.allowed = Object.fromEntries(Object.entries(allowed).map(([pos, t]) => [pos, Object.fromEntries(Object.entries(t).map(([team, [pts, wks]]) => [team, pts / wks.size]))]));
     rosSaved.usual = [...usual.values()];
   } catch (err) { console.warn('Matchup data skipped:', err.message); rosSaved.allowed = {}; rosSaved.usual = []; }
@@ -1004,6 +1007,35 @@ const usualStarters = team => Object.entries({ QB: 1, RB: 1, WR: 2, TE: 1 }).fla
 const qbThisWeek = team => slp.filter(x => x.team === team && x.pos === 'QB' && x.pts != null).sort((a, b) => b.pts - a.pts)[0];
 // 1 = gives up the most points to that position
 const defRank = (pos, team) => { const t = rosSaved.allowed?.[pos]; return t?.[team] == null ? null : Object.values(t).filter(v => v > t[team]).length + 1; };
+// Why a past week went the way it did: he missed the game, played far fewer snaps than usual, the defense he
+// faced, or a key teammate was missing. Empty for a normal week. Only QB/RB/WR/TE (Sleeper's stats).
+// ponytail: nobody keeps past injury reports, so a big snap drop is the clue he got hurt in the game.
+// ponytail: a player traded mid-season is looked up under his current team only.
+const POS_ONE = { QB: 'quarterback', RB: 'running back', WR: 'receiver', TE: 'tight end' };
+function whyWeek(p, wk, pts) {
+  const wd = rosSaved.weeks?.[wk], team = TEAM(p.team), k = pkey(p.name, p.pos, p.team);
+  if (!wd || !POS_PL[p.pos] || !Object.keys(wd).some(x => x.endsWith('|' + team))) return []; // no data, or his team had no game
+  const w = wd[k];
+  if (!w) return ['He didn\'t play (hurt or inactive).'];
+  const out = [];
+  const shares = Object.values(rosSaved.weeks).map(x => x[k]?.[0]).filter(v => v != null).sort((a, b) => a - b), usualShare = shares[Math.floor(shares.length / 2)];
+  if (w[0] != null && usualShare >= 40 && w[0] < usualShare * 0.6) out.push(`He was on the field for only ${w[0]}% of his team's plays (usually ${usualShare}%), so he likely got hurt during the game or lost playing time.`);
+  const r = defRank(p.pos, w[1]), of = Object.keys(rosSaved.allowed?.[p.pos] ?? {}).length;
+  if (r && r > of - 6) out.push(`He faced ${w[1]}, one of the toughest defenses against ${POS_PL[p.pos]} (${ordinal(of - r + 1)} fewest points given up).`);
+  else if (r && r <= 6) out.push(`He faced ${w[1]}, one of the easiest defenses for ${POS_PL[p.pos]} (${ordinal(r)} most points given up).`);
+  for (const st of usualStarters(team)) {
+    // missing only counts if he'd already played for them (a backup who took over later wasn't "missing" before that)
+    if (st.k === k || wd[st.k] || !Object.entries(rosSaved.weeks).some(([w2, x]) => +w2 < wk && x[st.k])) continue;
+    out.push(st.pos === 'QB' ? `His team's usual quarterback, ${st.name}, didn't play, so a backup was throwing. That usually means fewer points for everyone on the team.`
+      : st.pos === p.pos ? `${st.name}, another top ${POS_ONE[p.pos]} on his team, didn't play, so more of the ball could go his way.`
+      : `${st.name}, his team's top ${POS_ONE[st.pos]}, didn't play.`);
+  }
+  if (!out.length && pts != null && p.avg > 0) {
+    if (pts < p.avg * 0.6) out.push('Nothing obvious: he played his usual snaps against an average defense with his main teammates. Some weeks just go this way.');
+    else if (pts > p.avg * 1.5) out.push('Nothing unusual about the setup: he just had a big game.');
+  }
+  return out;
+}
 const oppId = (p, wk) => { const g = pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[wk]?.[0]; return g && (g.homeProTeamId === p.proTeamId ? g.awayProTeamId : g.homeProTeamId); };
 // Injury status: ESPN's (the league's own) wins when ESPN has the player; Sleeper's otherwise.
 // Sleeper sometimes keeps last week's "Out" for days, so when the two disagree the note says so instead.
@@ -1224,7 +1256,7 @@ h1{font-size:28px;font-weight:700;margin:6px 0 2px;letter-spacing:-.025em;line-h
 .bar{grid-column:1/-1;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;margin-bottom:6px}.bar i{display:block;height:100%;border-radius:3px}
 .verdict{margin-top:8px;font-size:14px}
 /* Bottom bar, frosted glass like iOS. Fixed so it's always one tap away. */
-nav{position:fixed;left:12px;right:70px;bottom:calc(env(safe-area-inset-bottom) + 8px);max-width:696px;margin:0 auto;z-index:10;display:flex;gap:2px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:5px;border-radius:999px;background:var(--glass);border:1px solid var(--glassline);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 30px rgba(0,0,0,.5);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
+nav{position:fixed;left:50%;transform:translateX(-50%);width:min(696px,calc(100% - 124px));bottom:calc(env(safe-area-inset-bottom) + 8px);z-index:10;display:flex;gap:2px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:5px;border-radius:999px;background:var(--glass);border:1px solid var(--glassline);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 30px rgba(0,0,0,.5);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
 /* fade at both ends hints that the tabs scroll sideways */
 -webkit-mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 22px),transparent)}
 nav::-webkit-scrollbar{display:none}
@@ -1644,7 +1676,8 @@ function render(p) {
     (p.notes.length ? '<div class="group">What&rsquo;s affecting him</div>' + p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') : '') +
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
     (p.games.length ? '<div class="group">Last games (fantasy points)</div><div class="bars">' + p.games.map(g =>
-      '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' : '') +
+      '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' +
+      p.games.filter(g => g.why.length).map(g => '<p class="why" style="margin:8px 0 0"><b>Week ' + g.wk + (g.pts == null ? '' : ' (' + g.pts.toFixed(1) + ' pts)') + ':</b> ' + e(g.why.join(' ')) + '</p>').join('') : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
     (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b><small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
@@ -2045,7 +2078,7 @@ for (const [id, p] of shown) {
   const games = [];
   for (let wk = Math.max(1, week - 5); wk < week; wk++) {
     const s = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk);
-    games.push({ wk, pts: s?.appliedTotal ?? null, note: p.bye === wk ? 'bye' : '–' });
+    games.push({ wk, pts: s?.appliedTotal ?? null, note: p.bye === wk ? 'bye' : '–', why: p.bye === wk ? [] : whyWeek(p, wk, s?.appliedTotal ?? null) });
   }
   const played = games.filter(g => g.pts != null).slice(-3);
   const recent = played.length ? played.reduce((s, g) => s + g.pts, 0) / played.length : null;
