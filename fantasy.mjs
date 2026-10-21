@@ -107,7 +107,7 @@ for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, po
 let rosSaved = null;
 try {
   const old = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
-  if (old.week === week && Date.now() - old.at < 3600e3 && old.allowed) rosSaved = old;
+  if (old.week === week && Date.now() - old.at < 3600e3 && old.practice) rosSaved = old;
 } catch {}
 if (!rosSaved) {
   rosSaved = { week, at: Date.now(), roto: [], cbs: [] };
@@ -142,13 +142,43 @@ if (!rosSaved) {
     rosSaved.allowed = Object.fromEntries(Object.entries(allowed).map(([pos, t]) => [pos, Object.fromEntries(Object.entries(t).map(([team, [pts, wks]]) => [team, pts / wks.size]))]));
     rosSaved.usual = [...usual.values()];
   } catch (err) { console.warn('Matchup data skipped:', err.message); rosSaved.allowed = {}; rosSaved.usual = []; }
+  // Official NFL injury report (NFL.com): each listed player's latest practice this week. Tables are per team,
+  // headed by the nickname ("Seahawks"); columns are player, position, injury, practice status, game status.
+  try {
+    const r = await fetch(`https://www.nfl.com/injuries/league/${SEASON}/reg${week}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) throw new Error(`${r.status}`);
+    const nick = Object.fromEntries(pro.filter(t => t.id).map(t => [t.name, t.abbrev]));
+    const text = s => s.replace(/<[^>]+>/g, '').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, '&').trim();
+    rosSaved.practice = [];
+    for (const part of (await r.text()).split('<div class="d3-o-section-sub-title"><span>').slice(1)) {
+      const team = nick[text(part.slice(0, part.indexOf('</span>')))];
+      if (!team) continue;
+      for (const tr of part.split('<tr>').slice(1)) {
+        const td = [...tr.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(m => text(m[1]));
+        const pr = /^Full/.test(td[3]) ? 'Full' : /^Limited/.test(td[3]) ? 'Limited' : /^Did Not/.test(td[3]) ? 'DNP' : null;
+        if (pr) rosSaved.practice.push([pkey(td[0], td[1], team), pr]);
+      }
+    }
+  } catch (err) { console.warn('NFL injury report skipped:', err.message); rosSaved.practice = []; }
   try {
     rosSaved.cbs = (await cbsRows('restofseason')).map(([name, pos, team, ppg]) => [pkey(name, pos, team), ppg]);
   } catch (err) { console.warn('CBS rest-of-season skipped:', err.message); }
 }
 if (!rosSaved.roto.length) down.push('Rotowire rest-of-season');
 if (!rosSaved.cbs.length) down.push('CBS rest-of-season');
-const rosRoto = new Map(rosSaved.roto), rosCbs = new Map(rosSaved.cbs);
+const rosRoto = new Map(rosSaved.roto), rosCbs = new Map(rosSaved.cbs), practice = new Map(rosSaved.practice);
+// Chance a hurt player plays. Footballguys Injury Index (QBs, RBs, WRs, TEs): by final practice, 2017-2023;
+// questionable 70.7% and doubtful 6.9% overall, 2017-2024. Practice is the strongest clue, so it's used when NFL.com has it.
+const PLAY_ODDS = { any: { Full: 86, Limited: 71, DNP: 29 }, concussion: { Full: 85, Limited: 57, DNP: 29 }, knee: { Full: 92, Limited: 81, DNP: 28 }, hamstring: { Full: 73, Limited: 62, DNP: 20 } };
+const PRACTICED = { Full: 'he practiced fully', Limited: 'he was limited in practice', DNP: 'he didn\'t practice' };
+function playOdds(p, type) {
+  if (p.status === 'DOUBTFUL') return { pct: 7, why: 'only about 7 in 100 doubtful players end up playing' };
+  if (p.status !== 'QUESTIONABLE') return null;
+  const pr = practice.get(pkey(p.name, p.pos, p.team));
+  if (!pr) return { pct: 71, why: 'no practice report yet this week; about 71 in 100 questionable players end up playing' };
+  const kind = ['concussion', 'knee', 'hamstring'].find(k => new RegExp(k, 'i').test(type ?? '')) ?? 'any';
+  return { pct: PLAY_ODDS[kind][pr], why: `${PRACTICED[pr]}${kind === 'any' ? '' : ` (${kind} injury)`}, and players like that played ${PLAY_ODDS[kind][pr]}% of the time` };
+}
 // Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
 const vegas = {};
 try {
@@ -580,7 +610,7 @@ function chip(p) {
   else if (s) {
     const wks = p.inj?.back ? Math.ceil((p.inj.back - Date.now()) / (7 * 864e5)) : 0;
     const when = p.inj?.back && wks > 0 ? ` &middot; back ~${dateStr(p.inj.back)}${wks > 1 ? ` (${wks} wks)` : ''}` : '';
-    out.push(`<span class="chip ${s[1]}">${s[0]}${p.inj?.type && p.inj.type !== 'Undisclosed' ? ` (${esc(p.inj.type.toLowerCase())})` : ''}${p.status === 'QUESTIONABLE' ? '' : when}</span>`);
+    out.push(`<span class="chip ${s[1]}">${s[0]}${p.inj?.type && p.inj.type !== 'Undisclosed' ? ` (${esc(p.inj.type.toLowerCase())})` : ''}${p.status === 'QUESTIONABLE' ? '' : when}${playOdds(p, p.inj?.type) ? ` &middot; ${playOdds(p, p.inj?.type).pct}% plays` : ''}</span>`);
   }
   if (p.split && !out.length) out.push(`<span class="chip warn">Experts disagree: ${srcText(p)}</span>`);
   return out.join(' ');
@@ -698,7 +728,7 @@ const statusWords = p => p.inj?.season ? 'out for the season' : p.bye === week ?
 const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: statusWords(p), slot: p.slot === 'Bench' ? 'bench' : p.slot === 'IR' ? 'IR' : 'starting', pr: Math.round((p.proj ?? 0) * 10) / 10 }]));
 
 // Everything Claude needs to answer questions about this team, as plain text to paste
-const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}${notes(p).length ? `. Notes: ${notes(p).join(' ')}` : ''}`;
+const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${playOdds(p, p.inj?.type) ? ` (${playOdds(p, p.inj?.type).pct}% chance he plays: ${playOdds(p, p.inj?.type).why})` : ''}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}${notes(p).length ? `. Notes: ${notes(p).join(' ')}` : ''}`;
 const facts = [
   `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's, Rotowire's and CBS Sports' projections. Facts from ESPN, Sleeper (Rotowire), CBS Sports and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
   `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
@@ -988,7 +1018,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Points per game</dt><dd>How many points he's actually scored each week on average this season.</dd>
 <dt>Per game, rest of season</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
-<dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' count of QB, RB, WR and TE injury reports, 2017 to 2024.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
+<dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. The % on each player uses his practices this week from the official NFL injury report: 86% play after a full practice, 71% after a limited one, 29% after none. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' count of QB, RB, WR and TE injury reports, 2017 to 2024.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
@@ -1171,8 +1201,8 @@ for (const [id, p] of shown) {
   const play = inj?.season ? ['no', `No. He's out for the season${hurtType}.`]
     : p.bye === week ? ['no', 'No. His team has no game this week (bye week).']
     : ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(p.status) ? ['no', `No. ${STATUS[p.status][0]}${hurtType}.${back}`]
-    : p.status === 'DOUBTFUL' ? ['no', `Probably not${hurtType}. Only about 1 in 15 doubtful players end up playing, so plan to bench him.`]
-    : p.status === 'QUESTIONABLE' ? ['maybe', `Probably${hurtType}: about 7 in 10 questionable players end up playing. Teams say who's out about 90 minutes before kickoff, so check then.`]
+    : p.status === 'DOUBTFUL' ? ['no', `Probably not${hurtType}: ${playOdds(p, inj?.type).pct}% chance he plays. ${playOdds(p, inj?.type).why[0].toUpperCase()}${playOdds(p, inj?.type).why.slice(1)}, so plan to bench him.`]
+    : p.status === 'QUESTIONABLE' ? ['maybe', `${playOdds(p, inj?.type).pct >= 60 ? 'Probably' : playOdds(p, inj?.type).pct >= 40 ? 'Maybe' : 'Probably not'}${hurtType}: ${playOdds(p, inj?.type).pct}% chance he plays. ${playOdds(p, inj?.type).why[0].toUpperCase()}${playOdds(p, inj?.type).why.slice(1)}. Teams say who's out about 90 minutes before kickoff, so check then.`]
     : ['yes', 'Yes, he\'s expected to play.'];
   const t = owner.get(id), mine = t === me;
   const advice = !mine ? null : inj?.season ? ['no', 'Drop him. He won\'t play again this season, so he\'s wasting a roster spot.'] : p.slot === 'IR' ? ['maybe', 'He\'s in your IR spot, so he doesn\'t use a bench spot. Leave him there until he\'s healthy.']
