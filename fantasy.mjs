@@ -269,6 +269,8 @@ best.total = best.lineup.reduce((t, x) => t + weekValue(x.player), 0);
 const bestIds = new Set(best.lineup.map(x => x.player.id));
 const benchIn = best.lineup.map(x => x.player).filter(p => !starters(me).includes(p));
 const sitOut = starters(me).filter(p => !bestIds.has(p.id));
+// This week's best total with game locks: locked starters stay in, everyone else counts as weekValue says
+const weekScore = players => bestLineup(players, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0)).lineup.reduce((t, x) => t + weekValue(x.player), 0);
 
 // --- Waiver pickups: add each free agent, drop whichever player hurts least.
 // Injured players are never suggested as drops (they come back), unless out for the season.
@@ -307,7 +309,9 @@ function judge(give, take, them) {
   const theirsAfter = [...them.roster.filter(p => !take.includes(p)), ...give];
   return {
     mine: score(mineAfter, seasonValue) - score(me.roster, seasonValue),
-    mineWeek: score(mineAfter, weekValue) - score(me.roster, weekValue),
+    // this week: a starter of mine whose game has kicked off already scored for me, traded or not; a player
+    // I'd get counts like a bench player (0 once his game has kicked off)
+    mineWeek: weekScore([...me.roster.filter(p => !give.includes(p) || (locked(p) && isStarter(p))), ...take.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(me.roster),
     theirs: score(theirsAfter, seasonValue) - score(them.roster, seasonValue),
     vorGive: give.reduce((s, p) => s + vor(p), 0), vorTake: take.reduce((s, p) => s + vor(p), 0),
     after: mineAfter,

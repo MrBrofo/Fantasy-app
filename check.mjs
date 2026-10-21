@@ -7,7 +7,9 @@ const src = fs.readFileSync(new URL('./fantasy.mjs', import.meta.url), 'utf8');
 const cut = (from, to) => { const i = src.indexOf(from), j = src.indexOf(to, i); assert(i >= 0 && j > i, `code moved: ${from}`); return src.slice(i, j + to.length); };
 const code = cut('function bestLineup(', 'const lineupProj = t => starters(t).reduce((s, p) => s + weekValue(p), 0);')
   + '\n' + cut('const best = bestLineup(me.roster,', 'const sitOut = starters(me).filter(p => !bestIds.has(p.id));')
-  + '\nreturn { weekValue, locked, best, benchIn, sitOut };';
+  + '\n' + cut('const weekScore = ', '.lineup.reduce((t, x) => t + weekValue(x.player), 0);')
+  + '\n' + cut('function judge(', '    after: mineAfter,\n  };\n}')
+  + '\nreturn { weekValue, locked, best, benchIn, sitOut, judge };';
 
 const HOUR = 3600e3, NOW = Date.UTC(2026, 9, 25, 18); // a Sunday afternoon
 // team 1 played Thursday (locked), team 2 kicks off in an hour, team 3 is on bye
@@ -16,7 +18,7 @@ const consts = {
   slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 },
   SLOT: { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 23: 'FLEX', 20: 'Bench', 21: 'IR' },
   SLOT_POS: { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'], 23: ['RB', 'WR', 'TE'] },
-  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, pro,
+  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, pro, vor: () => 0,
 };
 const run = roster => new Function(...Object.keys(consts), 'me', 'Date', code)(...Object.values(consts), { roster }, { now: () => NOW });
 const pl = (id, pos, slot, proj, team, status = '') => ({ id, name: `P${id}`, pos, slot, proj, proTeamId: team, status });
@@ -44,4 +46,11 @@ assert.deepEqual(ids(early.benchIn), [8, 9]); assert.deepEqual(ids(early.sitOut)
 
 // a locked free agent is worth 0 this week; an unlocked one isn't
 assert.equal(r.weekValue(pl(11, 'RB', 'FA', 14, 1)), 0); assert.equal(r.weekValue(pl(12, 'RB', 'FA', 14, 2)), 14);
+
+// trades, this week only. Lineup now: 18 + 4 + 12 + 11 + 10 + 8 + 3 = 66 (players 2 and 7 locked in)
+const them = { roster: [] };
+assert.equal(r.judge([], [pl(20, 'RB', 'RB', 25, 1)], them).mineWeek, 0, 'getting a player who already played adds nothing');
+assert.equal(r.judge([], [pl(21, 'RB', 'RB', 25, 2)], them).mineWeek, 25 - 10, 'getting one who plays later pushes out my lowest open starter (10)');
+assert.equal(r.judge([base[1]], [], them).mineWeek, 0, 'trading away a starter who already played loses nothing this week');
+assert.equal(r.judge([base[2]], [], them).mineWeek, -(12 - 9), 'trading away one who plays later: the bench RB (9) steps in');
 console.log('ok');
