@@ -842,7 +842,7 @@ ${opp ? (() => {
   <div class="t">You</div><div class="p">${n(a)}</div><div class="bar"><i style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--brand2)"></i></div>
   <div class="t">${esc(opp.name)}</div><div class="p">${n(b)}</div><div class="bar"><i style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
 </div><div class="verdict">${a >= b ? `<b style="color:var(--good)">You're expected to win</b> by ${n((Math.round(a * 10) - Math.round(b * 10)) / 10)} points.` : `<b style="color:var(--bad)">You're expected to lose</b> by ${n((Math.round(b * 10) - Math.round(a * 10)) / 10)} points.`}
-${!live && planProj > myProj + 0.5 ? ` ${claims.length ? 'Your pending claims plus the to-do list' : 'Doing the to-do list below'} get${claims.length ? '' : 's'} you to about <b>${n(planProj)}</b>.` : ''}</div>
+${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>`;
 })() : ''}
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
@@ -888,7 +888,7 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
     : '<br><span class="tag" style="color:var(--good)">No team that picks before you needs him, so you\'ll probably get him.</span>'; })() : ''}
   ${notes(s.add).map(t => `<br><span class="tag">&#9432; ${esc(t)}</span>`).join('')}
   ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p></div>`; }).join('')
-  : '<div class="card empty">Nobody out there beats what you have.</div>'}
+  : `<div class="card empty">Nobody out there beats what you have${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
 ${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
 </section>
