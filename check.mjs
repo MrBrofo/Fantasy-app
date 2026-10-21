@@ -22,7 +22,7 @@ const consts = {
   slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 },
   SLOT: { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 23: 'FLEX', 20: 'Bench', 21: 'IR' },
   SLOT_POS: { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'], 23: ['RB', 'WR', 'TE'] },
-  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, playOdds: p => ({ DOUBTFUL: { pct: 7 }, QUESTIONABLE: { pct: 71 } })[p.status] ?? null, pro, vor: () => 0,
+  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, playOdds: p => ({ DOUBTFUL: { pct: 7 }, QUESTIONABLE: { pct: 71 } })[p.status] ?? null, pro, vor: () => 0, byeScore: () => 0,
   allFa: [pl(30, 'RB', 'FA', 30, 1), { ...pl(31, 'RB', 'FA', 20, 2), ros: 5 }], // 30 already played (locked), 31 plays later
 };
 const run = roster => new Function(...Object.keys(consts), 'me', 'Date', code)(...Object.values(consts), { roster }, { now: () => NOW });
@@ -108,6 +108,12 @@ assert.equal(sim()(), sim()(), 'same week, same numbers');
 const swaps = r.bestSwap(base, r.weekValue);
 assert(swaps.length && swaps.every(x => x.add.id === 31), 'only the free agent who plays later');
 assert(swaps.every(x => !r.locked(x.drop)), 'never drops a player whose game has started');
+// a bye-week fill-in (worth points only in the next 2 weeks) is never the drop
+{
+  const keep = swaps[0].drop, guarded = { ...consts, byeScore: roster => (roster.some(p => p.id === keep.id) ? 10 : 0) };
+  const r2 = new Function(...Object.keys(guarded), 'me', 'Date', code)(...Object.values(guarded), { roster: base }, { now: () => NOW });
+  assert(r2.bestSwap(base, r2.weekValue).every(x => x.drop.id !== keep.id), 'kept the player needed for an upcoming bye');
+}
 // lineup move sent to ESPN: legal slots, gives exactly the best lineup, never moves a locked player
 const applyMove = (roster, move) => roster.map(p => { const x = move?.items.find(i => i.playerId === p.id); return x ? { ...p, slot: consts.SLOT[x.to] } : p; });
 for (const t of [r, early]) {

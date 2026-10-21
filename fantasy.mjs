@@ -451,6 +451,9 @@ function bestSwap(roster, value, used = new Set()) {
   const sc = r => (value === weekValue ? weekScore(r) : score(r, value));
   const base = sc(roster);
   const seasonBase = score(roster, seasonValue);
+  // the next 2 weeks with byes taken out: never drop a bye-week fill-in (a second defense picked up for next
+  // week looked free to drop, since it doesn't start this week or in the season-long lineup)
+  const byeBase = byeScore(roster);
   // the league locks transactions: a player whose game has kicked off can't be added or dropped until next week
   const drops = roster.filter(p => p.slot !== 'IR' && (!HURT.includes(p.status) || p.inj?.season) && !used.has(p.id) && !locked(p));
   const out = [];
@@ -459,7 +462,7 @@ function bestSwap(roster, value, used = new Set()) {
     let top = null;
     for (const drop of drops) {
       const next = [...roster.filter(p => p !== drop), add];
-      const gain = sc(next) - base + (value === seasonValue ? 0 : Math.min(0, score(next, seasonValue) - seasonBase));
+      const gain = sc(next) - base + (value === seasonValue ? 0 : Math.min(0, score(next, seasonValue) - seasonBase)) + Math.min(0, byeScore(next) - byeBase);
       // on a tie, drop the weaker player
       if (!top || gain > top.gain + 0.05 || (gain > top.gain - 0.05 && weakness(drop) < weakness(top.drop))) top = { add, drop, gain };
     }
