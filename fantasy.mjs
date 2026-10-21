@@ -226,7 +226,7 @@ function row(p, ratings) {
   const proj = stat(p, 1, 1);
   const pos = POS[p.defaultPositionId] ?? '?', team = proAbbr[p.proTeamId] ?? 'FA';
   // expected points = average of ESPN, Rotowire and CBS, whichever have a number (none if ESPN has none, e.g. bye)
-  const espn = proj?.appliedTotal ?? null, k = pkey(p.fullName, pos, team);
+  const espn = proj?.appliedTotal ?? null, k = team === 'FA' && pos !== 'D/ST' ? [...sleeper.keys(), ...cbs.keys()].find(x => x.startsWith(`${norm(p.fullName)}|`)) ?? pkey(p.fullName, pos, team) : pkey(p.fullName, pos, team);
   const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null;
   const all = [espn, roto, cb].filter(v => v != null);
   // ESPN's rest-of-season projection is statSourceId 1, statSplitTypeId 0 (per game = appliedAverage)
@@ -354,7 +354,9 @@ const healthyFa = pos => (fa[pos] ?? []).filter(p => !HURT.includes(p.status)).m
 const repl = Object.fromEntries(Object.keys(FA_SLOT).map(pos => [pos, healthyFa(pos)[1] ?? healthyFa(pos)[0] ?? 0]));
 const vor = p => Math.max(0, rate(p) - (repl[p.pos] ?? 0));
 // Who would start at a position (best by season average) in a roster
-const starterAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map(x => x.player).filter(p => p.pos === pos).sort((a, b) => rate(b) - rate(a))[0];
+const myStartersAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map(x => x.player).filter(p => p.pos === pos).sort((a, b) => rate(b) - rate(a));
+// "Stefon Diggs (9.4) and Malik Washington (8.2)"
+const startersText = ps => ps.map(p => `${esc(p.name)} (${n(rate(p))})`).join(' and ');
 // Effect of a trade on both teams. give = players I send, take = players I get.
 function judge(give, take, them) {
   const mineAfter = [...me.roster.filter(p => !give.includes(p)), ...take];
@@ -405,7 +407,8 @@ for (let wk = Math.max(1, week - 2); wk <= week; wk++) {
   for (const tx of d.transactions ?? []) {
     if (tx.type === 'WAIVER' && tx.status?.startsWith('FAILED') && tx.teamId === me.id) myFailed.push(tx);
     else if (tx.status !== 'EXECUTED' && tx.status !== 'PENDING' && ['WAIVER', 'TRADE_PROPOSAL'].includes(tx.type) && !involvesMe(tx)) intel.set(tx.id, tx);
-    if (tx.type === 'WAIVER' && tx.processDate && !tx.isPending) waiverRuns.push(tx.processDate);
+    // only claims the nightly run decided (a canceled claim's date is when it was canceled)
+    if (tx.type === 'WAIVER' && tx.processDate && !tx.isPending && (tx.status === 'EXECUTED' || tx.status?.startsWith('FAILED'))) waiverRuns.push(tx.processDate);
     if (tx.status !== 'EXECUTED' || !['FREEAGENT', 'WAIVER', 'TRADE_ACCEPT'].includes(tx.type)) continue;
     for (const it of tx.items) if (['ADD', 'DROP', 'TRADE'].includes(it.type)) moves.push({ date: tx.processDate ?? tx.proposedDate, type: it.type, playerId: it.playerId, team: it.type === 'DROP' ? it.fromTeamId : it.toTeamId, from: it.fromTeamId });
   }
@@ -618,13 +621,16 @@ const waiverEve = cap(DAYS[(DAYS.indexOf(waiverDay) + 6) % 7]).slice(0, 3); // '
 const noProc = DAYS.filter(d => !procDays.has(d));
 // Typical time claims go through (median of recent runs), and the next run, in Pacific time
 const ptParts = d => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(d).map(x => [x.type, x.value]));
-const runMin = waiverRuns.length ? waiverRuns.map(t => { const p = ptParts(new Date(t)); return +p.hour * 60 + +p.minute; }).sort((a, b) => a - b)[Math.floor(waiverRuns.length / 2)] : null;
-const clock = m => { const h = Math.floor(m / 60), mm = Math.round((m % 60) / 15) * 15; return `${(h % 12) || 12}${mm % 60 ? ':' + String(mm % 60).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`; };
+// Earliest start of any recent run: a claim has to be in before then. Each run takes a few minutes, so it's the
+// first claim of each night that counts. ponytail: assumes runs never cross midnight Pacific (they're ~12:30 AM).
+const runMin = waiverRuns.length ? Math.min(...waiverRuns.map(t => { const p = ptParts(new Date(t)); return +p.hour * 60 + +p.minute; })) : null;
+// rounded down to 5 minutes, since it is shown as "as early as"
+const clock = m => { const h = Math.floor(m / 60), mm = Math.floor((m % 60) / 5) * 5; return `${(h % 12) || 12}${mm % 60 ? ':' + String(mm % 60).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`; };
 const nextRun = runMin == null ? '' : (() => {
   const now = ptParts(new Date()), nowMin = +now.hour * 60 + +now.minute;
   for (let i = 0; i < 8; i++) {
     const day = ptParts(new Date(Date.now() + i * 864e5)).weekday.toUpperCase();
-    if (procDays.has(day) && (i > 0 || nowMin < runMin)) return `${i === 0 ? 'tonight/today' : i === 1 ? 'tomorrow' : cap(day)} (${cap(day).slice(0, 3)}) at about ${clock(runMin)} Pacific${runMin < 240 ? `, which is late ${cap(DAYS[(DAYS.indexOf(day) + 6) % 7])} night` : ''}`;
+    if (procDays.has(day) && (i > 0 || nowMin < runMin)) return `${i === 0 ? 'tonight/today' : i === 1 ? 'tomorrow' : cap(day)} (${cap(day).slice(0, 3)}), as early as ${clock(runMin)} Pacific${runMin < 240 ? `, which is late ${cap(DAYS[(DAYS.indexOf(day) + 6) % 7])} night` : ''}`;
   }
   return '';
 })();
@@ -1187,7 +1193,7 @@ ${pending.length ? pending.map(m => {
     ${MOVE_URL ? `<button type="button" class="btn do" style="background:var(--chip);color:var(--fg)" data-move="${esc(JSON.stringify({ label: 'Cancel this claim on ESPN', type: 'WAIVER', cancel: true, related: m.id, items: [], week: league.scoringPeriodId }))}">Cancel this claim on ESPN</button>` : ''}</div>`;
   }
   const v = m.mine >= 1 ? ['good', m.mineOffer ? 'Good for you' : 'Good for you: accept'] : m.mine <= -1 ? ['bad', m.mineOffer ? 'Bad for you: cancel it' : 'Bad for you: decline'] : ['meh', 'About even'];
-  const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = starterAt(m.after, pos); return s && !m.give.includes(s) ? `your ${POS_NAME[pos]?.toLowerCase()} would be ${esc(s.name)} (${n(rate(s))})` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
+  const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = myStartersAt(m.after, pos).filter(p => !m.give.includes(p)); return s.length ? `your starting ${POS_NAME[pos]?.toLowerCase()}${s.length > 1 ? 's' : ''} would be ${startersText(s)}` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
   return `<div class="card"><div class="vhead"><span class="tag">${m.mineOffer ? 'You offered' : 'Offered to you by'} <b>${esc(m.them.name)}</b></span><span class="verdict-${v[0]}">${v[1]}</span></div>
   <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
@@ -1228,12 +1234,12 @@ ${(() => { const card = d => `<div class="card"><div class="vhead"><b>${esc(d.t.
 </section>
 
 <section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
-${topTrades.length ? topTrades.map(t => { const s = starterAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
+${topTrades.length ? topTrades.map(t => { const s = myStartersAt(t.after, t.give.pos); return `<div class="card"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
   <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game, rest of season', null, t.give, 'season')}</div>
   <div class="arrow">for</div>
   <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
   <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
-  <br>Your ${POS_NAME[t.give.pos].toLowerCase()} after: ${s ? `${esc(s.name)} (${n(rate(s))} per game, rest of season)` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
+  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('') : '<div class="card empty">No trades right now that clearly help you and look fair to the other team.</div>'}
 </section>
 
 <section id="compare"><h2>Compare players</h2><p class="sub">Tap a box, then search for any player. Green = better.</p>
@@ -1268,7 +1274,7 @@ ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
 ${standings.map((t, i) => `<tr class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
-${intel.size || othersPending.size ? `<div class="card"><details open><summary>Behind the scenes: offers and claims that didn't happen</summary>
+${intel.size || othersPending.size ? `<div class="card"><details open><summary>Behind the scenes: trades in progress, and offers and claims that didn't happen</summary>
 <p class="tag" style="margin-top:0">The ESPN app doesn't show these. A team that offered a player in a trade is shopping him; a team that tried to claim someone needs that position.</p><table>
 ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDate - a.proposedDate)].slice(0, 20).map(tx => {
   const nm = id => esc(byId.get(id)?.name ?? names[id] ?? 'someone');
@@ -1279,7 +1285,7 @@ ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDa
   }
   const other = tx.items.map(i => (i.fromTeamId === tx.teamId ? i.toTeamId : i.fromTeamId)).find(id => id !== tx.teamId);
   const gave = tx.items.filter(i => i.fromTeamId === tx.teamId).map(i => nm(i.playerId)).join(', '), got = tx.items.filter(i => i.toTeamId === tx.teamId).map(i => nm(i.playerId)).join(', ');
-  return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> offered ${gave} to ${esc(teamName[other] ?? '')} for ${got} <span class="tag">(${tx.status.toLowerCase().replace(/_/g, ' ')})</span></td></tr>`;
+  return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> offered ${gave} to ${esc(teamName[other] ?? '')} for ${got} <span class="tag">(${tx.type === 'TRADE_ACCEPT' && tx.status === 'PENDING' ? `accepted, in league review until ${new Date(tx.processDate).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' })} Pacific; the league can still veto it` : tx.status === 'PENDING' ? 'waiting for an answer' : tx.status.toLowerCase().replace(/_/g, ' ')})</span></td></tr>`;
 }).join('')}</table></details></div>` : ''}
 <div class="card"><details><summary>Recent moves around the league</summary><table>
 ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>${esc(teamName[m.team] ?? '')}</td><td>${m.type === 'ADD' ? '<b style="color:var(--good)">added</b>' : m.type === 'DROP' ? '<span style="color:var(--bad)">dropped</span>' : `traded with ${esc(teamName[m.from])}`} ${esc(names[m.playerId] ?? '')}</td></tr>`).join('')}</table></details></div>
@@ -1303,7 +1309,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Per game, rest of season</dt><dd>How many points per game ESPN, Rotowire and CBS expect from him for the rest of the season, averaged. Season pickups and trades use this, because it accounts for injuries, new roles and schedule, not just past games.</dd>
 <dt>Bye week</dt><dd>Each NFL team gets one week off. A player on bye scores 0, so never start him that week.</dd>
 <dt>Injury tags</dt><dd><b>Might not play</b> (questionable): about 7 in 10 of these players end up playing. The % on each player uses his practices this week from the official NFL injury report: 86% play after a full practice, 71% after a limited one, 29% after none. <b>Probably won't play</b> (doubtful): only about 1 in 15 play. (From Footballguys' count of QB, RB, WR and TE injury reports, 2017 to 2024.) <b>Out</b>: won't play. <b>IR</b>: hurt for weeks; move him to your IR spot so he doesn't take up a bench spot.</dd>
-<dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}${runMin != null ? `, at about ${clock(runMin)} Pacific` : ''}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
+<dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}${runMin != null ? `, starting as early as ${clock(runMin)} Pacific (get claims in before then)` : ''}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
@@ -1764,7 +1770,7 @@ for (const [id, p] of shown) {
   const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`
     : recent < p.avg * 0.75 ? `Cold: ${n(recent)} per game over his last ${played.length} games, worse than his season average.` : '';
   const sources = [
-    p.roto != null || p.cbs != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
+    p.bye === week ? 'No game this week (bye), so no projection.' : p.roto != null || p.cbs != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
     p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Vegas expects his team to score about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
   ].filter(Boolean).join(' ');
   pdata[id] = {
