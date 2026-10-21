@@ -207,7 +207,8 @@ if (!rosSaved) {
       const c = ev.competitions[0], v = c.venue ?? {}, w = { indoor: !!v.indoor || /SoFi/.test(v.fullName ?? ''), place: v.fullName ?? '' };
       if (!v.indoor && v.address?.city) try {
         const hits = (await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(v.address.city)}&count=10`)).json()).results ?? [];
-        const g = hits.find(r => r.admin1 === STATE[v.address.state]) ?? hits[0];
+        // match the state (US) or the country (games abroad: "Saint-Denis" alone finds the one on Réunion first)
+        const g = v.address.state ? hits.find(r => r.admin1 === STATE[v.address.state]) ?? hits.find(r => r.country_code === 'US') : hits.find(r => r.country === v.address.country);
         if (g) {
           const f = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}&hourly=wind_speed_10m,wind_gusts_10m,precipitation,temperature_2m&wind_speed_unit=mph&temperature_unit=fahrenheit&timezone=UTC&forecast_days=16`)).json();
           const i = f.hourly?.time.indexOf(new Date(ev.date).toISOString().slice(0, 13) + ':00') ?? -1;
