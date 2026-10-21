@@ -9,19 +9,21 @@ const code = cut('function bestLineup(', 'const lineupProj = t => starters(t).re
   + '\n' + cut('const best = bestLineup(me.roster,', 'const sitOut = starters(me).filter(p => !bestIds.has(p.id));')
   + '\n' + cut('const weekScore = ', '.lineup.reduce((t, x) => t + weekValue(x.player), 0);')
   + '\n' + cut('function judge(', '    after: mineAfter,\n  };\n}')
-  + '\nreturn { weekValue, locked, best, benchIn, sitOut, judge };';
+  + '\n' + cut('const weakness = ', '  return out.sort((a, b) => b.gain - a.gain).slice(0, 5);\n}')
+  + '\nreturn { weekValue, locked, best, benchIn, sitOut, judge, bestSwap };';
 
 const HOUR = 3600e3, NOW = Date.UTC(2026, 9, 25, 18); // a Sunday afternoon
 // team 1 played Thursday (locked), team 2 kicks off in an hour, team 3 is on bye
 const pro = [{ id: 1, proGamesByScoringPeriod: { 7: [{ date: NOW - 72 * HOUR }] } }, { id: 2, proGamesByScoringPeriod: { 7: [{ date: NOW + HOUR }] } }, { id: 3, proGamesByScoringPeriod: {} }];
+const pl = (id, pos, slot, proj, team, status = '') => ({ id, name: `P${id}`, pos, slot, proj, proTeamId: team, status });
 const consts = {
   slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 },
   SLOT: { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 23: 'FLEX', 20: 'Bench', 21: 'IR' },
   SLOT_POS: { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'], 23: ['RB', 'WR', 'TE'] },
   HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, pro, vor: () => 0,
+  allFa: [pl(30, 'RB', 'FA', 30, 1), pl(31, 'RB', 'FA', 20, 2)], // 30 already played (locked), 31 plays later
 };
 const run = roster => new Function(...Object.keys(consts), 'me', 'Date', code)(...Object.values(consts), { roster }, { now: () => NOW });
-const pl = (id, pos, slot, proj, team, status = '') => ({ id, name: `P${id}`, pos, slot, proj, proTeamId: team, status });
 const ids = list => list.map(p => p.id).sort();
 
 const base = [
@@ -78,4 +80,8 @@ const mean = draws.reduce((a, b) => a + b, 0) / draws.length, sd = Math.sqrt(dra
 assert(Math.abs(mean) < 0.03 && Math.abs(sd - 1) < 0.03, `bell curve off: mean ${mean}, sd ${sd}`);
 assert.equal(sim()(), sim()(), 'same week, same numbers');
 
+// transaction locking: no pickup of a player who already played, no drop of one either
+const swaps = r.bestSwap(base, r.weekValue);
+assert(swaps.length && swaps.every(x => x.add.id === 31), 'only the free agent who plays later');
+assert(swaps.every(x => !r.locked(x.drop)), 'never drops a player whose game has started');
 console.log('ok');
