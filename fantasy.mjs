@@ -1910,6 +1910,30 @@ function addHim(p) {
   const opt = p => '<option value="' + p.id + '">' + e(p.name) + ' (' + p.pos + ')</option>';
   const $ = id => document.getElementById(id);
 
+  // A text to send with a checked trade: only true facts from the numbers (same idea as the fleece texts)
+  const last = p => p.pos === 'D/ST' ? p.name : p.name.split(' ').filter(w => !['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'].includes(w)).slice(-1)[0];
+  const posWord = pos => ({ QB: 'quarterback', RB: 'running back', WR: 'receiver', TE: 'tight end', K: 'kicker', 'D/ST': 'defense' })[pos];
+  const avgSum = ps => ps.reduce((s, p) => s + (p.avg || 0), 0);
+  function tcTexts(give, take, team, theirWeek) {
+    const both = give.map(last).join(' and '), ask = both + ' for ' + take.map(last).join(' and '), facts = [];
+    const fills = give.filter(p => (team.short || []).includes(p.pos));
+    if (fills.length) facts.push('you look thin at ' + [...new Set(fills.map(p => posWord(p.pos)))].join(' and ') + ' and ' + fills.map(last).join(' and ') + (fills.length > 1 ? ' fill that' : ' fills that'));
+    if (give.length > take.length) facts.push("that's " + give.length + ' guys for ' + take.length + ', ' + avgSum(give).toFixed(1) + ' points a game combined');
+    else if (avgSum(give) > avgSum(take)) facts.push(both + (give.length > 1 ? ' have' : ' has') + ' outscored ' + take.map(last).join(' and ') + ' so far this year (' + avgSum(give).toFixed(1) + ' vs ' + avgSum(take).toFixed(1) + ' a game)');
+    if (theirWeek >= 2) facts.push("it'd get you about " + Math.round(theirWeek) + ' more points this week too');
+    const top = facts.slice(0, 2);
+    return [...new Set([
+      'would you do ' + ask + '?' + (top.length ? ' ' + top.join('. ') + '.' : '') + ' lmk',
+      'you open to ' + ask + '?' + (top[0] ? ' ' + top[0] : ''),
+      'thoughts on ' + ask + '?' + (top[0] ? ' ' + top[0] + '.' : '') + ' open to tweaking it',
+    ])];
+  }
+  const tcPrompt = (give, take, team, theirWeek) => "Write a short, casual text (1-3 sentences, lowercase, like a real person texting a friend) to my fantasy football league mate proposing this trade. I give: " +
+    give.map(p => p.name + ' (' + p.pos + ')').join(' and ') + '. I get: ' + take.map(p => p.name + ' (' + p.pos + ')').join(' and ') + ". Use ONLY these true facts, don't make up any stats or news, don't say it's lopsided: " +
+    [...give, ...take].map(p => p.name + ' averages ' + (p.avg || 0).toFixed(1) + ' points a game this season' + (p.rank ? ', ranked ' + p.rank + ' at ' + p.pos : ''))
+      .concat((team.short || []).length ? ['their team is short at ' + team.short.map(posWord).join(', ')] : [], theirWeek >= 1 ? ['it would add about ' + Math.round(theirWeek) + ' projected points to their lineup this week'] : [])
+      .join('; ') + '. Give me 3 different versions.';
+
   // --- Trade checker: the same math as the trade ideas, for any players you pick
   const tcTeam = $('tc-team');
   tcTeam.innerHTML = '<option value="">Pick a team...</option>' + R.teams.filter(t => t.id !== R.me).map(t => '<option value="' + t.id + '">' + e(t.name) + '</option>').join('');
@@ -1934,13 +1958,19 @@ function addHim(p) {
     const roomNote = give.length < take.length ? '<p class="tag" style="margin:6px 0 0">You get more players than you give, so you would also have to drop ' + (take.length - give.length) + ' (not counted here).</p>' : '';
     const [cls, word] = season >= 1 ? ['good', 'Good for you'] : season <= -1 ? ['bad', 'Bad for you'] : ['meh', 'About even for you'];
     const accept = theirsGain >= -0.5 && vg >= vt * 0.85;
+    const team = R.teams.find(t => t.id === them);
+    const theirWeek = weekTotal([...theirs.filter(p => !take.includes(p) || (p.locked && isStarter(p))), ...give.map(p => ({ ...p, slot: 'Bench' }))]) - weekTotal(theirs);
+    const texts = tcTexts(give, take, team, theirWeek), chip = ' style="background:var(--chip);color:var(--fg)"';
     $('tc-out').innerHTML = '<div class="vhead" style="margin-top:12px"><b>Verdict</b><span class="verdict-' + cls + '">' + word + '</span></div>' +
       '<div class="stat"><div><b style="color:var(--' + (season >= 0 ? 'good' : 'bad') + ')">' + f1(season) + '</b><small>points per week for you, rest of season</small></div>' +
       '<div><b>' + f1(wk) + '</b><small>points for you this week</small></div>' +
       '<div><b>' + f1(theirsGain) + '</b><small>points per week for them</small></div>' +
       '<div><b>' + (accept ? 'Likely' : 'Unlikely') + '</b><small>they say yes (fair on value)</small></div></div>' + roomNote +
       '<p class="tag" style="margin:8px 0 0">Points per week = how much better your best lineup gets, using the averaged rest-of-season projections.</p>' +
-      (R.moves && R.tradesOpen ? '<button type="button" class="btn do" data-move="' + e(JSON.stringify({ label: 'Propose ' + give.map(p => p.name).join(' + ') + ' for ' + take.map(p => p.name).join(' + ') + ' on ESPN', type: 'TRADE_PROPOSAL', other: them, items: [...give.map(p => ({ type: 'GIVE', playerId: p.id })), ...take.map(p => ({ type: 'GET', playerId: p.id }))], week: R.week })) + '">Propose this trade on ESPN</button>' : '');
+      '<div class="group">Text to send</div><p class="pitch">' + e(texts[0]) + '</p>' +
+      '<div class="tools2"><button type="button" class="btn"' + chip + ' data-copy="' + e(texts[0]) + '">Copy text</button>' + (texts.length > 1 ? '<button type="button" class="btn"' + chip + ' data-versions="' + e(JSON.stringify(texts)) + '">Another version</button>' : '') + '</div>' +
+      '<button type="button" class="btn"' + chip + ' data-claude="' + e(tcPrompt(give, take, team, theirWeek)) + '">Have Claude write it (copies the facts, opens Claude)</button>' +
+      (R.moves && R.tradesOpen ? '<button type="button" class="btn do" data-move="' + e(JSON.stringify({ label: 'Propose ' + give.map(p => p.name).join(' + ') + ' for ' + take.map(p => p.name).join(' + ') + ' on ESPN', type: 'TRADE_PROPOSAL', other: them, sms: team.name, items: [...give.map(p => ({ type: 'GIVE', playerId: p.id })), ...take.map(p => ({ type: 'GET', playerId: p.id }))], week: R.week })) + '">Propose on ESPN, then text them</button>' : '');
   }
   tcTeam.addEventListener('change', tcLists);
   $('check').addEventListener('change', ev => { if (ev.target.matches('input[type=checkbox]')) tcCheck(); });
@@ -2199,7 +2229,7 @@ html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MO
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
-  teams: teams.map(t => ({ id: t.id, name: t.name, ids: t.roster.map(p => p.id) })), fa: faList.map(p => p.id),
+  teams: teams.map(t => ({ id: t.id, name: t.name, ids: t.roster.map(p => p.id), short: depth(t).short })), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
