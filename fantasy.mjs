@@ -427,7 +427,7 @@ const pending = [...pendingTx.values()].map(tx => {
   const them = teams.find(t => t.id === tx.items.map(i => (i.fromTeamId === me.id ? i.toTeamId : i.fromTeamId)).find(id => id !== me.id));
   const give = tx.items.filter(i => i.fromTeamId === me.id).map(i => me.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
   const take = tx.items.filter(i => i.toTeamId === me.id).map(i => them.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
-  return { kind: 'trade', mineOffer: tx.teamId === me.id, them, give, take, ...judge(give, take, them) };
+  return { kind: 'trade', id: tx.id, mineOffer: tx.teamId === me.id, them, give, take, ...judge(give, take, them) };
 });
 
 // Start from the roster as it will be once my pending waiver claims go through, so the plan doesn't
@@ -1069,7 +1069,8 @@ ${pending.length ? pending.map(m => {
   ${Math.abs(m.mineWeek) >= 1 ? `This week alone: ${m.mineWeek > 0 ? '+' : ''}${n(m.mineWeek)} points.` : ''} They'd ${Math.abs(m.theirs) < 1 ? 'come out about even' : `${m.theirs > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.theirs))} a week`}.
   ${m.mineWeek > 2 && m.mine < -1 ? '<br><b>Trap:</b> it only helps this week (your players are on bye or hurt). After that you\'re worse off.' : ''}
   ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
-  ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p></div>`;
+  ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p>
+  ${MOVE_URL && !m.mineOffer ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: 'Decline this trade on ESPN', type: 'TRADE_DECLINE', related: m.id, items: [], week: league.scoringPeriodId }))}">Decline this trade on ESPN</button>` : ''}</div>`;
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
 
@@ -1488,6 +1489,7 @@ const WHY = {
   TRAN_PLAYER_NOT_FREEAGENT: "that player isn't available anymore",
   TRAN_PLAYER_NOT_AVAILABLE: "that player isn't available anymore",
   TRAN_PLAYER_NOT_ON_TEAM: "that player isn't on your team anymore",
+  TRAN_NOT_FOUND: "that trade offer is no longer open",
   TRAN_INVALID_SCORINGPERIOD_NOT_CURRENT: "the site is a bit behind ESPN. Wait 2 minutes and try again",
   'Failed to fetch': "the site couldn't reach the move server",
   'Load failed': "the site couldn't reach the move server",
