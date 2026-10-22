@@ -739,9 +739,13 @@ for (const d of tradesOpen ? partners : []) {
   }
 }
 fleece.sort((a, b) => b.mine - b.theirs - (a.mine - a.theirs));
-// up to 3 per team (the page picks the team and how many show), no player twice for the same team
+// up to 3 per team (the page picks the team and how many show), no player twice for the same team.
+// A trade already pending on ESPN with the same players isn't shown again.
+const tradeKey = (them, give, take) => `${them.id}|${give.map(p => p.id).sort()}|${take.map(p => p.id).sort()}`;
+const offered = new Set(pending.filter(m => m.kind === 'trade').map(m => tradeKey(m.them, m.give, m.take)));
 const fleecePool = [];
 for (const f of fleece) {
+  if (offered.has(tradeKey(f.d.t, f.give, [f.take]))) continue;
   const same = fleecePool.filter(x => x.d === f.d);
   if (same.length >= 3 || same.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)))) continue;
   const pitch = pitches(f);
