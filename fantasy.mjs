@@ -723,6 +723,8 @@ const partners = teams.filter(t => t !== me).map(depth).map(d => ({
 const f1 = v => (v ?? 0).toFixed(1); // (n() is defined further down)
 const avgValue = p => (playable(p) ? p.avg ?? 0 : 0);
 const fleece = [];
+// For picking any player on the page: per player, my best offer that helps me and looks fair to them, fleece or not
+const bestOffer = new Map();
 for (const d of tradesOpen ? partners : []) {
   // "looks fair on points per game" means nothing for a player who hasn't played yet
   // and nobody ESPN projects at 0 this week while not on bye (benched): his old average won't sell him
@@ -730,12 +732,15 @@ for (const d of tradesOpen ? partners : []) {
   const gives = [...mine.map(p => [p]), ...mine.flatMap((a, i) => mine.slice(i + 1).map(b => [a, b]))];
   for (const give of gives) for (const take of theirs) {
     const j = judge(give, [take], d.t);
-    if (j.mine < 1 || j.theirs > -0.5) continue;
+    const best = bestOffer.get(take);
+    if (j.mine <= 0 || (j.mine < 1 || j.theirs > -0.5) && best && best.mine >= j.mine) continue;
     // what they'd see: their best lineup scored with season-so-far averages
     const looks = score([...d.t.roster.filter(p => p !== take), ...give], avgValue) - score(d.t.roster, avgValue);
     if (looks < -1) continue;
     const theirWeek = weekScore([...d.t.roster.filter(p => p !== take || (locked(p) && isStarter(p))), ...give.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(d.t.roster);
-    fleece.push({ d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks, theirWeek, strict: j.mine >= 2 && j.theirs <= -1 && looks >= 0 });
+    const f = { d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks, theirWeek, strict: j.mine >= 2 && j.theirs <= -1 && looks >= 0 };
+    if (!best || j.mine > best.mine) bestOffer.set(take, f);
+    if (j.mine >= 1 && j.theirs <= -0.5) fleece.push(f);
   }
 }
 fleece.sort((a, b) => b.mine - b.theirs - (a.mine - a.theirs));
@@ -752,6 +757,12 @@ for (const f of fleece) {
   if (extra && same.filter(x => x.take === f.take).length >= 3) continue;
   const pitch = pitches(f);
   if (pitch) fleecePool.push({ ...f, extra, texts: pitch.texts, strict: f.strict && pitch.strength >= 4 });
+}
+// Every other player: my best offer for him (not a fleece), shown only when I pick him
+const inPool = new Set(fleecePool.map(f => f.take));
+for (const f of bestOffer.values()) {
+  if (inPool.has(f.take) || offered.has(tradeKey(f.d.t, f.give, [f.take]))) continue;
+  fleecePool.push({ ...f, extra: true, alt: true, texts: pitches(f, true).texts, strict: false });
 }
 
 // --- Bench check: does each bench player earn his spot? Needed = he'd start this week or in one of the next
@@ -794,7 +805,8 @@ const benchCheck = baseRoster.filter(p => p.slot === 'Bench').map(p => {
 // "?" on questions; casual slang (bro, deadass, tho, cuz, hella, kinda, rn, lmao, wtf); joins thoughts with "and"/"but"
 // instead of new sentences; an occasional 😭 or 😢; hedges like "I'm pretty sure" / "I'm not saying it's bad but".
 const VOICE = `short and casual, first letter capitalized, no period at the end of a message, "?" on questions. Slang I use: bro, deadass, tho, cuz, hella, kinda, rn, lmao, wtf (not every message). I join thoughts with "and" or "but" instead of new sentences, sometimes hedge ("I'm pretty sure", "I'm not saying it's bad but"), and rarely add 😭 or 😢. No "lmk", no "fair", nothing that sounds formal. Real examples of mine: "Bro deadass", "I haven't looked into it tho", "I gotta do my college stuff this week", "Lightroom is not the best but it's really good and it's used because it's good for editing", "Yeah Freiermuth is a no go. What would you want with Diggs for Jefferson?"`;
-function pitches(f) {
+// plain: always return something (a bare "X for Y?" when there's no true selling point)
+function pitches(f, plain) {
   const { give, take, d } = f, g = give[0], two = give.length > 1;
   const last = p => (p.pos === 'D/ST' ? p.name : p.name.replace(/ (Jr\.|Sr\.|II|III|IV|V)$/, '').split(' ').slice(-1)[0]);
   const posName = pos => POS_NAME[pos].toLowerCase(), both = give.map(last).join(' and '), sum = give.reduce((s, p) => s + (p.avg ?? 0), 0);
@@ -809,10 +821,11 @@ function pitches(f) {
   if (take.bye > week && take.bye <= week + 2) facts.push([1, `${last(take)} has his bye week ${take.bye} btw`]);
   const reason = myDepth.short.includes(take.pos) ? `I'm thin at ${posName(take.pos)} rn and need one` : myDepth.extra.some(([pos]) => give.some(p => p.pos === pos)) ? `I got more ${posName(g.pos)}s than I can start` : '';
   const strength = facts.reduce((s, [k]) => s + k, 0) + (hurt ? 2 : 0) + (reason ? 1 : 0);
-  if (strength < 2 || !facts.length) return null; // 4+ passes the normal check; 2+ only the looser one
-  const top = facts.sort((a, b) => b[0] - a[0]).slice(0, 2).map(([, t]) => t);
   const cap = t => t[0].toUpperCase() + t.slice(1), say = (...parts) => parts.filter(Boolean).map(cap).join(' ');
-  const T = last(take), [s1] = top, all = top.join(' and ');
+  const T = last(take);
+  if (strength < 2 || !facts.length) return plain ? { texts: [say(`would you do ${both} for ${T}?`), say(`${both} for ${T}?`)], strength } : null; // 4+ passes the normal check; 2+ only the looser one
+  const top = facts.sort((a, b) => b[0] - a[0]).slice(0, 2).map(([, t]) => t);
+  const [s1] = top, all = top.join(' and ');
   const out = [
     say(`would you do ${both} for ${T}?`, all),
     reason ? say(`${reason}, would you do ${both} for ${T}?`, s1) : say(`yo would you do ${both} for ${T}?`, s1),
@@ -1723,11 +1736,11 @@ ${poolMore}
 </section>
 
 <section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Only trades with a believable, true pitch show up.</p>
-<div class="tp-chips" id="tp-players" hidden><div class="tag" style="width:100%">Only show trades for (pick any):</div>${[...new Map(fleecePool.map(f => [f.take.id, f])).values()].map(f => `<label data-team="${f.d.t.id}"><input type="checkbox" value="${f.take.id}">${esc(f.take.name)} <small>${f.take.pos}</small></label>`).join('')}</div>
-<div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
+<div class="tp-chips" id="tp-players" hidden><div class="tag" style="width:100%">Only show trades for (pick any):</div>${(tradesOpen ? teams : []).filter(t => t !== me).flatMap(t => t.roster.filter(tradeable).sort((a, b) => rate(b) - rate(a)).map(p => `<label data-team="${t.id}"><input type="checkbox" value="${p.id}">${esc(p.name)} <small>${p.pos}</small></label>`)).join('')}</div>
+<div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">+${n(f.mine)} a week for you${f.alt ? ', not a fleece' : ''}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
-  <p class="why">Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, they lose about ${n(-f.theirs)} a week.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
+  <p class="why">${f.alt ? 'No clear fleece for this player, so this is your best offer for him. ' : ''}Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, ${f.theirs < -0.2 ? `they lose about ${n(-f.theirs)} a week` : f.theirs > 0.2 ? `it helps them too, about ${n(f.theirs)} a week` : 'it comes out about even for them'}.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
   <div class="group">Text to send</div><p class="pitch">${esc(f.texts[0])}</p>
   <div class="tools2"><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-copy="${esc(f.texts[0])}">Copy text</button>${f.texts.length > 1 ? `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-versions="${esc(JSON.stringify(f.texts))}">Another version</button>` : ''}</div>
   <button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it (copies the facts, opens Claude)</button>
@@ -2224,7 +2237,7 @@ function addHim(p) {
   const teamSel = document.getElementById('tp-team'), loose = document.getElementById('tp-loose'), chips = document.getElementById('tp-players');
   const chosen = () => [...chips.querySelectorAll('input:checked')].map(i => i.value);
   const lists = [...document.querySelectorAll('.pool-list')].map(el => {
-    const l = { el, step: +el.dataset.step, start: 0, count: +el.dataset.step, bar: el.nextElementSibling };
+    const l = { el, step: +el.dataset.step, start: 0, count: +el.dataset.step, bar: el.nextElementSibling, emptyText: el.querySelector('.pool-empty').textContent };
     l.bar.querySelector('[data-more]').onclick = () => { l.count += l.step; draw(); };
     l.bar.querySelector('[data-next]').onclick = () => { l.start += l.count; l.count = l.step; draw(); };
     return l;
@@ -2234,7 +2247,10 @@ function addHim(p) {
       const cards = [...l.el.children].filter(c => c.dataset.team), picked = chosen();
       // fleece cards: picked players only; with none picked, the extra cards stay hidden
       const forPlayer = c => !c.dataset.take || (picked.length ? picked.includes(c.dataset.take) : c.dataset.extra !== '1');
-      const ok = cards.filter(c => (!teamSel.value || c.dataset.team === teamSel.value) && (loose.checked || c.dataset.strict === '1') && forPlayer(c));
+      // a picked player shows every offer for him, so the looser check doesn't apply there
+      const isFleece = l.el.querySelector('[data-take]');
+      const ok = cards.filter(c => (!teamSel.value || c.dataset.team === teamSel.value) && (loose.checked || c.dataset.strict === '1' || (isFleece && picked.length)) && forPlayer(c));
+      if (isFleece) l.el.querySelector('.pool-empty').textContent = picked.length ? 'No trade for ' + (picked.length > 1 ? 'these players' : 'this player') + ' helps you and still looks fair to them.' : l.emptyText;
       if (l.start >= ok.length) l.start = 0; // "New batch" past the end starts over
       cards.forEach(c => { c.hidden = true; });
       ok.slice(l.start, l.start + l.count).forEach(c => { c.hidden = false; });
