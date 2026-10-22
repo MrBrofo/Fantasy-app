@@ -1579,9 +1579,7 @@ table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}ta
 .tools2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.tools2 .btn{margin:0;background:var(--chip);color:var(--fg)}
 .chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}
 .pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
-.pick .pic{width:34px;height:34px}
-.tp-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.tp-chips label{font-size:14px;padding:7px 12px;border-radius:999px;background:var(--chip);color:var(--fg);cursor:pointer}.tp-chips label[hidden]{display:none}.tp-chips small{color:var(--muted)}.tp-chips input{position:absolute;opacity:0;pointer-events:none}.tp-chips label:has(input:checked){background:var(--accent);color:var(--onaccent)}.tp-chips label:has(input:checked) small{color:var(--onaccent)}.tp-chips label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
-#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
+.pick .pic{width:34px;height:34px}#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
 #fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 .sheet-body{overscroll-behavior:contain}
@@ -1736,7 +1734,7 @@ ${poolMore}
 </section>
 
 <section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Only trades with a believable, true pitch show up.</p>
-<div class="tp-chips" id="tp-players" hidden><div class="tag" style="width:100%">Only show trades for (pick any):</div>${(tradesOpen ? teams : []).filter(t => t !== me).flatMap(t => t.roster.filter(tradeable).sort((a, b) => rate(b) - rate(a)).map(p => `<label data-team="${t.id}"><input type="checkbox" value="${p.id}">${esc(p.name)} <small>${p.pos}</small></label>`)).join('')}</div>
+<select id="tp-player" class="sel" aria-label="Player to get" hidden><option value="">Any player</option>${(tradesOpen ? teams : []).filter(t => t !== me).flatMap(t => t.roster.filter(tradeable).sort((a, b) => rate(b) - rate(a)).map(p => `<option value="${p.id}" data-team="${t.id}">${esc(p.name)} (${p.pos})</option>`)).join('')}</select>
 <div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">+${n(f.mine)} a week for you${f.alt ? ', not a fleece' : ''}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
@@ -2234,8 +2232,10 @@ function addHim(p) {
 // Trade ideas and fleece finder: pick a team (then players on it to fleece), loosen the check, show more or a new batch.
 // Every candidate is already on the page; this only picks which cards show.
 {
-  const teamSel = document.getElementById('tp-team'), loose = document.getElementById('tp-loose'), chips = document.getElementById('tp-players');
-  const chosen = () => [...chips.querySelectorAll('input:checked')].map(i => i.value);
+  const teamSel = document.getElementById('tp-team'), loose = document.getElementById('tp-loose'), playerSel = document.getElementById('tp-player');
+  // iPhone ignores hidden <option>s, so the list is rebuilt for each team
+  const allPlayers = playerSel ? [...playerSel.options].slice(1) : [];
+  const chosen = () => (playerSel.value ? [playerSel.value] : []);
   const lists = [...document.querySelectorAll('.pool-list')].map(el => {
     const l = { el, step: +el.dataset.step, start: 0, count: +el.dataset.step, bar: el.nextElementSibling, emptyText: el.querySelector('.pool-empty').textContent };
     l.bar.querySelector('[data-more]').onclick = () => { l.count += l.step; draw(); };
@@ -2262,12 +2262,13 @@ function addHim(p) {
   }
   const reset = () => { lists.forEach(l => { l.start = 0; l.count = l.step; }); draw(); };
   const pickTeam = () => {
-    let any = false;
-    chips.querySelectorAll('label').forEach(c => { c.querySelector('input').checked = false; c.hidden = c.dataset.team !== teamSel.value; any ||= !c.hidden; });
-    chips.hidden = !any;
+    const mine = allPlayers.filter(o => o.dataset.team === teamSel.value);
+    playerSel.replaceChildren(playerSel.options[0], ...mine);
+    playerSel.value = '';
+    playerSel.hidden = !mine.length;
     reset();
   };
-  if (teamSel) { teamSel.onchange = pickTeam; loose.onchange = reset; chips.onchange = reset; draw(); }
+  if (teamSel) { teamSel.onchange = pickTeam; loose.onchange = reset; playerSel.onchange = reset; draw(); }
 }
 // One section at a time: the bottom bar picks which tab shows, like pages in an app
 const navLinks = [...document.querySelectorAll('nav a')];
