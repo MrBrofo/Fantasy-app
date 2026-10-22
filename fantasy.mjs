@@ -744,12 +744,14 @@ fleece.sort((a, b) => b.mine - b.theirs - (a.mine - a.theirs));
 const tradeKey = (them, give, take) => `${them.id}|${give.map(p => p.id).sort()}|${take.map(p => p.id).sort()}`;
 const offered = new Set(pending.filter(m => m.kind === 'trade').map(m => tradeKey(m.them, m.give, m.take)));
 const fleecePool = [];
+// Past that, "extra" cards (up to 3 per player I'd get) only show when I pick that player on the page.
 for (const f of fleece) {
   if (offered.has(tradeKey(f.d.t, f.give, [f.take]))) continue;
-  const same = fleecePool.filter(x => x.d === f.d);
-  if (same.length >= 3 || same.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)))) continue;
+  const same = fleecePool.filter(x => x.d === f.d), main = same.filter(x => !x.extra);
+  const extra = main.length >= 3 || main.some(x => x.take === f.take || x.give.some(g => f.give.includes(g)));
+  if (extra && same.filter(x => x.take === f.take).length >= 3) continue;
   const pitch = pitches(f);
-  if (pitch) fleecePool.push({ ...f, texts: pitch.texts, strict: f.strict && pitch.strength >= 4 });
+  if (pitch) fleecePool.push({ ...f, extra, texts: pitch.texts, strict: f.strict && pitch.strength >= 4 });
 }
 
 // --- Bench check: does each bench player earn his spot? Needed = he'd start this week or in one of the next
@@ -1565,6 +1567,7 @@ table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}ta
 .chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}
 .pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
 .pick .pic{width:34px;height:34px}
+.tp-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.tp-chips label{font-size:14px;padding:7px 12px;border-radius:999px;background:var(--chip);color:var(--fg);cursor:pointer}.tp-chips label[hidden]{display:none}.tp-chips small{color:var(--muted)}.tp-chips input{position:absolute;opacity:0;pointer-events:none}.tp-chips label:has(input:checked){background:var(--accent);color:var(--onaccent)}.tp-chips label:has(input:checked) small{color:var(--onaccent)}.tp-chips label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
 #fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
 #fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
@@ -1720,7 +1723,8 @@ ${poolMore}
 </section>
 
 <section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Only trades with a believable, true pitch show up.</p>
-<div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
+<div class="tp-chips" id="tp-players" hidden><div class="tag" style="width:100%">Only show trades for (pick any):</div>${[...new Map(fleecePool.map(f => [f.take.id, f])).values()].map(f => `<label data-team="${f.d.t.id}"><input type="checkbox" value="${f.take.id}">${esc(f.take.name)} <small>${f.take.pos}</small></label>`).join('')}</div>
+<div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">+${n(f.mine)} a week for you</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="why">Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, they lose about ${n(-f.theirs)} a week.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
@@ -2214,10 +2218,11 @@ function addHim(p) {
     if (t) tradeFor(+t.dataset.trade);
   });
 })();
-// Trade ideas and fleece finder: pick a team, loosen the check, show more or a new batch.
+// Trade ideas and fleece finder: pick a team (then players on it to fleece), loosen the check, show more or a new batch.
 // Every candidate is already on the page; this only picks which cards show.
 {
-  const teamSel = document.getElementById('tp-team'), loose = document.getElementById('tp-loose');
+  const teamSel = document.getElementById('tp-team'), loose = document.getElementById('tp-loose'), chips = document.getElementById('tp-players');
+  const chosen = () => [...chips.querySelectorAll('input:checked')].map(i => i.value);
   const lists = [...document.querySelectorAll('.pool-list')].map(el => {
     const l = { el, step: +el.dataset.step, start: 0, count: +el.dataset.step, bar: el.nextElementSibling };
     l.bar.querySelector('[data-more]').onclick = () => { l.count += l.step; draw(); };
@@ -2226,8 +2231,10 @@ function addHim(p) {
   });
   function draw() {
     for (const l of lists) {
-      const cards = [...l.el.children].filter(c => c.dataset.team);
-      const ok = cards.filter(c => (!teamSel.value || c.dataset.team === teamSel.value) && (loose.checked || c.dataset.strict === '1'));
+      const cards = [...l.el.children].filter(c => c.dataset.team), picked = chosen();
+      // fleece cards: picked players only; with none picked, the extra cards stay hidden
+      const forPlayer = c => !c.dataset.take || (picked.length ? picked.includes(c.dataset.take) : c.dataset.extra !== '1');
+      const ok = cards.filter(c => (!teamSel.value || c.dataset.team === teamSel.value) && (loose.checked || c.dataset.strict === '1') && forPlayer(c));
       if (l.start >= ok.length) l.start = 0; // "New batch" past the end starts over
       cards.forEach(c => { c.hidden = true; });
       ok.slice(l.start, l.start + l.count).forEach(c => { c.hidden = false; });
@@ -2238,7 +2245,13 @@ function addHim(p) {
     }
   }
   const reset = () => { lists.forEach(l => { l.start = 0; l.count = l.step; }); draw(); };
-  if (teamSel) { teamSel.onchange = reset; loose.onchange = reset; draw(); }
+  const pickTeam = () => {
+    let any = false;
+    chips.querySelectorAll('label').forEach(c => { c.querySelector('input').checked = false; c.hidden = c.dataset.team !== teamSel.value; any ||= !c.hidden; });
+    chips.hidden = !any;
+    reset();
+  };
+  if (teamSel) { teamSel.onchange = pickTeam; loose.onchange = reset; chips.onchange = reset; draw(); }
 }
 // One section at a time: the bottom bar picks which tab shows, like pages in an app
 const navLinks = [...document.querySelectorAll('nav a')];
