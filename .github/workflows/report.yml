@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: https://mrbrofo.github.io/Fantasy-app/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,11 +57,29 @@ jobs:
           key: alerts-${{ github.run_id }}-${{ github.run_attempt }}
 
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - id: upload
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site
-      - id: deploy
-        uses: actions/deploy-pages@v4
+      # deploy-pages names every deploy after the commit, and ~4 hours of deploys under one name makes Pages
+      # keep serving an old build (froze 2026-10-22 and 10-23, fixed each time only by a new commit).
+      # Deploying through the API gives each run its own name.
+      - name: Deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.upload.outputs.artifact_id }}
+        run: |
+          oidc=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+          status=$(jq -n --arg a "$ARTIFACT" --arg v "$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --arg o "$oidc" \
+            '{artifact_id: ($a | tonumber), pages_build_version: $v, oidc_token: $o}' \
+            | gh api -X POST "repos/$GITHUB_REPOSITORY/pages/deployments" --input - -q .status_url)
+          for i in $(seq 60); do
+            s=$(gh api "$status" -q .status); echo "$s"
+            [ "$s" = succeed ] && exit 0
+            case "$s" in *failed|*lost|*cancelled|*error) exit 1;; esac
+            sleep 5
+          done
+          exit 1
 
       # GitHub pauses scheduled runs after 60 days without a commit.
       - name: Keep schedule alive
