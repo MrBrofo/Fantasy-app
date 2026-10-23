@@ -8,10 +8,9 @@ on:
     branches: [main] # rebuild right away when the code changes
 
 permissions:
-  contents: write # only for the keep-alive commit
+  contents: write # for the 3-hourly refresh commit
   pages: write
   id-token: write
-  actions: read # the Pages API reads the uploaded build
 
 concurrency:
   group: pages
@@ -58,44 +57,20 @@ jobs:
           key: alerts-${{ github.run_id }}-${{ github.run_attempt }}
 
       - uses: actions/configure-pages@v5
-      - id: upload
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: site
-      # deploy-pages names every deploy after the commit, and ~4 hours of deploys under one name makes Pages
-      # keep serving an old build (froze 2026-10-22 and 10-23, fixed each time only by a new commit).
-      # Deploying through the API gives each run its own name.
-      - name: Deploy
-        id: api
-        continue-on-error: true # falls back to deploy-pages below
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT: ${{ steps.upload.outputs.artifact_id }}
-        run: |
-          fail() { echo "::error::$1"; exit 1; }
-          [ -n "$ARTIFACT" ] || fail "no artifact id"
-          oidc=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value) \
-            || fail "no OIDC token"
-          res=$(jq -n --arg a "$ARTIFACT" --arg v "$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --arg o "$oidc" \
-            '{artifact_id: ($a | tonumber), pages_build_version: $v, oidc_token: $o}' \
-            | gh api -X POST "repos/$GITHUB_REPOSITORY/pages/deployments" --input - 2>&1) || fail "create: $res"
-          id=$(echo "$res" | jq -r .id)
-          for i in $(seq 60); do
-            s=$(gh api "repos/$GITHUB_REPOSITORY/pages/deployments/$id" -q .status 2>&1); echo "$s"
-            [ "$s" = succeed ] && exit 0
-            case "$s" in *failed*|*lost*|*cancelled*|*error*|*Not\ Found*) fail "status: $s";; esac
-            sleep 5
-          done
-          fail "timed out"
-      - if: steps.api.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v4
 
-      # GitHub pauses scheduled runs after 60 days without a commit.
-      - name: Keep schedule alive
+      # After ~4 hours of deploys from the same commit, Pages keeps serving an old build (froze 2026-10-22 and
+      # 10-23; only a new commit fixed it). So start a new commit every 3 hours; cron-job.org's next run builds
+      # from it (a push made with this token doesn't start a run by itself). Also keeps the schedule from
+      # pausing, which GitHub does after 60 days without a commit.
+      - name: New commit every 3 hours
         run: |
-          if [ $(( $(date +%s) - $(git log -1 --format=%ct) )) -gt 3888000 ]; then
+          if [ $(( $(date +%s) - $(git log -1 --format=%ct) )) -gt 10800 ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit --allow-empty -m "keep schedule alive"
-            git push
+            git commit --allow-empty -m "Refresh: new commit so Pages keeps taking new builds"
+            git push || true # another run may have pushed one first
           fi
