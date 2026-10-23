@@ -69,17 +69,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.upload.outputs.artifact_id }}
         run: |
-          oidc=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
-          status=$(jq -n --arg a "$ARTIFACT" --arg v "$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --arg o "$oidc" \
+          fail() { echo "::error::$1"; exit 1; }
+          [ -n "$ARTIFACT" ] || fail "no artifact id"
+          oidc=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value) \
+            || fail "no OIDC token"
+          res=$(jq -n --arg a "$ARTIFACT" --arg v "$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --arg o "$oidc" \
             '{artifact_id: ($a | tonumber), pages_build_version: $v, oidc_token: $o}' \
-            | gh api -X POST "repos/$GITHUB_REPOSITORY/pages/deployments" --input - -q .status_url)
+            | gh api -X POST "repos/$GITHUB_REPOSITORY/pages/deployments" --input - 2>&1) || fail "create: $res"
+          id=$(echo "$res" | jq -r .id)
           for i in $(seq 60); do
-            s=$(gh api "$status" -q .status); echo "$s"
+            s=$(gh api "repos/$GITHUB_REPOSITORY/pages/deployments/$id" -q .status 2>&1); echo "$s"
             [ "$s" = succeed ] && exit 0
-            case "$s" in *failed|*lost|*cancelled|*error) exit 1;; esac
+            case "$s" in *failed*|*lost*|*cancelled*|*error*|*Not\ Found*) fail "status: $s";; esac
             sleep 5
           done
-          exit 1
+          fail "timed out"
 
       # GitHub pauses scheduled runs after 60 days without a commit.
       - name: Keep schedule alive
