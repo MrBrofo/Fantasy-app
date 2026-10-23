@@ -10,6 +10,7 @@ on:
 
 permissions:
   actions: write # to cancel runs
+  contents: write # for the redeploy commit
 
 jobs:
   unstick:
@@ -26,3 +27,24 @@ jobs:
             echo "Cancelling run $id (queued since before $cutoff)"
             gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel" || true
           done
+
+      # Second way it freezes: runs keep "succeeding" but Pages keeps showing an old build (after a few hours
+      # of deploys of the same commit; 2026-10-22, twice). A new commit unsticks it, and cron-job.org's next
+      # run builds from it (a push made with this token doesn't start a run by itself).
+      - uses: actions/checkout@v4
+      - name: Redeploy if the site froze while runs succeed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          now=$(date +%s)
+          built=$(curl -s "https://mrbrofo.github.io/Fantasy-app/?t=$now" | grep -o 'name="built" content="[0-9]*' | grep -o '[0-9]*$' || true)
+          last=$(gh run list -R "$GITHUB_REPOSITORY" -w report.yml -s success -L 1 --json updatedAt -q '.[0].updatedAt')
+          [ -n "$built" ] && [ -n "$last" ] || { echo "couldn't read the site or the runs"; exit 0; }
+          echo "site built $(( (now - built / 1000) / 60 )) min ago, last good run $(( (now - $(date -d "$last" +%s)) / 60 )) min ago"
+          if [ $(( now - built / 1000 )) -gt 1200 ] && [ $(( now - $(date -d "$last" +%s) )) -lt 600 ] \
+             && [ $(( now - $(git log -1 --format=%ct) )) -gt 1800 ]; then # one try per 30 min
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Redeploy: GitHub Pages stopped showing new builds"
+            git push
+          fi
