@@ -1,0 +1,28 @@
+name: Watchdog
+
+# A report run that never gets a computer sits "queued" and holds the publish slot, so every newer
+# run waits behind it and the site stops updating (happened twice on 2026-10-22, for 45 min and 2 hours).
+# This runs on its own, outside that slot, and cancels any report run stuck waiting 10+ minutes.
+on:
+  schedule:
+    - cron: "*/5 * * * *" # GitHub often runs these late, so a jam can still last ~10-20 minutes
+  workflow_dispatch:
+
+permissions:
+  actions: write # to cancel runs
+
+jobs:
+  unstick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Cancel report runs stuck waiting to start
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cutoff=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh run list -R "$GITHUB_REPOSITORY" -w report.yml -s queued -L 50 --json databaseId,createdAt \
+            -q ".[] | select(.createdAt < \"$cutoff\") | .databaseId" | while read -r id; do
+            echo "Cancelling run $id (queued since before $cutoff)"
+            gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel" || true
+          done

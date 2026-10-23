@@ -1864,17 +1864,34 @@ function showAgo() {
   const left = Math.ceil((nextAt - Date.now()) / 1000);
   const next = left > 0 ? 'next in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : 'next any moment';
   ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next;
+  if (ready) { if (!busy()) load(); return; }
   // once the countdown is over, look for the new version every 15s instead of every minute
   if (left <= 0 && !document.hidden && Date.now() - lastCheck > 15000) { lastCheck = Date.now(); check(false); }
 }
+// A new version reloads the page, so it only loads by itself when that can't interrupt anything:
+// not within a minute of a tap or scroll, not with a player open, and never once a menu or box was changed
+// (that would wipe the pick). Otherwise the Refresh button turns into "New update, tap to load".
+let touched = 0, changed = false, ready = false;
+['pointerdown', 'keydown', 'scroll'].forEach(t => addEventListener(t, () => { touched = Date.now(); }, { capture: true, passive: true }));
+document.addEventListener('change', () => { changed = true; }, true);
+const busy = () => changed || Date.now() - touched < 60000 || !document.getElementById('sheet').hidden;
+function load() {
+  try { sessionStorage.setItem('scroll', scrollY); } catch {}
+  location.replace(fresh() + location.hash);
+}
 async function check(clicked) {
+  if (clicked && ready) return load();
   if (clicked) btn.classList.add('spin');
   try {
     const html = await (await fetch(fresh(), { cache: 'no-store' })).text();
     const next = +(html.match(/name="built" content="(\\d+)"/) || [])[1];
     if (next > built) {
-      try { sessionStorage.setItem('scroll', scrollY); } catch {}
-      return location.replace(fresh() + location.hash);
+      if (clicked || !busy()) return load();
+      ready = true;
+      btn.innerHTML = '<span>&#8635;</span> New update, tap to load';
+      btn.style.cssText = 'background:var(--accent);color:var(--onaccent)';
+      btn.classList.remove('spin');
+      return;
     }
     if (clicked) btn.innerHTML = '&#10003; Up to date';
   } catch { if (clicked) btn.textContent = 'Offline'; }
@@ -1884,7 +1901,8 @@ async function check(clicked) {
 try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.removeItem('scroll'); scrollTo(0, +y); } } catch {}
 btn.onclick = () => check(true);
 showAgo(); setInterval(showAgo, 1000);
-document.addEventListener('visibilitychange', () => !document.hidden && check(false));
+// coming back to the app counts as idle (you weren't mid-tap), unless a menu or box was changed
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { touched = 0; ready ? !busy() && load() : check(false); } });
 
 // Player sheet: tap any player to see, in plain English, if he plays, when, how he's been doing, and news.
 const P = JSON.parse(document.getElementById('pdata').textContent);
