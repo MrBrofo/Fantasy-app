@@ -1418,19 +1418,14 @@ const profiles = new Map(teams.filter(t => t !== me).map(t => [t, profile(t)]));
 const MODE_WORD = { safe: 'safe in the playoffs', bubble: 'on the playoff bubble', longshot: 'long shot for the playoffs', out: 'out of the race' };
 const situation = t => { const pr = profiles.get(t); return pr ? `${pr.record}, ${ordinal(pr.rank)}${pr.mode ? `, ${MODE_WORD[pr.mode]}` : ''}${pr.hurt.length ? `, missing ${pr.hurt.map(p => p.name).join(' and ')}` : ''}` : ''; };
 
-// To-do and alerts for the new finds (every one pushes, as Brody asked)
+// To-do and alerts for the new finds. Only big ones push (Brody's pick): a fill-in who'd start for me.
+// Breakouts and buy low / sell high stay in the app.
 const firstLater = todo.findIndex(x => x[0] !== 'urgent');
 todo.splice(firstLater < 0 ? todo.length : firstLater, 0, ...fillIns.filter(f => f.p && f.gain >= 0.5).map(f => ['urgent', `Grab ${f.name} before anyone else`,
   `${f.starter.name} ${f.word}, so ${f.name} should take over as ${f.team}'s ${POS_NAME[f.pos].toLowerCase()}${f.long ? ' for a while' : ' this week'}. Nobody in your league has him yet and the experts' numbers haven't caught up. Starting work like that would add about ${n(f.gain)} a week to your lineup.${f.drop ? ` To make room, drop ${f.drop.name}.` : ''}`,
   addMove(f.p, f.drop), [f.p, f.starter]]));
-for (const f of fillIns) alerts.push([`fillin:${week}:${f.k}`, `Grab ${f.name} (${f.team} ${f.pos})`,
-  `${f.starter.name} ${f.word}, so ${f.name} should start${f.long ? ' for a while' : ' this week'}. Nobody in your league has him.${f.gain >= 0.5 ? ` He'd add about ${n(f.gain)} a week to your lineup.` : ' Mostly worth it to keep him from a rival.'} ${f.p?.wa ? 'On waivers: put in a claim.' : 'Add him before someone else does.'}`, f.gain >= 0.5]);
-for (const b of breakouts) alerts.push([`breakout:${week}:${b.k}`, `Breakout watch: ${b.name} (${b.team} ${b.pos})`,
-  `On the field for ${b.u.snapNow}% of plays his last 3 games (was ${b.u.snapBefore}%), ${b.u.shareNow}% of his team's ${b.u.kind} (was ${b.u.shareBefore}%). Nobody in your league has him.`, false]);
-for (const x of sellHigh.slice(0, 2)) alerts.push([`sell:${week}:${x.p.id}`, `Sell high: ${x.p.name}`,
-  `${x.l.td} touchdowns on ${x.l.rz} goal-line chances lately (about ${n(x.l.exp)} is normal), so his ${n(x.l.got)} a game should drop toward ${n(x.l.worth)}. Good time to trade him. Details under Trades.`, false]);
-for (const x of buyLow.slice(0, 2)) alerts.push([`buy:${week}:${x.p.id}`, `Buy low: ${x.p.name} (${x.t.name})`,
-  `${x.l.td} touchdown${x.l.td === 1 ? '' : 's'} on ${x.l.rz} goal-line chances lately (about ${n(x.l.exp)} is normal), so his ${n(x.l.got)} a game should rise toward ${n(x.l.worth)}. His manager sees the low number. Details under Trades.`, false]);
+for (const f of fillIns.filter(f => f.gain >= 0.5)) alerts.push([`fillin:${week}:${f.k}`, `Grab ${f.name} (${f.team} ${f.pos})`,
+  `${f.starter.name} ${f.word}, so ${f.name} should start${f.long ? ' for a while' : ' this week'}. Nobody in your league has him. He'd add about ${n(f.gain)} a week to your lineup. ${f.p?.wa ? 'On waivers: put in a claim.' : 'Add him before someone else does.'}`, true]);
 // a free player with no ESPN row yet still gets a card: name, team and position
 const freeCard = (p, name, team, pos) => (p ? player(p) : `<div class="player"><span class="pic" data-i="${initials(name)}"></span><div class="who"><div class="name">${esc(name)}</div><div class="meta"><span class="pos pos-${pos}">${pos}</span> ${esc(team)}</div></div></div>`);
 
