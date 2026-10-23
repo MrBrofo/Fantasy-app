@@ -11,6 +11,7 @@ permissions:
   contents: write # only for the keep-alive commit
   pages: write
   id-token: write
+  actions: read # the Pages API reads the uploaded build
 
 concurrency:
   group: pages
@@ -65,6 +66,8 @@ jobs:
       # keep serving an old build (froze 2026-10-22 and 10-23, fixed each time only by a new commit).
       # Deploying through the API gives each run its own name.
       - name: Deploy
+        id: api
+        continue-on-error: true # falls back to deploy-pages below
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.upload.outputs.artifact_id }}
@@ -84,6 +87,8 @@ jobs:
             sleep 5
           done
           fail "timed out"
+      - if: steps.api.outcome == 'failure'
+        uses: actions/deploy-pages@v4
 
       # GitHub pauses scheduled runs after 60 days without a commit.
       - name: Keep schedule alive
