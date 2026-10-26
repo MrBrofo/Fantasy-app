@@ -1837,6 +1837,9 @@ a.news b{display:block;font-size:14px;font-weight:600}a.news small{color:var(--m
 .arrow::after{content:"";flex:1;height:1px;background:var(--line)}
 .gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
 .why{color:var(--muted);font-size:14px;margin:10px 0 0}
+.gl{text-decoration:underline dotted var(--accent);text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:help}
+#gloss{position:fixed;z-index:30;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;max-width:min(320px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#gloss b{color:var(--accent);display:block;margin-bottom:2px}
 .pline{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
 .plays{margin-top:10px}.plays summary{cursor:pointer;font-size:14px}.plays p{margin:6px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
 .plays small{font-family:var(--num);color:var(--fg);margin-right:4px}.plays .td{color:var(--accent)}
@@ -2327,7 +2330,95 @@ document.getElementById('signout')?.addEventListener('click', () => {
   location.reload();
 });
 __MOVEJS__
+// Football words get a dotted underline; tap one to see what it means. Words inside buttons, links and player rows
+// are left alone (tapping those already does something). Longer phrases come first so they win over their parts.
+const GLOSS = [
+  ['touchdown luck', 'Touchdown luck', 'Scoring more or fewer touchdowns than his chances near the goal line would predict. It usually evens out over time.'],
+  ['half PPR|PPR', 'Half PPR', 'Points per reception. This league is half PPR: a player gets half a point for every catch, on top of his yards and touchdowns.'],
+  ['target share', 'Target share', 'The share of his team\\'s passes that were thrown to him. The steadiest sign of how big a receiver\\'s role is.'],
+  ['snap share', 'Snap share', 'The share of his team\\'s plays he was on the field for.'],
+  ['depth chart', 'Depth chart', 'The team\\'s list of who starts at each position and who backs them up.'],
+  ['injured reserve|IR spot|IR', 'Injured reserve (IR)', 'A roster spot for a hurt player. He doesn\\'t use up one of your bench spots while he\\'s there.'],
+  ['bye weeks?|byes?', 'Bye week', 'Each NFL team gets one week off during the season. Its players score 0 that week.'],
+  ['waiver wire|waivers?', 'Waivers', 'Players nobody owns. Right after a player is dropped (and once games start each week) he\\'s on waivers: managers put in claims, and the team with the best spot in the claim order gets him.'],
+  ['free agents?', 'Free agent', 'A player nobody in your league owns who isn\\'t on waivers, so anyone can add him right away.'],
+  ['FLEX', 'FLEX', 'A lineup spot that can hold a running back, a receiver or a tight end.'],
+  ['D/ST', 'D/ST', 'Defense and special teams: a whole NFL team\\'s defense in one fantasy spot. Scores from sacks, turnovers, touchdowns and holding the other team to few points.'],
+  ['quarterbacks?|QBs?', 'Quarterback (QB)', 'The player who throws the ball. Scores from passing yards, touchdown passes and his own runs; loses points for interceptions.'],
+  ['running backs?|RBs?', 'Running back (RB)', 'The player who mostly runs with the ball (carries). Also catches short passes.'],
+  ['wide receivers?|receivers?|WRs?', 'Wide receiver (WR)', 'A player whose job is catching passes. Scores from catches, receiving yards and touchdowns.'],
+  ['tight ends?|TEs?', 'Tight end (TE)', 'Part blocker, part receiver. Usually catches fewer passes than a wide receiver.'],
+  ['kickers?', 'Kicker (K)', 'Kicks field goals and extra points.'],
+  ['nickel cornerback|cornerbacks?', 'Cornerback', 'A defender who covers the other team\\'s receivers. The nickel cornerback is an extra one used against passing plays.'],
+  ['linebackers?', 'Linebacker', 'A defender who plays a few steps behind the line. Stops runs and covers short passes.'],
+  ['defensive ends?|defensive tackles?|nose tackle', 'Defensive line', 'The defenders right at the line. They chase the quarterback and stop runs.'],
+  ['offensive line', 'Offensive line', 'The 5 blockers who protect the quarterback and open holes for runs.'],
+  ['projections?|projected', 'Projection', 'How many points the experts expect him to score.'],
+  ['targets?', 'Target', 'A pass thrown to him, caught or not. More targets means more chances to score.'],
+  ['carries', 'Carries', 'Times he was handed the ball to run with it.'],
+  ['snaps?', 'Snap', 'One play. A player\\'s snaps are the plays he was on the field for.'],
+  ['red[- ]zone|goal line', 'Red zone', 'The last 20 yards before the end zone, where most touchdowns happen.'],
+  ['touchdowns?|TDs?', 'Touchdown (TD)', 'Getting the ball into the end zone. Worth 6 points to the player who scores it; a QB gets points for throwing one too.'],
+  ['field goals?', 'Field goal', 'A kick through the goal posts, worth 3 points in the game. Kickers get more fantasy points for longer ones.'],
+  ['extra points?', 'Extra point', 'The short kick after a touchdown, worth 1 point.'],
+  ['2-point(?: passes| conversions?)?', '2-point conversion', 'Instead of the extra point kick, the team tries one play from the 2-yard line for 2 points.'],
+  ['interceptions?', 'Interception', 'A defender catches a pass meant for the offense. Costs the QB points and gives the defense points.'],
+  ['fumbles?', 'Fumble', 'The ball carrier drops the ball. If the defense grabs it, it\\'s a turnover.'],
+  ['sacks?|sacked', 'Sack', 'The quarterback gets tackled behind the line before he can throw. Points for the defense.'],
+  ['turnovers?', 'Turnover', 'The defense takes the ball away with an interception or a fumble recovery.'],
+  ['safety|safeties', 'Safety', 'Two meanings: a deep defender who guards against long passes, or a 2-point score when the offense is tackled in its own end zone.'],
+  ['punts?', 'Punt', 'When the offense gives up and kicks the ball away on 4th down.'],
+  ['questionable', 'Questionable', 'An injury tag: he might not play. About 7 in 10 questionable players end up playing.'],
+  ['doubtful', 'Doubtful', 'An injury tag: he probably won\\'t play. Fewer than 1 in 10 do.'],
+  ['inactive', 'Inactive', 'Not playing in that game. Teams name their inactive players about 90 minutes before kickoff.'],
+  ['limited in practice|DNP|practiced fully', 'Practice report', 'How much a hurt player practiced that week: fully, limited, or DNP (did not practice). Practicing more means he\\'s more likely to play.'],
+  ['kickoffs?', 'Kickoff', 'The start of the game.'],
+  ['team totals?|over/under|Vegas', 'Vegas lines', 'Betting lines on the game. The team total is how many points the bookmakers expect a team to score: a high one is good for its players.'],
+  ['spreads?', 'Spread', 'How many points the favorite is expected to win by.'],
+  ['matchups?', 'Matchup', 'Who he plays against. An easy matchup is a defense that gives up lots of points to his position.'],
+  ['blowouts?|blown out', 'Blowout', 'A game one team wins by a lot. The losing team often gives up on running, and starters on both teams can sit late.'],
+  ['use up the clock|run out the clock', 'Running out the clock', 'A team that\\'s ahead runs the ball a lot, since the clock keeps running after a run and the game ends sooner.'],
+  ['breakouts?', 'Breakout', 'A player whose role suddenly gets much bigger: more plays, more targets or carries.'],
+  ['buy low', 'Buy low', 'Trade for a player while his points are down for reasons that won\\'t last.'],
+  ['sell high', 'Sell high', 'Trade a player away while his points are up for reasons that won\\'t last.'],
+  ['rest of season', 'Rest of season', 'From this week to the end of the regular season.'],
+  ['playoff bubble|playoffs?', 'Playoffs', 'The top teams at the end of the regular season play for the title. On the bubble means right on the edge of getting in.'],
+  ['ceiling', 'Ceiling', 'How many points he could score in a great week.'],
+  ['floor', 'Floor', 'How few points he could score in a bad week.'],
+  ['game script', 'Game script', 'How the score shapes the game plan: teams far ahead run more, teams far behind pass more.'],
+];
+const GLOSS_RE = new RegExp('\\\\b(' + GLOSS.map(g => g[0]).join('|') + ')\\\\b', 'gi'), GLOSS_ONE = GLOSS.map(g => [new RegExp('^(?:' + g[0] + ')$', 'i'), g[1], g[2]]);
+const GLOSS_SKIP = 'a,button,summary,input,textarea,select,script,style,label,nav,svg,.gl,[data-pid],#gloss,#sheet .sheet-x';
+function gloss(root) {
+  const found = [], w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: t => (GLOSS_RE.lastIndex = 0, GLOSS_RE.test(t.data) && !t.parentElement?.closest(GLOSS_SKIP) ? 1 : 2) });
+  for (let t; (t = w.nextNode());) found.push(t);
+  for (const t of found) {
+    const f = document.createDocumentFragment(); let i = 0;
+    t.data.replace(GLOSS_RE, (m, _, at) => { f.append(t.data.slice(i, at)); const s = document.createElement('span'); s.className = 'gl'; s.tabIndex = 0; s.setAttribute('role', 'button'); s.textContent = m; f.append(s); i = at + m.length; return m; });
+    f.append(t.data.slice(i)); t.replaceWith(f);
+  }
+}
+const tip = Object.assign(document.createElement('div'), { id: 'gloss', hidden: true });
+tip.setAttribute('role', 'tooltip'); document.body.append(tip);
+function showGloss(el) {
+  const g = GLOSS_ONE.find(([re]) => re.test(el.textContent)); if (!g) return;
+  tip.innerHTML = '<b>' + e(g[1]) + '</b>' + e(g[2]); tip.hidden = false;
+  const r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.max(16, Math.min(r.left, innerWidth - tw - 16)) + 'px';
+  tip.style.top = (r.bottom + 8 + th > innerHeight - 16 ? Math.max(16, r.top - th - 8) : r.bottom + 8) + 'px';
+}
+document.addEventListener('click', ev => { const g = ev.target.closest('.gl'); if (g) showGloss(g); else if (!ev.target.closest('#gloss')) tip.hidden = true; });
+addEventListener('scroll', () => (tip.hidden = true), true);
+gloss(document.body);
+const glossWatch = new MutationObserver(ms => {
+  glossWatch.disconnect();
+  for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && !n.closest('.gl,#gloss')) gloss(n);
+  glossWatch.observe(document.body, { childList: true, subtree: true });
+});
+glossWatch.observe(document.body, { childList: true, subtree: true });
 document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') tip.hidden = true;
+  if (ev.key === 'Enter' && ev.target.classList?.contains('gl')) showGloss(ev.target);
   if (ev.key === 'Escape') closeSheet();
   if (ev.key === 'Enter' && ev.target.dataset?.pid) openSheet(ev.target.dataset.pid);
 });
