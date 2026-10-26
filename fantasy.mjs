@@ -2876,4 +2876,3 @@ fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
 console.log(`Wrote site/index.html for ${me.name}, week ${week}. vs ${opp?.name}: ${n(myProj)}-${n(oppProj)}`);
 todo.forEach(([l, t]) => console.log(`[${l}] ${t}`));
 if (unlabeled.size) console.log(`::notice::ESPN stats with points but no label: ${[...unlabeled].join(", ")}`);
-console.log(`::notice::Week ${week} points so far: ${me.roster.map(p => `${p.name} ${n(p.now)} [${p.nowLine.join("; ")}]`).join(" | ")}`);
