@@ -982,7 +982,7 @@ const srcLine = p => {
     `${nextProj.has(p.id) ? `; next week ESPN ${n(nextProj.get(p.id))}` : ''}; rest of season per game ${esc(ros || 'none')}` +
     `${p.status ? `; status: ${esc(statusWords(p))} (ESPN)${odds ? `, ${odds.pct}% chance to play (${esc(odds.why)})` : ''}` : ''}.`;
 };
-const info = ps => (ps.length ? `<details class="info"><summary aria-label="Where this comes from" title="Where this comes from"><svg viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="2.3" r="1"/><rect x="4.2" y="4" width="1.6" height="4.6" rx=".5"/></svg></summary><div>${ps.map(p => `<p>${srcLine(p)}</p>`).join('')}<p>${SOURCES_NOTE}</p></div></details>` : '');
+const info = ps => (ps.length ? `<details class="info"><summary aria-label="Where this comes from" title="Where this comes from">i</summary><div>${ps.map(p => `<p>${srcLine(p)}</p>`).join('')}<p>${SOURCES_NOTE}</p></div></details>` : '');
 // --- Roster moves the site can send to ESPN (through worker.js). Slot ids are ESPN's lineupSlotId.
 const SLOT_ID = Object.fromEntries(Object.entries(SLOT).map(([id, name]) => [name, +id]));
 // The best lineup as ESPN moves. Starters already in a spot that fits them stay put (so a player
@@ -1809,7 +1809,7 @@ section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-
 .todo{display:flex;gap:12px;align-items:flex-start}
 .todo .lvl{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
-details.info{margin-top:6px}details.info>summary{list-style:none;position:relative;display:inline-grid;place-items:center;place-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);cursor:pointer}details.info>summary svg{width:10px;height:10px;fill:currentColor;display:block}
+details.info{margin-top:6px}details.info>summary{list-style:none;position:relative;display:inline-grid;place-items:center;place-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font:italic 700 13px/1 Georgia,serif;cursor:pointer}
 details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px tap area around the small (i) */details.info>summary::-webkit-details-marker{display:none}details.info[open]>summary{color:var(--fg);border-color:var(--fg);margin-bottom:0}
 /* the generic details "+" marker hung under the (i) circle */details.info>summary::after,details.info[open]>summary::after{content:none}details.info>div{margin-top:6px;font-size:13px;color:var(--muted)}details.info p{margin:0 0 4px}
 .tpics{display:flex;gap:6px;margin:6px 0 2px}.tpics .pic{width:36px;height:36px}.tpics [data-pid]{cursor:pointer}
