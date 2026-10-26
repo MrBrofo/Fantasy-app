@@ -1614,7 +1614,7 @@ const shown = new Map();
 const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
-  ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}${chip(p)}${extra}</div></div>`; };
+  ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
 // (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
 const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
@@ -1631,7 +1631,11 @@ for (const kind of ['week', 'season']) for (const pos of Object.keys(FA_SLOT)) {
   tierCut[`${kind}|${pos}`] = [vals[Math.max(0, Math.floor(k / 3) - 1)] ?? Infinity, vals[Math.max(0, Math.floor(k) - 1)] ?? 0];
 }
 const tier = (v, p, kind) => { const c = p && tierCut[`${kind}|${p.pos}`]; return !c || !(v > 0) ? null : v >= c[0] ? ['good', 'top starter'] : v >= c[1] ? ['avg', 'starter'] : ['weak', 'below starter']; };
-const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"><b${t ? ` class="t-${t[0]}"` : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
+// data-big: what the page needs to redo this week's number when the live feed brings a new ESPN projection or injury
+// status (the same average of ESPN, Rotowire and CBS, times wind, times his chance to play). Not for bye weeks or games underway.
+const liveBig = p => (p.bye === week || locked(p) || p.slot === 'IR' ? ''
+  : ` data-big="${p.id}" data-st="${p.status || 'ACTIVE'}" data-espn="${p.espn ?? ''}" data-roto="${p.roto ?? ''}" data-cbs="${p.cbs ?? ''}" data-wind="${p.wind ?? 1}" data-odds="${playOdds(p, p.inj?.type)?.pct ?? 100}" data-v="${n(weekValue(p))}"${p.slot !== 'Bench' && me.roster.includes(p) ? ' data-start' : ''}`);
+const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"><b${t ? ` class="t-${t[0]}"` : ''}${kind === 'week' && p ? liveBig(p) : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
 
 // Playoff seeding, ESPN's way: with divisions, each division winner takes a top seed; the rest go by record.
 // Ties: total points (ESPN's default tiebreak). A tie game counts as half a win.
@@ -2301,12 +2305,19 @@ async function liveTick() {
     liveOn = Object.values(d.games).some(g => g[0] === 'in');
     liveNote = liveOn ? ' \u00b7 live scores on' : ' \u00b7 live scores ready'; showAgo();
     for (const el of document.querySelectorAll('[data-live]')) {
-      const pts = d.players[el.dataset.live], g = d.games[el.dataset.pro];
+      const x = d.players[el.dataset.live], pts = Array.isArray(x) ? x[0] : x, g = d.games[el.dataset.pro];
       if (pts == null || !g || (g[0] === 'pre' && !pts)) continue;
       el.hidden = false;
       el.innerHTML = '<b>' + f(pts) + ' pts</b> ' + (g[0] === 'post' ? 'final' : 'so far &middot; ' + e(g[1]));
       const p = P[el.dataset.live];
       if (p) p.now = { line: [], why: [], ...p.now, pts: f(pts), game: g[0] === 'post' ? 'Game over' : g[0] === 'in' ? 'Playing now (' + g[1] + ')' : g[1] };
+    }
+    const delta = liveProj(d, f);
+    // before games start: my expected total moves with my starters' new numbers (once they start, ESPN's live guess takes over)
+    if (delta && $('lv-a') && !(d.me?.pts > 0 || d.opp?.pts > 0)) {
+      const a = +$('lv-a').textContent + delta, b = +$('lv-b').textContent, top = Math.max(a, b, 1);
+      $('lv-a').textContent = f(a); $('lv-abar').style.width = Math.min(100, a / top * 100) + '%'; $('lv-bbar').style.width = Math.min(100, b / top * 100) + '%';
+      $('lv-verdict').innerHTML = a >= b ? '<b style="color:var(--good)">Expected to win</b> by ' + f(a - b) + ' points.' : '<b style="color:var(--bad)">Expected to lose</b> by ' + f(b - a) + ' points.';
     }
     if (!d.me || !d.opp || !$('lv-wp') || !(d.me.pts > 0 || d.opp.pts > 0)) return;
     $('lv-badge').hidden = false;
@@ -2326,7 +2337,43 @@ async function liveTick() {
     }
   } catch {}
 }
-(function liveLoop() { liveTick().finally(() => setTimeout(liveLoop, liveOn ? 30000 : 300000)); })();
+// Injury news from the same feed: when ESPN changes a player's status or projection, his tag and this week's number
+// change right away (Out = 0; cleared = full number). Returns how much my starters' total moved. The rest of the
+// advice (lineup, to-do list) catches up with the next build, a few minutes later.
+const LIVE_TAG = { QUESTIONABLE: ['Might not play', 'warn'], DOUBTFUL: ['Probably won\\'t play', 'bad'], OUT: ['Out this week', 'bad'], INJURY_RESERVE: ['Hurt long-term (IR)', 'bad'], SUSPENSION: ['Suspended', 'bad'], DAY_TO_DAY: ['Day to day', 'warn'] };
+function liveProj(d, f) {
+  let delta = 0;
+  for (const [id, x] of Object.entries(d.players)) {
+    if (!Array.isArray(x)) continue;
+    const st = x[1] || 'ACTIVE', espn = x[2];
+    for (const c of document.querySelectorAll('[data-chip="' + id + '"]')) {
+      if (st === (c.dataset.now || c.dataset.st)) continue;
+      c.dataset.now = st;
+      c.innerHTML = st === c.dataset.st ? c.dataset.orig ?? c.innerHTML : (c.dataset.orig ??= c.innerHTML, LIVE_TAG[st] ? '<span class="chip ' + LIVE_TAG[st][1] + '">' + LIVE_TAG[st][0] + ' (just now)</span>' : '<span class="chip good">Cleared to play (just now)</span>');
+    }
+    const p = P[id];
+    if (p && st !== (p.liveSt || '')) {
+      p.liveSt = st;
+      if (['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(st)) p.play = ['no', 'No. ESPN just listed him as ' + LIVE_TAG[st][0].toLowerCase() + '.'];
+      else if (st === 'ACTIVE' && p.play?.[0] !== 'yes') p.play = ['yes', 'Yes. ESPN just cleared him to play.'];
+    }
+    for (const b of document.querySelectorAll('[data-big="' + id + '"]')) {
+      const ds = b.dataset, num = s => (s === '' || s == null ? null : +s), r1 = v => (v == null ? null : Math.round(v * 10) / 10);
+      const newEspn = espn == null ? r1(num(ds.espn)) : r1(espn);
+      if (st === (ds.lst || ds.st) && newEspn === (ds.lespn != null ? num(ds.lespn) : r1(num(ds.espn)))) continue;
+      ds.lst = st; ds.lespn = newEspn ?? '';
+      // the other sources only count when ESPN has a number (same rule as the build)
+      const srcs = newEspn == null ? [] : [newEspn, num(ds.roto), num(ds.cbs)].filter(v => v != null);
+      const pct = ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(st) ? 0 : st === 'DOUBTFUL' ? 7 : st === 'QUESTIONABLE' ? (ds.st === 'QUESTIONABLE' ? +ds.odds : 71) : 100;
+      const v = srcs.length ? srcs.reduce((t, s) => t + s, 0) / srcs.length * +ds.wind * pct / 100 : 0;
+      if ('start' in ds) delta += v - +(ds.cur ?? ds.v);
+      ds.cur = v; b.textContent = f(v);
+    }
+  }
+  return delta;
+}
+// every 30s while the page is open (a phone in your pocket doesn't ask); the Worker shares one ESPN answer per 20s
+(function liveLoop() { liveTick().finally(() => setTimeout(liveLoop, 30000)); })();
 try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.removeItem('scroll'); scrollTo(0, +y); } } catch {}
 btn.onclick = () => check(true);
 showAgo(); setInterval(showAgo, 1000);

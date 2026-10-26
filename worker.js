@@ -11,7 +11,7 @@ const hex = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', 
 let cached = { at: 0, week: 0, body: null }; // one answer shared for 20s, so several open phones don't each hit ESPN
 
 // Live scores for my matchup: each team's points so far, ESPN's live final projection and win chance, every
-// rostered player's points so far, and each NFL game's state and clock (keyed by ESPN pro team id).
+// rostered player's points so far, injury status and projection, and each NFL game's state and clock (keyed by ESPN pro team id).
 async function live(req, env) {
   if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
   const week = Number(new URL(req.url).searchParams.get('week'));
@@ -28,7 +28,11 @@ async function live(req, env) {
   const side = s => s && { pts: s.totalPointsLive ?? s.totalPoints ?? 0, proj: s.totalProjectedPointsLive ?? null, win: s.winProbability ?? null };
   const [mine, theirs] = !g ? [] : g.home.teamId === team ? [g.home, g.away] : [g.away, g.home];
   const players = {};
-  for (const s of [mine, theirs]) for (const e of s?.rosterForCurrentScoringPeriod?.entries ?? []) players[e.playerId] = e.playerPoolEntry?.appliedStatTotal ?? 0;
+  // players[id] = [points so far, ESPN injury status, ESPN's projection for this week]
+  for (const s of [mine, theirs]) for (const e of s?.rosterForCurrentScoringPeriod?.entries ?? []) {
+    const p = e.playerPoolEntry?.player, proj = p?.stats?.find(x => x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === week)?.appliedTotal;
+    players[e.playerId] = [e.playerPoolEntry?.appliedStatTotal ?? 0, p?.injuryStatus ?? 'ACTIVE', proj ?? null];
+  }
   const games = {};
   for (const ev of sb.ok ? (await sb.json()).events ?? [] : []) for (const c of ev.competitions[0].competitors) games[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail];
   cached = { at: Date.now(), week, body: { at: Date.now(), me: side(mine), opp: side(theirs), players, games } };
