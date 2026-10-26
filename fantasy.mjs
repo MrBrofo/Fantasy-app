@@ -1128,8 +1128,12 @@ if (week > 1) try {
     return j >= 0 ? [p, shouldOut.splice(j, 1)[0]] : null;
   }).filter(Boolean),
     site: advised ? ps.filter(p => advised.includes(p.id)).reduce((t, p) => t + p.pts, 0) : null };
+  // for "why you won or lost" (worked out further down, once whyWeek's data is ready): each starter's ESPN player entry
+  recap.started = started.map(p => ({ ...p, pl: mine.rosterForMatchupPeriod.entries.find(e => e.playerId === p.id).playerPoolEntry.player }));
 } catch (err) { console.warn('Recap skipped:', err.message); }
 memo.advice = { ...Object.fromEntries(Object.entries(memo.advice ?? {}).filter(([wk]) => +wk >= week - 2)), [week]: [...bestIds] };
+// the site's expected points for my players this week, so next week's recap can say who beat or missed it
+memo.exp = { ...Object.fromEntries(Object.entries(memo.exp ?? {}).filter(([wk]) => +wk >= week - 1)), [week]: Object.fromEntries(me.roster.filter(p => p.proj != null).map(p => [p.id, +p.proj.toFixed(1)])) };
 if (process.env.PUSH_SUB) alerts.push([`hello:${JSON.parse(process.env.PUSH_SUB).endpoint.slice(-16)}`, 'Alerts are on', 'You\'ll get a notification when something on your team needs you.', true]);
 // A questionable player's status gets decided about 90 minutes before kickoff
 const decided = new Set();
@@ -1351,6 +1355,18 @@ const gameStatusOf = new Map(rosSaved.gameStatus ?? []);
 // (teams name who's out about 90 minutes before kickoff, and ESPN drops the tag then).
 memo.doubt = { [week]: { ...memo.doubt?.[week] } };
 for (const list of usualBy.values()) for (const st of list) { const s = statusOf(st.k); if (s.maybe || s.espnSays === 'DOUBTFUL') memo.doubt[week][st.k] = 1; }
+// Why you won or lost last week: starters who scored far below or above what was expected, each with its reasons.
+// Expected = the site's own number saved that week; ESPN's projection from the box score before that was saved.
+if (recap?.started) try {
+  const swing = recap.started.map(({ id, name, pos, pts, pl }) => {
+    const exp = memo.exp?.[recap.wk]?.[id] ?? pl.stats?.find(s => s.seasonId === SEASON && s.statSourceId === 1 && s.statSplitTypeId === 1 && s.scoringPeriodId === recap.wk)?.appliedTotal;
+    const who = me.roster.find(x => x.id === id) ?? { name, pos, team: proAbbr[pl.proTeamId], avg: pl.stats?.find(s => s.seasonId === SEASON && s.statSourceId === 0 && s.statSplitTypeId === 0)?.appliedAverage ?? 0 };
+    return exp == null ? null : { name, pos, pts, exp, why: whyWeek(who, recap.wk, pts, exp).filter(t => !t.startsWith('Expected about')) };
+  }).filter(Boolean);
+  recap.expTotal = swing.length === recap.started.length ? swing.reduce((t, x) => t + x.exp, 0) : null;
+  recap.down = swing.filter(x => x.exp - x.pts >= 4).sort((a, b) => (a.pts - a.exp) - (b.pts - b.exp)).slice(0, 3);
+  recap.up = swing.filter(x => x.pts - x.exp >= 5).sort((a, b) => (b.pts - b.exp) - (a.pts - a.exp)).slice(0, 2);
+} catch (err) { console.warn('Recap reasons skipped:', err.message); }
 // His share of his team's snaps, targets (WR/TE) or carries (RB), and red-zone chances: last 3 games he played vs
 // the games before. Usage is the stickiest thing in fantasy (target share most of all), so a role change matters.
 // ponytail: a player traded mid-season only counts games under his current team.
@@ -2100,7 +2116,10 @@ ${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last wee
   <div><b style="color:var(--${recap.opp == null || recap.got >= recap.opp ? 'good' : 'bad'})">${n(recap.got)}</b><small>you scored${recap.opp != null ? ` (${esc(recap.oppName)}: ${n(recap.opp)})` : ''}</small></div>
   <div><b>${n(recap.best)}</b><small>best lineup you could have set (in hindsight)</small></div></div>
   <p class="why">${recap.best - recap.got < 1 ? 'You started the best possible lineup.' : `${n(recap.best - recap.got)} points sat on your bench${recap.opp != null && recap.got < recap.opp && recap.best > recap.opp ? ', enough to have won' : ''}.${recap.misses.length ? ` Biggest miss: ${recap.misses.map(([i, o]) => `starting ${esc(o.name)} (${n(o.pts)}) over ${esc(i.name)} (${n(i.pts)})`).join('; ')}.` : ''}`}
-  ${recap.site != null ? ` The site's suggested lineup scored ${n(recap.site)}.` : ''} Hindsight is easy: a good start can still have a bad week.</p></div>` : ''}
+  ${recap.site != null ? ` The site's suggested lineup scored ${n(recap.site)}.` : ''} Hindsight is easy: a good start can still have a bad week.</p>
+  ${recap.down?.length || recap.up?.length ? `<div class="group" style="margin:14px 0 4px">Why you ${recap.opp == null ? 'scored what you did' : recap.got >= recap.opp ? `won by ${n(recap.got - recap.opp)}` : `lost by ${n(recap.opp - recap.got)}`}</div>
+  ${recap.expTotal != null ? `<p class="why" style="margin:0">Your starters were expected to score about ${n(recap.expTotal)} and scored ${n(recap.got)}.</p>` : ''}
+  ${[[recap.down, 'Let you down'], [recap.up, 'Came through']].filter(([l]) => l?.length).map(([l, label]) => `<p class="why" style="margin:10px 0 0"><b>${label}:</b></p>${l.map(x => `<p class="why" style="margin:6px 0 0"><b>${esc(x.name)}</b> (${esc(x.pos)}): ${n(x.pts)}, expected about ${n(x.exp)}. ${esc(x.why.join(' '))}</p>`).join('')}`).join('')}` : ''}</div>` : ''}
 <div class="card"><div class="group" style="margin:0 0 10px">Luck check</div><div class="stat">
   <div><b>${me.w}-${me.l}</b><small>your real record</small></div>
   <div><b>${apW} of ${apW + apL}</b><small>matchups you'd have won if you played every team every week</small></div>
