@@ -12,6 +12,8 @@ const ESPN_S2 = process.env.ESPN_S2 || cfg.espn_s2;
 const SWID = process.env.SWID || cfg.SWID;
 const LEAGUE_ID = process.env.LEAGUE_ID || cfg.leagueId;
 const MOVE_URL = 'https://fantasy-workers.drbrodydisick.workers.dev/';
+// fingerprint of this code: a new build with the same code only changed data, so the open page can swap it in place
+const CODE = crypto.createHash('sha256').update(fs.readFileSync(fileURLToPath(import.meta.url))).digest('hex').slice(0, 12);
 const SEASON = Number(process.env.SEASON || cfg.season || new Date().getFullYear());
 if (!ESPN_S2 || !SWID || !LEAGUE_ID) throw new Error('Missing ESPN_S2, SWID or LEAGUE_ID');
 
@@ -1614,8 +1616,9 @@ const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="play
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
   ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}${chip(p)}${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
-const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g || (g.state === 'pre' && !p.now) ? ''
-  : `<div class="nowpts"><b>${n(p.now ?? 0)} pts</b> ${g.state === 'post' ? 'final' : `so far &middot; ${esc(g.text)}`}</div>`; };
+// (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
+const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
+  : `><b>${n(p.now ?? 0)} pts</b> ${g.state === 'post' ? 'final' : `so far &middot; ${esc(g.text)}`}`}</div>`; };
 // a tappable player name in running text
 const lnk = p => { shown.set(p.id, p); return `<span data-pid="${p.id}" class="lnk">${esc(p.name)}</span>`; };
 // Top starter / starter / below starter: compared with what the league's starters at that position score. "Starter" = would
@@ -1748,7 +1751,7 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Fantasy"><meta name="theme-color" content="#0b0d10"><meta name="color-scheme" content="dark">
-<meta name="built" content="${Date.now()}">
+<meta name="built" content="${Date.now()}"><meta name="code" content="${CODE}">
 <link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="manifest" href="manifest.json">
 <title>${esc(me.name)}</title>
@@ -1853,6 +1856,7 @@ a.news b{display:block;font-size:14px;font-weight:600}a.news small{color:var(--m
 .arrow::after{content:"";flex:1;height:1px;background:var(--line)}
 .gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
 .why{color:var(--muted);font-size:14px;margin:10px 0 0}
+[hidden]{display:none!important}
 .gl{text-decoration:underline dotted var(--accent);text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:help}
 #gloss{position:fixed;z-index:30;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;max-width:min(320px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(0,0,0,.5)}
 #gloss b{color:var(--accent);display:block;margin-bottom:2px}
@@ -1923,13 +1927,14 @@ ${opp ? (() => {
   const live = isLive;
   const [a, b] = live ? [mySide.totalProjectedPointsLive, oppSide.totalProjectedPointsLive] : [myProj, oppProj];
   const wp = winPct;
-  return `<div class="match"><h2>This week vs ${esc(opp.name)}${live ? '<span class="live">LIVE</span>' : ''}</h2>
-  <div class="wp"><b style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
-  ${live ? `<div class="tag" style="margin-bottom:8px">Score right now: <b>${n(mySide.totalPointsLive)}</b> to <b>${n(oppSide.totalPointsLive)}</b>. Final guess below.</div>` : ''}
+  // lv-*: the parts the page updates with live scores from the Worker
+  return `<div class="match"><h2>This week vs ${esc(opp.name)}<span class="live" id="lv-badge"${live ? '' : ' hidden'}>LIVE</span></h2>
+  <div class="wp"><b id="lv-wp" style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag" id="lv-wpsrc">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
+  <div class="tag" id="lv-score" style="margin-bottom:8px"${live ? '' : ' hidden'}>Score right now: <b>${n(mySide.totalPointsLive ?? 0)}</b> to <b>${n(oppSide.totalPointsLive ?? 0)}</b>. Final guess below.</div>
   <div class="vs">
-  <div class="t">You</div><div class="p">${n(a)}</div><div class="bar"><i style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
-  <div class="t">${esc(opp.name)}</div><div class="p">${n(b)}</div><div class="bar"><i style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
-</div><div class="verdict">${a >= b ? `<b style="color:var(--good)">You're expected to win</b> by ${n((Math.round(a * 10) - Math.round(b * 10)) / 10)} points.` : `<b style="color:var(--bad)">You're expected to lose</b> by ${n((Math.round(b * 10) - Math.round(a * 10)) / 10)} points.`}
+  <div class="t">You</div><div class="p" id="lv-a">${n(a)}</div><div class="bar"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
+  <div class="t">${esc(opp.name)}</div><div class="p" id="lv-b">${n(b)}</div><div class="bar"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
+</div><div class="verdict" id="lv-verdict">${a >= b ? `<b style="color:var(--good)">You're expected to win</b> by ${n((Math.round(a * 10) - Math.round(b * 10)) / 10)} points.` : `<b style="color:var(--bad)">You're expected to lose</b> by ${n((Math.round(b * 10) - Math.round(a * 10)) / 10)} points.`}
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
 <details class="board" style="margin-top:10px"><summary><b>Whole league this week:</b> you're ${ordinal(myBoardRank)} of ${board.length}, ${below.length} team${below.length === 1 ? '' : 's'} below you. <b style="color:${lowestPct >= 15 ? 'var(--bad)' : lowestPct >= 5 ? 'var(--warn)' : 'var(--good)'}">${lowestPct < 1 ? 'Under 1' : lowestPct}% chance</b> you're the lowest score.</summary>
@@ -2185,16 +2190,18 @@ ${process.env.SITE_PASSWORD ? '<button type="button" id="signout" class="btn" st
 <script type="application/json" id="rdata">__RDATA__</script>
 <script type="application/json" id="snap">${JSON.stringify(snap).replace(/</g, '\\u003c')}</script>
 <script type="application/json" id="facts">${JSON.stringify(facts).replace(/</g, '\\u003c')}</script>
+<script type="application/json" id="live">${JSON.stringify(MOVE_URL && process.env.SITE_PASSWORD ? { url: MOVE_URL, token: crypto.createHash('sha256').update(process.env.SITE_PASSWORD + ':live').digest('hex'), week } : null)}</script>
 <script>
 // Load the newest build when there is one: on the button, every minute, and when you come back to the app.
 // GitHub caches pages ~10 min, so a timestamped URL is used to skip the cache.
-const built = +document.querySelector('meta[name=built]').content;
+let built = +document.querySelector('meta[name=built]').content;
+const code = document.querySelector('meta[name=code]')?.content;
 const btn = document.getElementById('refresh'), ago = document.getElementById('ago');
 const fresh = () => location.pathname + '?t=' + Date.now();
 // cron-job.org starts a run on each 3-minute mark and it takes ~90s to publish, so the next
 // update is the mark after the one that made this build, plus 90s. GitHub can run late; then "any moment".
 const STEP = 3 * 60000, PUBLISH = 90000;
-const nextAt = Math.floor(built / STEP) * STEP + STEP + PUBLISH;
+const nextAt = () => Math.floor(built / STEP) * STEP + STEP + PUBLISH;
 let lastCheck = 0;
 function showAgo() {
   const m = Math.round((Date.now() - built) / 60000);
@@ -2202,23 +2209,56 @@ function showAgo() {
   const stale = document.getElementById('stale');
   stale.hidden = m < 30;
   if (m >= 30) document.getElementById('staletext').textContent = 'The last update was ' + (m < 120 ? m + ' minutes' : Math.round(m / 60) + ' hours') + ' ago, so the advice below may be out of date. If it lasts, ask Claude to check the GitHub runs (the ESPN login may have expired).';
-  const left = Math.ceil((nextAt - Date.now()) / 1000);
+  const left = Math.ceil((nextAt() - Date.now()) / 1000);
   const next = left > 0 ? 'next in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : 'next any moment';
   ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next;
   if (ready) { if (!busy()) load(); return; }
   // once the countdown is over, look for the new version every 15s instead of every minute
   if (left <= 0 && !document.hidden && Date.now() - lastCheck > 15000) { lastCheck = Date.now(); check(false); }
 }
-// A new version reloads the page, so it only loads by itself when that can't interrupt anything:
-// not within a minute of a tap or scroll, not with a player open, and never once a menu or box was changed
-// (that would wipe the pick). Otherwise the Refresh button turns into "New update, tap to load".
-let touched = 0, changed = false, ready = false;
+// A new build usually only changes numbers and text (same code). Then it's decrypted with the key this phone saved
+// and merged into the open page (idiomorph), so nothing reloads and you keep your place. Left as they are: an open
+// player, the menu bar, the trade and compare tools, and any section where you changed a menu or box.
+// A build with new code still needs a reload: that happens by itself only when it can't interrupt anything
+// (not within a minute of a tap or scroll, not with a player open, never once a menu or box was changed);
+// otherwise the Refresh button turns into "New update, tap to load".
+let touched = 0, changed = false, ready = false, morphLib = null;
+const changedIn = new Set();
 ['pointerdown', 'keydown', 'scroll'].forEach(t => addEventListener(t, () => { touched = Date.now(); }, { capture: true, passive: true }));
-document.addEventListener('change', () => { changed = true; }, true);
+document.addEventListener('change', ev => { changed = true; const s = ev.target.closest('section'); if (s) changedIn.add(s); }, true);
 const busy = () => changed || Date.now() - touched < 60000 || !document.getElementById('sheet').hidden;
 function load() {
   try { sessionStorage.setItem('scroll', scrollY); } catch {}
   location.replace(fresh() + location.hash);
+}
+const KEEP = /^(sheet|gloss|fab|changes|tc-|cmp-|tp-)/;
+const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || changedIn.has(n));
+async function swap(html) {
+  let page = html;
+  const m = html.match(/salt: '([^']+)', iv: '([^']+)', data: '([^']+)'/);
+  if (m) {
+    let saved = null;
+    try { saved = localStorage.getItem('siteKey'); } catch {}
+    if (!saved) return false;
+    const b = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey('raw', b(saved), 'AES-GCM', false, ['decrypt']);
+    page = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b(m[2]) }, key, b(m[3])));
+  }
+  const doc = new DOMParser().parseFromString(page, 'text/html');
+  morphLib ??= new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/idiomorph@0.7.3/dist/idiomorph.min.js'; s.onload = ok; s.onerror = no; document.head.append(s); });
+  await morphLib;
+  // (the body's HTML, not the body element: given an element, idiomorph nests a second <body> inside this one)
+  Idiomorph.morph(document.body, doc.body.innerHTML, { morphStyle: 'innerHTML', callbacks: { beforeNodeMorphed: o => !keep(o), beforeNodeRemoved: o => !keep(o) } });
+  built = +doc.querySelector('meta[name=built]').content;
+  const np = JSON.parse(document.getElementById('pdata').textContent);
+  for (const k in P) delete P[k];
+  Object.assign(P, np);
+  if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
+  if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
+  if (!sheet.hidden && P[sheet.dataset.pid]) body.innerHTML = render(P[sheet.dataset.pid]);
+  gloss(document.body);
+  liveTick();
+  return true;
 }
 async function check(clicked) {
   if (clicked && ready) return load();
@@ -2227,6 +2267,14 @@ async function check(clicked) {
     const html = await (await fetch(fresh(), { cache: 'no-store' })).text();
     const next = +(html.match(/name="built" content="(\\d+)"/) || [])[1];
     if (next > built) {
+      const same = code && (html.match(/name="code" content="([0-9a-f]+)"/) || [])[1] === code;
+      // don't shift the page under a finger that's on it right now; the next check (15s) tries again
+      if (same && (clicked || Date.now() - touched > 3000) && await swap(html).catch(() => false)) {
+        btn.classList.remove('spin');
+        if (clicked) { btn.innerHTML = '&#10003; Updated'; setTimeout(() => (btn.innerHTML = '<span>&#8635;</span> Refresh'), 2500); }
+        return;
+      }
+      if (same && !clicked) return btn.classList.remove('spin');
       if (clicked || !busy()) return load();
       ready = true;
       btn.innerHTML = '<span>&#8635;</span> New update, tap to load';
@@ -2239,11 +2287,49 @@ async function check(clicked) {
   btn.classList.remove('spin');
   if (clicked) setTimeout(() => (btn.innerHTML = '<span>&#8635;</span> Refresh'), 2500);
 }
+// Live scores from the Cloudflare Worker: every 30s while a game is on, every 5 minutes otherwise. Points so far,
+// the score, win chance, ESPN's final guess and game clocks change in place.
+const LIVE = JSON.parse(document.getElementById('live')?.textContent || 'null');
+let liveOn = false;
+async function liveTick() {
+  if (!LIVE || document.hidden) return;
+  try {
+    const r = await fetch(LIVE.url + '?week=' + LIVE.week, { headers: { 'x-live': LIVE.token } });
+    if (!r.ok) return;
+    const d = await r.json(), $ = id => document.getElementById(id), f = v => (Math.round(v * 10) / 10).toFixed(1);
+    liveOn = Object.values(d.games).some(g => g[0] === 'in');
+    for (const el of document.querySelectorAll('[data-live]')) {
+      const pts = d.players[el.dataset.live], g = d.games[el.dataset.pro];
+      if (pts == null || !g || (g[0] === 'pre' && !pts)) continue;
+      el.hidden = false;
+      el.innerHTML = '<b>' + f(pts) + ' pts</b> ' + (g[0] === 'post' ? 'final' : 'so far &middot; ' + e(g[1]));
+      const p = P[el.dataset.live];
+      if (p) p.now = { line: [], why: [], ...p.now, pts: f(pts), game: g[0] === 'post' ? 'Game over' : g[0] === 'in' ? 'Playing now (' + g[1] + ')' : g[1] };
+    }
+    if (!d.me || !d.opp || !$('lv-wp') || !(d.me.pts > 0 || d.opp.pts > 0)) return;
+    $('lv-badge').hidden = false;
+    $('lv-score').hidden = false;
+    $('lv-score').innerHTML = 'Score right now: <b>' + f(d.me.pts) + '</b> to <b>' + f(d.opp.pts) + '</b>. Final guess below.';
+    if (d.me.win != null) {
+      const wp = Math.round(d.me.win * 100);
+      $('lv-wp').textContent = wp + '%';
+      $('lv-wp').style.color = wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)';
+      $('lv-wpsrc').textContent = '(ESPN live estimate)';
+    }
+    if (d.me.proj != null && d.opp.proj != null) {
+      const a = d.me.proj, b = d.opp.proj, top = Math.max(a, b, 1);
+      $('lv-a').textContent = f(a); $('lv-b').textContent = f(b);
+      $('lv-abar').style.width = Math.min(100, a / top * 100) + '%'; $('lv-bbar').style.width = Math.min(100, b / top * 100) + '%';
+      $('lv-verdict').innerHTML = a >= b ? '<b style="color:var(--good)">Expected to win</b> by ' + f(a - b) + ' points.' : '<b style="color:var(--bad)">Expected to lose</b> by ' + f(b - a) + ' points.';
+    }
+  } catch {}
+}
+(function liveLoop() { liveTick().finally(() => setTimeout(liveLoop, liveOn ? 30000 : 300000)); })();
 try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.removeItem('scroll'); scrollTo(0, +y); } } catch {}
 btn.onclick = () => check(true);
 showAgo(); setInterval(showAgo, 1000);
 // coming back to the app counts as idle (you weren't mid-tap), unless a menu or box was changed
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { touched = 0; ready ? !busy() && load() : check(false); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { touched = 0; ready ? !busy() && load() : check(false); liveTick(); } });
 
 // Player sheet: tap any player to see, in plain English, if he plays, when, how he's been doing, and news.
 const P = JSON.parse(document.getElementById('pdata').textContent);
@@ -2277,7 +2363,7 @@ function render(p) {
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
 let closeTimer;
-function openSheet(id) { const p = P[id]; if (!p) return; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function openSheet(id) { const p = P[id]; if (!p) return; sheet.dataset.pid = id; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
