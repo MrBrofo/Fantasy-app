@@ -238,11 +238,12 @@ function playOdds(p, type) {
   return { pct: PLAY_ODDS[kind][pr], why: `${PRACTICED[pr]}${kind === 'any' ? '' : ` (${kind} injury)`}, and players like that played ${PLAY_ODDS[kind][pr]}% of the time` };
 }
 // Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
-const vegas = {};
+const vegas = {}, gameNow = {}; // gameNow[team] = { state: 'pre' | 'in' | 'post', text: e.g. 'Q3 4:12' or 'Final' }
 try {
   const d = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&dates=${SEASON}`)).json();
   for (const ev of d.events ?? []) {
     const c = ev.competitions[0], o = c.odds?.[0];
+    for (const x of c.competitors) gameNow[TEAM(x.team.abbreviation)] = { state: ev.status?.type?.state, text: ev.status?.type?.shortDetail };
     if (!o?.overUnder || o.spread == null) continue;
     const home = c.competitors.find(x => x.homeAway === 'home'), away = c.competitors.find(x => x.homeAway === 'away');
     // spread is the home team's line: -3 means home is favored by 3
@@ -256,6 +257,41 @@ const split = v => v.length > 1 && Math.max(...v) - Math.min(...v) >= 5 && Math.
 
 // statSourceId 0 = actual, 1 = projected; statSplitTypeId 0 = season, 1 = one week.
 // Stats also include last season's totals, so filter by seasonId.
+// Why he scored what he did: ESPN's points per stat (appliedStats, this league's scoring) with the count behind it.
+// STAT_LABEL[id] = [label, stat id holding the count (null = no count)]. Ids from ESPN's ffl stat list.
+const STAT_LABEL = {
+  3: ['Passing yards', 3], 5: ['Passing yards', 3], 6: ['Passing yards', 3], 7: ['Passing yards', 3], 8: ['Passing yards', 3],
+  4: ['Passing touchdowns', 4], 19: ['2-point passes', 19], 20: ['Interceptions thrown', 20], 64: ['Times sacked', 64],
+  15: ['40+ yard TD pass bonus', null], 16: ['50+ yard TD pass bonus', null], 17: ['300+ passing yards bonus', null], 18: ['400+ passing yards bonus', null],
+  24: ['Rushing yards', 24], 27: ['Rushing yards', 24], 28: ['Rushing yards', 24], 29: ['Rushing yards', 24], 30: ['Rushing yards', 24],
+  25: ['Rushing touchdowns', 25], 26: ['2-point runs', 26], 35: ['40+ yard TD run bonus', null], 36: ['50+ yard TD run bonus', null], 37: ['100+ rushing yards bonus', null], 38: ['200+ rushing yards bonus', null],
+  42: ['Receiving yards', 42], 45: ['Receiving yards', 42], 46: ['Receiving yards', 42], 47: ['Receiving yards', 42], 48: ['Receiving yards', 42],
+  43: ['Receiving touchdowns', 43], 44: ['2-point catches', 44], 53: ['Catches', 53], 58: ['Targets', 58],
+  54: ['40+ yard TD catch bonus', null], 55: ['50+ yard TD catch bonus', null], 56: ['100+ receiving yards bonus', null], 57: ['200+ receiving yards bonus', null],
+  68: ['Fumbles', 68], 72: ['Fumbles lost', 72], 63: ['Fumble recovered for a TD', 63],
+  74: ['Field goals 50+ yards', 74], 77: ['Field goals 40-49 yards', 77], 80: ['Field goals under 40 yards', 80], 83: ['Field goals', 83],
+  198: ['Field goals 50-59 yards', 198], 201: ['Field goals 60+ yards', 201],
+  76: ['Missed field goals 50+ yards', 76], 79: ['Missed field goals 40-49 yards', 79], 82: ['Missed field goals under 40 yards', 82], 85: ['Missed field goals', 85],
+  200: ['Missed field goals 50-59 yards', 200], 203: ['Missed field goals 60+ yards', 203], 86: ['Extra points', 86], 88: ['Missed extra points', 88],
+  95: ['Interceptions', 95], 96: ['Fumbles recovered', 96], 97: ['Blocked kicks', 97], 98: ['Safeties', 98], 99: ['Sacks', 99], 106: ['Forced fumbles', 106],
+  93: ['Blocked kick returned for a TD', 93], 94: ['Defensive touchdowns', 94], 101: ['Kickoff return touchdowns', 101], 102: ['Punt return touchdowns', 102],
+  103: ['Interception return touchdowns', 103], 104: ['Fumble return touchdowns', 104], 105: ['Defense and special teams touchdowns', 105],
+  ...Object.fromEntries([89, 90, 91, 92, 121, 122, 123, 124, 125, 126].map(i => [i, ['Points allowed', 120]])),
+  ...Object.fromEntries([128, 129, 130, 131, 132, 133, 134, 135, 136].map(i => [i, ['Yards allowed', 127]])),
+};
+const unlabeled = new Set(); // stat ids with points but no label, reported in the run log so they can be named
+function scoring(s) {
+  const by = new Map();
+  for (const [id, pts] of Object.entries(s?.appliedStats ?? {})) {
+    if (!pts) continue;
+    if (!STAT_LABEL[id]) unlabeled.add(id);
+    const [label, from] = STAT_LABEL[id] ?? [`Other (ESPN stat ${id})`, null];
+    const x = by.get(label) ?? { pts: 0, count: from == null ? null : s.stats?.[from] ?? null };
+    x.pts += pts; by.set(label, x);
+  }
+  return [...by].sort((a, b) => Math.abs(b[1].pts) - Math.abs(a[1].pts))
+    .map(([label, x]) => `${label}${x.count == null ? '' : `: ${+x.count.toFixed(1)}`} (${x.pts > 0 ? '+' : ''}${+x.pts.toFixed(1)})`);
+}
 const stat = (p, src, split) => p.stats?.find(s => s.seasonId === SEASON && s.statSourceId === src && s.statSplitTypeId === split && (split === 0 || s.scoringPeriodId === week));
 
 // Wind at kickoff, outdoor games: about 15 mph is where passing and kicking start to suffer, 20+ much more
@@ -293,6 +329,7 @@ function row(p, ratings) {
     id: p.id, name: p.fullName, pos, proTeamId: p.proTeamId,
     team, teamName: proName[p.proTeamId] ?? 'No team', bye: proBye[p.proTeamId] ?? null,
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
+    now: stat(p, 0, 1)?.appliedTotal ?? null, nowLine: scoring(stat(p, 0, 1)),
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
     proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length * wind : null, wind, espn, roto, cbs: cb, split: split(all), vegas: vegas[TEAM(team)] ?? null,
     ros: rosAll.length ? rosAll.reduce((s, v) => s + v, 0) / rosAll.length : null, rosBy,
@@ -1437,6 +1474,9 @@ const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="play
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
   ${p.rank ? `<div class="rank">${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season</div>` : ''}${chip(p)}${extra}</div></div>`; };
+// points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
+const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g || (g.state === 'pre' && !p.now) ? ''
+  : `<div class="nowpts"><b>${n(p.now ?? 0)} pts</b> ${g.state === 'post' ? 'final' : `so far &middot; ${esc(g.text)}`}</div>`; };
 // a tappable player name in running text
 const lnk = p => { shown.set(p.id, p); return `<span data-pid="${p.id}" class="lnk">${esc(p.name)}</span>`; };
 // Top starter / starter / below starter: compared with what the league's starters at that position score. "Starter" = would
@@ -1674,6 +1714,8 @@ a.news b{display:block;font-size:14px;font-weight:600}a.news small{color:var(--m
 .arrow::after{content:"";flex:1;height:1px;background:var(--line)}
 .gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
 .why{color:var(--muted);font-size:14px;margin:10px 0 0}
+.pline{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
+.nowpts{font-size:12px;color:var(--muted);margin-top:2px}.nowpts b{color:var(--accent);font-family:var(--num)}
 .tag{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
 td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted);white-space:nowrap}tr.me td{font-weight:800;color:var(--fg)}
@@ -1781,7 +1823,7 @@ ${todo.length ? todo.map(([lvl, title, why, move, who = []]) => `<div class="car
 <section id="lineup"><h2>My team</h2><p class="sub">Big number = points he's expected to score this week (average of ESPN, Rotowire and CBS). Top starter, starter or below starter compares him with the players who start at his position across your league. Green "up to" = his score if he has a great game. Tap any player to see if he plays, when, his last games and news.</p>
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
   const ps = lineupRows.filter(f);
-  return ps.length ? `<div class="group">${label}</div><div class="list">${ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p)}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`).join('')}</div>` : '';
+  return ps.length ? `<div class="group">${label}</div><div class="list">${ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p, nowPts(p))}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`).join('')}</div>` : '';
 }).join('')}
 </section>
 
@@ -2066,6 +2108,8 @@ function render(p) {
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
+    (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
+      (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') : '') +
     '<div class="stat">' +
       '<div><b>' + e(p.proj) + '</b><small>expected this week' + (p.ceiling ? ' (up to ' + e(p.ceiling) + ')' : '') + '</small></div>' +
       '<div><b>' + e(p.avg) + '</b><small>points per game this season</small></div>' +
@@ -2077,7 +2121,7 @@ function render(p) {
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
     (p.games.length ? '<div class="group">Last games (fantasy points)</div><div class="bars">' + p.games.map(g =>
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' +
-      p.games.filter(g => g.why.length).map(g => '<p class="why" style="margin:8px 0 0"><b>Week ' + g.wk + (g.pts == null ? '' : ' (' + g.pts.toFixed(1) + ' pts)') + ':</b> ' + e(g.why.join(' ')) + '</p>').join('') : '') +
+      p.games.filter(g => g.why.length || g.line.length).map(g => '<p class="why" style="margin:8px 0 0"><b>Week ' + g.wk + (g.pts == null ? '' : ' (' + g.pts.toFixed(1) + ' pts)') + ':</b> ' + e(g.line.join(', ')) + (g.line.length && g.why.length ? '. ' : '') + e(g.why.join(' ')) + '</p>').join('') : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
     (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b><small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
@@ -2554,8 +2598,12 @@ for (const [id, p] of shown) {
   const games = [];
   for (let wk = Math.max(1, week - 5); wk < week; wk++) {
     const s = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk);
-    games.push({ wk, pts: s?.appliedTotal ?? null, note: p.bye === wk ? 'bye' : '–', why: p.bye === wk ? [] : whyWeek(p, wk, s?.appliedTotal ?? null) });
+    games.push({ wk, pts: s?.appliedTotal ?? null, note: p.bye === wk ? 'bye' : '–', line: scoring(s), why: p.bye === wk ? [] : whyWeek(p, wk, s?.appliedTotal ?? null) });
   }
+  // this week so far, once his game has started
+  const cur = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === week), g = gameNow[TEAM(p.team)];
+  const now = p.bye === week || !g || (g.state === 'pre' && !cur) ? null
+    : { pts: n(cur?.appliedTotal ?? p.now ?? 0), game: g.state === 'post' ? 'Game over' : g.state === 'in' ? `Playing now (${g.text})` : g.text, line: cur ? scoring(cur) : p.nowLine ?? [] };
   const played = games.filter(g => g.pts != null).slice(-3);
   const recent = played.length ? played.reduce((s, g) => s + g.pts, 0) / played.length : null;
   const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`
@@ -2569,7 +2617,7 @@ for (const [id, p] of shown) {
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
-    trend, sources, games, notes: notes(p),
+    trend, sources, games, now, notes: notes(p),
     rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: news.get(id) ?? [],
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
   };
@@ -2827,3 +2875,5 @@ fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
 }));
 console.log(`Wrote site/index.html for ${me.name}, week ${week}. vs ${opp?.name}: ${n(myProj)}-${n(oppProj)}`);
 todo.forEach(([l, t]) => console.log(`[${l}] ${t}`));
+if (unlabeled.size) console.log(`::notice::ESPN stats with points but no label: ${[...unlabeled].join(", ")}`);
+console.log(`::notice::Week ${week} points so far: ${me.roster.map(p => `${p.name} ${n(p.now)} [${p.nowLine.join("; ")}]`).join(" | ")}`);
