@@ -1789,8 +1789,9 @@ nav{position:fixed;left:50%;transform:translateX(-50%);width:min(560px,calc(100%
 /* 5 tabs that all fit: icon over label, like a phone app */
 nav a{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 0 6px;border-radius:20px;color:var(--muted);text-decoration:none;font-weight:600;font-size:11px;line-height:14px;transition:background .2s,color .2s,transform .1s ease-out}
 nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-nav a:active{transform:scale(.96)}
+nav{touch-action:none}
 nav a.on{color:var(--accent);background:rgba(198,244,50,.1)}
+nav a.press{background:rgba(255,255,255,.14);color:var(--fg);transform:scale(1.1)}
 nav .dot{position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--bad);color:#fff;font-size:10px;line-height:16px;text-align:center}
 /* the switch at the top of a tab that holds two or more pages (Moves, Trades, More) */
 .seg{display:flex;gap:3px;margin-top:20px;padding:3px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
@@ -2202,7 +2203,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
 </dl></div></section>
 
-${process.env.SITE_PASSWORD ? '<button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button>' : ''}
+${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
 <div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
@@ -2982,7 +2983,8 @@ function showTab(tab, jump) {
   if (!g) { g = GROUPS[tab] ? tab : 'home'; tab = lastPage[g] || GROUPS[g][0]; }
   lastPage[g] = tab;
   if (jump) history.replaceState(null, '', '#' + tab);
-  document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab));
+  // a section tagged with the tab itself (Sign out on More) shows on every page of that tab
+  document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab && s.dataset.tab !== g));
   document.body.classList.toggle('home', tab === 'home');
   navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + g));
   const seg = document.getElementById('seg');
@@ -2993,7 +2995,17 @@ function showTab(tab, jump) {
   if (dot) { dot.hidden = !k; dot.textContent = k; }
   if (jump) scrollTo({ top: 0 });
 }
-navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); showTab(a.hash.slice(1), true); }));
+// Hold the tab bar and slide your finger like on iPhone: the tab under it lights up, letting go opens it.
+// A plain tap works the same way (press and let go on one tab). Keyboard Enter still uses the click.
+const tabBar = document.querySelector('nav');
+let held = null;
+const press = a => { if (a === held) return; navLinks.forEach(l => l.classList.toggle('press', l === a)); if (held && a) navigator.vibrate?.(8); held = a; };
+const tabAt = x => navLinks.find(l => { const r = l.getBoundingClientRect(); return x >= r.left && x < r.right; });
+tabBar.addEventListener('pointerdown', ev => { const a = ev.target.closest('nav a'); if (!a) return; tabBar.setPointerCapture(ev.pointerId); press(a); });
+tabBar.addEventListener('pointermove', ev => { if (held) press(tabAt(ev.clientX) || held); });
+tabBar.addEventListener('pointerup', () => { const a = held; press(null); if (a) showTab(a.hash.slice(1), true); });
+tabBar.addEventListener('pointercancel', () => press(null));
+navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); if (!ev.detail) showTab(a.hash.slice(1), true); }));
 document.getElementById('seg').addEventListener('click', ev => { const b = ev.target.closest('[data-page]'); if (b) showTab(b.dataset.page, true); });
 showTab(location.hash.slice(1), false);
 
@@ -3127,7 +3139,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { account: 'more', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
