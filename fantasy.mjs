@@ -1785,13 +1785,23 @@ h1{font-size:28px;font-weight:700;margin:6px 0 2px;letter-spacing:-.025em;line-h
 .bar{grid-column:1/-1;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;margin-bottom:6px}.bar i{display:block;height:100%;border-radius:3px}
 .verdict{margin-top:8px;font-size:14px}
 /* Bottom bar, frosted glass like iOS. Fixed so it's always one tap away. */
-nav{position:fixed;left:50%;transform:translateX(-50%);width:min(696px,calc(100% - 124px));bottom:calc(env(safe-area-inset-bottom) + 8px);z-index:10;display:flex;gap:2px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:5px;border-radius:999px;background:var(--glass);border:1px solid var(--glassline);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 30px rgba(0,0,0,.5);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
-/* fade at both ends hints that the tabs scroll sideways */
--webkit-mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 22px),transparent)}
-nav::-webkit-scrollbar{display:none}
-nav a{flex:none;white-space:nowrap;padding:12px 15px;border-radius:999px;color:var(--muted);text-decoration:none;font-weight:600;font-size:14px;line-height:20px;transition:background .2s,color .2s,transform .1s ease-out}
+nav{position:fixed;left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 80px));bottom:calc(env(safe-area-inset-bottom) + 8px);z-index:10;display:flex;gap:2px;padding:4px;border-radius:24px;background:var(--glass);border:1px solid var(--glassline);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 30px rgba(0,0,0,.5);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
+/* 5 tabs that all fit: icon over label, like a phone app */
+nav a{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 0 6px;border-radius:20px;color:var(--muted);text-decoration:none;font-weight:600;font-size:11px;line-height:14px;transition:background .2s,color .2s,transform .1s ease-out}
+nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 nav a:active{transform:scale(.96)}
-nav a.on{background:var(--accent);color:var(--onaccent)}
+nav a.on{color:var(--accent);background:rgba(198,244,50,.1)}
+nav .dot{position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--bad);color:#fff;font-size:10px;line-height:16px;text-align:center}
+/* the switch at the top of a tab that holds two or more pages (Moves, Trades, More) */
+.seg{display:flex;gap:3px;margin-top:20px;padding:3px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+.seg button{flex:1;padding:9px 4px;border:0;border-radius:9px;background:none;color:var(--muted);font:600 13px Geist,system-ui,sans-serif;cursor:pointer}
+.seg button.on{background:var(--line);color:var(--fg)}
+/* sections and lists you tap to open */
+details.fold{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:0 14px;margin:0 0 10px}
+details.fold>summary{align-items:center;padding:14px 0;margin:0}details.fold>summary h2,details.fold>summary.group{margin:0;font-size:17px}
+details.fold>summary.group{text-transform:none;letter-spacing:0;color:var(--fg)}
+details.fold[open]>summary{margin-bottom:4px}details.fold .card{background:var(--bg)}
+section:has(>details.fold){margin-top:12px}
 section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
@@ -1951,7 +1961,14 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
 <a id="fab" href="https://fantasy.espn.com/football/team?leagueId=${LEAGUE_ID}&amp;teamId=${me.id}&amp;seasonId=${SEASON}" aria-label="Open the ESPN Fantasy app"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1c/b2/68/1cb2683b-9dce-d70c-8905-2562c0482eda/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/120x120bb.jpg" alt=""></a>
-<nav><a href="#home">Home</a><a href="#team">Team</a><a href="#pickups">Pickups</a><a href="#pending">Pending</a><a href="#trades">Trades</a><a href="#compare">Compare</a><a href="#season">Season</a><a href="#league">League</a><a href="#news">News</a><a href="#help">How it works</a></nav>
+<nav>${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
+<div id="seg" class="seg" hidden></div>
+
+<section id="todo"><h2>Do this now</h2><p class="sub">Your to-do list, most important first. Tap a button to do it on ESPN.</p>
+${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
+${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
+  return todo.slice(0, 3).map(card).join('') + (todo.length > 3 ? `<details class="all"><summary>${todo.length - 3} more to do</summary>${todo.slice(3).map(card).join('')}</details>` : ''); })() : '<div class="card empty">You\'re all set this week.</div>'}
+</section>
 
 <section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
@@ -1966,10 +1983,6 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <textarea id="alerttext" aria-label="Alert setup code" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
 <button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
 
-<section id="todo"><h2>To-do list</h2><p class="sub">Most important first. Do these in the ESPN app.</p>
-${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
-${todo.length ? todo.map(([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`).join('') : '<div class="card empty">You\'re all set this week.</div>'}
-</section>
 
 <section id="news"><h2>News</h2><p class="sub">Latest updates on your players and pickups, from Rotowire via ESPN. Tap a name for details.</p>
 <div class="list">__NEWS__</div></section>
@@ -1977,7 +1990,9 @@ ${todo.length ? todo.map(([lvl, title, why, move, who = []]) => `<div class="car
 <section id="lineup"><h2>My team</h2><p class="sub">Big number = points he's expected to score this week (average of ESPN, Rotowire and CBS). Top starter, starter or below starter compares him with the players who start at his position across your league. Green "up to" = his score if he has a great game. Tap any player to see if he plays, when, his last games and news.</p>
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
   const ps = lineupRows.filter(f);
-  return ps.length ? `<div class="group">${label}</div><div class="list">${ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p, nowPts(p))}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`).join('')}</div>` : '';
+  const rows = ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p, nowPts(p))}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`).join('');
+  // starters show; bench and injured reserve fold to one line
+  return !ps.length ? '' : label === 'Starting' ? `<div class="group">${label}</div><div class="list">${rows}</div>` : `<details class="fold"><summary class="group">${label} (${ps.length})</summary><div class="list">${rows}</div></details>`;
 }).join('')}
 </section>
 
@@ -2012,14 +2027,14 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
   ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p>${info([s.add, s.drop])}
   ${MOVE_URL && !locked(s.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `${s.add.wa ? 'Claim' : 'Add'} ${s.add.name}, drop ${s.drop.name}`, type: s.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: s.add.id }, { type: 'DROP', playerId: s.drop.id }], week: league.scoringPeriodId }))}">${s.add.wa ? 'Claim' : 'Add'} ${esc(s.add.name)}, drop ${esc(s.drop.name)}</button>` : ''}</div>`; }).join('')
   : `<div class="card empty">Nobody out there would make your starting lineup better${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
-${benchUps.length ? `<div class="group">Better backups available</div><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
+${benchUps.length ? `<details class="fold"><summary class="group">Better backups available (${benchUps.length})</summary><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
   <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}${esc(alsoText(x.alts, rate))}</p>${info([x.add, x.drop, ...x.alts])}
-  ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div>` : ''}
-${trending.length ? `<div class="group">Trending: being picked up fast in other leagues</div><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>`).join('')}</div>
-<p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p>` : ''}
-${breakouts.length ? `<div class="group">Breakout watch: bigger role, nobody has him</div><p class="sub">His playing time or share of his team's targets/carries jumped over his last 3 games. Role changes come before the points, and the experts' numbers follow the points, so these players are cheapest right now. Good use of a spare bench spot.</p><div class="list">${breakouts.map(b => `<div class="card"><div class="row">${freeCard(b.p, b.name, b.team, b.pos)}${b.recent != null ? big(b.recent, 'per game, last 3', null, b.p ?? null, 'season') : ''}</div>
+  ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div></details>` : ''}
+${trending.length ? `<details class="fold"><summary class="group">Trending in other leagues (${Math.min(5, trending.length)})</summary><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>`).join('')}</div>
+<p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p></details>` : ''}
+${breakouts.length ? `<details class="fold"><summary class="group">Breakout watch: bigger role (${breakouts.length})</summary><p class="sub">His playing time or share of his team's targets/carries jumped over his last 3 games. Role changes come before the points, and the experts' numbers follow the points, so these players are cheapest right now. Good use of a spare bench spot.</p><div class="list">${breakouts.map(b => `<div class="card"><div class="row">${freeCard(b.p, b.name, b.team, b.pos)}${b.recent != null ? big(b.recent, 'per game, last 3', null, b.p ?? null, 'season') : ''}</div>
   <p class="why">On the field for <b>${b.u.snapNow}%</b> of plays (was ${b.u.snapBefore}%), <b>${b.u.shareNow}%</b> of his team's ${b.u.kind} (was ${b.u.shareBefore}%).${b.p ? ` ${b.p.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}` : ' Search his name in the ESPN app to add him.'}</p>
-  ${MOVE_URL && addMove(b.p, roomFor()) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...addMove(b.p, roomFor()), week: league.scoringPeriodId }))}">${esc(addMove(b.p, roomFor()).label)}</button>` : ''}</div>`).join('')}</div>` : ''}
+  ${MOVE_URL && addMove(b.p, roomFor()) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...addMove(b.p, roomFor()), week: league.scoringPeriodId }))}">${esc(addMove(b.p, roomFor()).label)}</button>` : ''}</div>`).join('')}</div></details>` : ''}
 ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><div class="list">${fills.map(f => `<div class="card"><div class="row">${player(f.add)}${big(rate(f.add), 'per game, rest of season', null, f.add, 'season')}</div>
   <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${esc(byeText(f))}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the next two weeks covering your starters' bye weeks.` : ' A backup for injuries.'}</p>${info([f.add, ...f.byeFor, ...f.alts])}
   ${MOVE_URL && !locked(f.add) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...fillMove(f), week: league.scoringPeriodId }))}">${f.add.wa ? 'Put in a claim for him on ESPN' : 'Add him on ESPN'}</button>` : ''}</div>`).join('')}</div>` : ''}
@@ -2236,7 +2251,7 @@ function load() {
   try { sessionStorage.setItem('scroll', scrollY); } catch {}
   location.replace(fresh() + location.hash);
 }
-const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-)/;
+const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg)/;
 const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || changedIn.has(n));
 async function swap(html) {
   let page = html;
@@ -2253,7 +2268,7 @@ async function swap(html) {
   morphLib ??= new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/idiomorph@0.7.3/dist/idiomorph.min.js'; s.onload = ok; s.onerror = no; document.head.append(s); });
   await morphLib;
   // (the body's HTML, not the body element: given an element, idiomorph nests a second <body> inside this one)
-  Idiomorph.morph(document.body, doc.body.innerHTML, { morphStyle: 'innerHTML', callbacks: { beforeNodeMorphed: o => !keep(o), beforeNodeRemoved: o => !keep(o) } });
+  Idiomorph.morph(document.body, doc.body.innerHTML, { morphStyle: 'innerHTML', callbacks: { beforeNodeMorphed: o => !keep(o), beforeNodeRemoved: o => !keep(o), beforeAttributeUpdated: a => a !== 'open' } }); // a section you opened stays open
   built = +doc.querySelector('meta[name=built]').content;
   const np = JSON.parse(document.getElementById('pdata').textContent);
   for (const k in P) delete P[k];
@@ -2957,17 +2972,29 @@ function addHim(p) {
   if (teamSel) { teamSel.onchange = pickTeam; loose.onchange = reset; playerSel.onchange = reset; draw(); }
 }
 // One section at a time: the bottom bar picks which tab shows, like pages in an app
+// 5 tabs; Moves, Trades and More each hold a few pages, picked with the switch at the top. Each tab remembers its page.
 const navLinks = [...document.querySelectorAll('nav a')];
+const GROUPS = { home: ['home'], team: ['team'], moves: ['pickups', 'pending'], trades: ['trades', 'compare'], more: ['season', 'league', 'news', 'help'] };
+const PAGE_NAME = { pickups: 'Pickups', pending: 'Pending', trades: 'Trade ideas', compare: 'Compare', season: 'Season', league: 'League', news: 'News', help: 'How it works' };
+const lastPage = {};
 function showTab(tab, jump) {
-  if (!navLinks.some(a => a.hash === '#' + tab)) tab = 'home';
+  let g = Object.keys(GROUPS).find(k => GROUPS[k].includes(tab));
+  if (!g) { g = GROUPS[tab] ? tab : 'home'; tab = lastPage[g] || GROUPS[g][0]; }
+  lastPage[g] = tab;
+  if (jump) history.replaceState(null, '', '#' + tab);
   document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab));
   document.body.classList.toggle('home', tab === 'home');
-  navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + tab));
-  const on = navLinks.find(a => a.classList.contains('on')), bar = on.parentNode;
-  bar.scrollTo({ left: on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2, behavior: jump ? 'smooth' : 'auto' });
+  navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + g));
+  const seg = document.getElementById('seg');
+  seg.hidden = GROUPS[g].length < 2;
+  seg.innerHTML = GROUPS[g].length < 2 ? '' : GROUPS[g].map(p => '<button type="button" data-page="' + p + '"' + (p === tab ? ' class="on"' : '') + '>' + PAGE_NAME[p] + '</button>').join('');
+  // red number on Home: how many to-dos are waiting
+  const k = document.querySelectorAll('#todo .card.todo').length, dot = document.querySelector('nav .dot');
+  if (dot) { dot.hidden = !k; dot.textContent = k; }
   if (jump) scrollTo({ top: 0 });
 }
-navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); history.replaceState(null, '', a.hash); showTab(a.hash.slice(1), true); }));
+navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); showTab(a.hash.slice(1), true); }));
+document.getElementById('seg').addEventListener('click', ev => { const b = ev.target.closest('[data-page]'); if (b) showTab(b.dataset.page, true); });
 showTab(location.hash.slice(1), false);
 
 // "Copy text" buttons: put the text on the clipboard
@@ -3107,6 +3134,8 @@ html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, t
   if (text.replace(/<[^>]+>/g, '').length < 110 || cut < 0) return m;
   return `${h}<p class="sub">${text.slice(0, cut + 1)}</p><details class="intro"><summary>How to read this</summary><p class="sub">${text.slice(cut + 2)}</p></details>`;
 });
+// extra sections fold to one line you tap to open, so each tab starts short
+html = html.replace(/(<section id="(?:bench|fleece|buysell|partners)"[^>]*>)(<h2>[^<]*<\/h2>)([\s\S]*?)<\/section>/g, '$1<details class="fold"><summary>$2</summary>$3</details></section>');
 html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', bestLineup.toString()));
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null];
