@@ -2299,7 +2299,7 @@ async function liveTick() {
     if (!r.ok) { liveNote = ' \u00b7 live scores off (' + (r.status === 401 ? 'password mismatch' : 'ESPN login rejected') + ')'; return showAgo(); }
     const d = await r.json(), $ = id => document.getElementById(id), f = v => (Math.round(v * 10) / 10).toFixed(1);
     liveOn = Object.values(d.games).some(g => g[0] === 'in');
-    liveNote = liveOn ? ' \u00b7 live scores on' : ''; showAgo();
+    liveNote = liveOn ? ' \u00b7 live scores on' : ' \u00b7 live scores ready'; showAgo();
     for (const el of document.querySelectorAll('[data-live]')) {
       const pts = d.players[el.dataset.live], g = d.games[el.dataset.pro];
       if (pts == null || !g || (g[0] === 'pre' && !pts)) continue;
