@@ -2211,7 +2211,7 @@ function showAgo() {
   if (m >= 30) document.getElementById('staletext').textContent = 'The last update was ' + (m < 120 ? m + ' minutes' : Math.round(m / 60) + ' hours') + ' ago, so the advice below may be out of date. If it lasts, ask Claude to check the GitHub runs (the ESPN login may have expired).';
   const left = Math.ceil((nextAt() - Date.now()) / 1000);
   const next = left > 0 ? 'next in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : 'next any moment';
-  ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next;
+  ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next + liveNote;
   if (ready) { if (!busy()) load(); return; }
   // once the countdown is over, look for the new version every 15s instead of every minute
   if (left <= 0 && !document.hidden && Date.now() - lastCheck > 15000) { lastCheck = Date.now(); check(false); }
@@ -2290,14 +2290,16 @@ async function check(clicked) {
 // Live scores from the Cloudflare Worker: every 30s while a game is on, every 5 minutes otherwise. Points so far,
 // the score, win chance, ESPN's final guess and game clocks change in place.
 const LIVE = JSON.parse(document.getElementById('live')?.textContent || 'null');
-let liveOn = false;
+// liveNote: shown after "updated ... ago" so you can tell live scores are working
+let liveOn = false, liveNote = '';
 async function liveTick() {
   if (!LIVE || document.hidden) return;
   try {
     const r = await fetch(LIVE.url + '?week=' + LIVE.week, { headers: { 'x-live': LIVE.token } });
-    if (!r.ok) return;
+    if (!r.ok) { liveNote = ' \u00b7 live scores off (' + (r.status === 401 ? 'password mismatch' : 'ESPN login rejected') + ')'; return showAgo(); }
     const d = await r.json(), $ = id => document.getElementById(id), f = v => (Math.round(v * 10) / 10).toFixed(1);
     liveOn = Object.values(d.games).some(g => g[0] === 'in');
+    liveNote = liveOn ? ' \u00b7 live scores on' : ''; showAgo();
     for (const el of document.querySelectorAll('[data-live]')) {
       const pts = d.players[el.dataset.live], g = d.games[el.dataset.pro];
       if (pts == null || !g || (g[0] === 'pre' && !pts)) continue;
