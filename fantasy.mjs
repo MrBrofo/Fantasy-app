@@ -2569,9 +2569,18 @@ document.addEventListener('click', ev => {
   const el = !ev.target.closest('.sheet-body') && ev.target.closest('[data-pid]');
   if (el) openSheet(el.dataset.pid);
 });
-// Sign out: forget the saved passwords on this phone and go back to the lock screen
-document.getElementById('signout')?.addEventListener('click', () => {
+// Sign out: forget the site password on this phone and go back to the lock screen. The trade password stays,
+// locked with the site password, so it can't be read while signed out and comes back when you sign in again.
+document.getElementById('signout')?.addEventListener('click', async () => {
   if (!confirm('Sign out? You will need the password to get back in.')) return;
+  try {
+    const mk = localStorage.getItem('moveKey'), sk = localStorage.getItem('siteKey');
+    if (mk && sk) {
+      const key = await crypto.subtle.importKey('raw', Uint8Array.from(atob(sk), c => c.charCodeAt(0)), 'AES-GCM', false, ['encrypt']), iv = crypto.getRandomValues(new Uint8Array(12));
+      const box = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(mk)));
+      localStorage.setItem('moveLocked', btoa(String.fromCharCode(...iv, ...box)));
+    }
+  } catch {}
   try { localStorage.removeItem('siteKey'); localStorage.removeItem('sitePw'); localStorage.removeItem('moveKey'); } catch {}
   location.reload();
 });
@@ -3327,6 +3336,15 @@ body.auto .ring,body.auto .corner,body.auto #field{display:none}
     let page = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(LOCK.iv) }, key, bytes(LOCK.data)));
     const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key));
     try { localStorage.setItem('siteKey', btoa(String.fromCharCode(...raw))); localStorage.removeItem('sitePw'); } catch {}
+    // the trade password locked at sign out: unlock it with the same key
+    try {
+      const box = localStorage.getItem('moveLocked');
+      if (box) {
+        const b = bytes(box);
+        localStorage.setItem('moveKey', new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12) }, key, b.slice(12))));
+        localStorage.removeItem('moveLocked');
+      }
+    } catch {}
     // after the animation, the site fades in from black
     if (show) { await granted(); page = page.replace('</head>', '<style>@keyframes sitein{from{opacity:0}}body{animation:sitein .7s ease-out}</style></head>'); }
     alive = false; timers.forEach(clearInterval);
