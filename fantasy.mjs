@@ -1885,11 +1885,11 @@ td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted)
 tr.cut td{border-bottom:2px dashed var(--good)}
 details summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between}
 details summary::-webkit-details-marker{display:none}
-details summary::after{content:"+";color:var(--muted);font-weight:400;font-size:20px;line-height:1}details[open] summary::after{content:"\\2212"}
+details summary::after{content:"+";color:var(--muted);font-weight:400;font-size:20px;line-height:1}details[open]>summary::after{content:"\\2212"}
 /* the league row is a sentence, not label + value: keep it as running text with the +/- on the right */
 details.board>summary{display:block;position:relative;padding:12px 30px 12px 0;margin:0;font-weight:400;font-size:14px;color:var(--muted);border-top:1px solid var(--line)}
 details.board>summary b{color:var(--fg)}details.board>summary::after{position:absolute;right:2px;top:12px}
-details[open] summary{margin-bottom:8px}
+details[open]>summary{margin-bottom:8px}
 dl{margin:0}dt{font-weight:700;margin-top:12px}dd{margin:2px 0 0;color:var(--muted);font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:18px}
 .worder{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}.worder span{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--muted)}
