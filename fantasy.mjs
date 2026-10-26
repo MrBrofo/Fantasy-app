@@ -1235,6 +1235,10 @@ function statusOf(k) {
     disagree: SLP_OUT.includes(sl) && !out ? `Injury reports disagree: ESPN says he ${ESPN_WORD[e] ?? 'is healthy'}, but Sleeper still lists him as ${sl === 'IR' ? 'on IR' : sl.toLowerCase()}. Check again before kickoff; teams announce who's out about 90 minutes before the game.` : null };
 }
 const gameStatusOf = new Map(rosSaved.gameStatus ?? []);
+// Teammates who were questionable or doubtful at some point this week, so a note can say when that got decided
+// (teams name who's out about 90 minutes before kickoff, and ESPN drops the tag then).
+memo.doubt = { [week]: { ...memo.doubt?.[week] } };
+for (const list of usualBy.values()) for (const st of list) { const s = statusOf(st.k); if (s.maybe || s.espnSays === 'DOUBTFUL') memo.doubt[week][st.k] = 1; }
 // His share of his team's snaps, targets (WR/TE) or carries (RB), and red-zone chances: last 3 games he played vs
 // the games before. Usage is the stickiest thing in fantasy (target share most of all), so a role change matters.
 // ponytail: a player traded mid-season only counts games under his current team.
@@ -1288,15 +1292,22 @@ function notes(p) {
     if (q && q.k !== k && (slpBy.get(k)?.pts ?? 0) < q.pts / 2) out.push(`Not expected to start this week: ${q.name} is the starting QB.`);
   }
   for (const st of usualStarters(team)) {
-    const now = statusOf(st.k);
-    if (st.k === k || !(now.out || now.maybe)) continue;
-    const sure = now.out, status = now.word;
+    const now = statusOf(st.k), was = memo.doubt[week][st.k] && !now.maybe;
+    if (st.k === k) continue;
+    if (!(now.out || now.maybe)) {
+      if (!was) continue;
+      if (st.pos === 'QB' && p.pos !== 'QB') out.push(`Decided: his QB, ${st.name}, was questionable but is playing. Good news for ${p.name}.`);
+      else if (st.pos === p.pos) out.push(`Decided: ${st.name} was questionable but is playing, so ${p.name} won't get the extra work. Expect his usual role.`);
+      else if (p.pos === 'QB' && ['WR', 'TE'].includes(st.pos)) out.push(`Decided: ${st.name}, one of his top targets, was questionable but is playing.`);
+      continue;
+    }
+    const sure = now.out, status = was && now.espnSays === 'OUT' ? 'was questionable and has now been ruled out' : now.word;
     const lag = sure && (slpBy.get(st.k)?.pts ?? 0) >= 3 ? ` Experts still project ${st.name} as if he plays, so ${p.name}'s number may not reflect this yet.` : '';
     if (st.pos === 'QB' && p.pos !== 'QB') {
       const q = qbThisWeek(team);
       out.push(`His usual QB, ${st.name}, ${status}.${sure && q && q.k !== st.k ? ` ${q.name} is expected to start instead. A backup QB usually means fewer points for his teammates.` : ''}${lag}`);
     } else if (st.pos === p.pos) {
-      out.push(`${st.name}, one of the team's usual starting ${POS_PL[p.pos]}, ${status}. ${sure ? 'That' : 'If he sits, that'} should mean more work for ${p.name}.${lag}`);
+      out.push(`${st.name}, one of the team's usual starting ${POS_PL[p.pos]}, ${status}. ${sure ? 'That' : 'If he sits, that'} should mean more work for ${p.name}.${sure ? '' : ' This note updates when it\'s decided, about 90 minutes before kickoff.'}${lag}`);
     } else if (p.pos === 'QB' && ['WR', 'TE'].includes(st.pos)) {
       out.push(`${st.name}, one of his usual top targets, ${status}.${lag}`);
     }
