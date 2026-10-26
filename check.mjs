@@ -234,7 +234,7 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
     4: { 'x|PIT': [80, 'CLE'] } }; // CIN on bye
   const allowed = { WR: Object.fromEntries(['DEN', 'BAL', 'KC', ...'ABCDEFGHIJ'].map((t, i) => [t, t === 'DEN' ? 1 : 10 + i])) };
   const usual = [[K('qb a'), 'QB A', 'QB', 'CIN', 50], [K('qb b'), 'QB B', 'QB', 'CIN', 10], [K('wr a'), 'WR A', 'WR', 'CIN', 40], [K('wr b'), 'WR B', 'WR', 'CIN', 30]];
-  const whyWeek = new Function('rosSaved', 'ordinal', 'norm', 'TEAM', 'pkey', 'POS_PL', 'usualBy', 'week', 'weekNow', 'gameNow',
+  const whyWeek = new Function('rosSaved', 'ordinal', 'norm', 'TEAM', 'pkey', 'POS_PL', 'usualBy', 'week', 'weekNow', 'gameNow', 'n',
     cut('const usualStarters = ', '\n') + cut('const defRank = ', '\n') + cut('const POS_ONE = ', '  return out;\n}') + '\nreturn whyWeek;');
   const usualBy = new Map();
   for (const [k, name, pos, team, pts] of usual) (usualBy.get(`${team}|${pos}`) ?? usualBy.set(`${team}|${pos}`, []).get(`${team}|${pos}`)).push({ k, name, pos, pts });
@@ -251,6 +251,12 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   const cw7 = cf({ name: 'Coker', pos: 'WR', team: 'CAR', avg: 10 }, 7, 1.4).join(' | ');
   for (const re of [/lost 13–43/, /pulled for Kenny Pickett/, /2 interceptions/, /Only 4 targets \(usually about 9\)\. His team only ran 56 plays/, /caught only 1 of 4/, /No touchdown/])
     assert(re.test(cw7), `Coker week 7 should say ${re}: ${cw7}`);
+  // good week: only reasons he beat his number (Singletary: expected 3, scored 13 with a TD on few snaps; the usual QB didn't start)
+  const sw = { 5: { [C('ds')]: row(60, 2, 2, 70, 0, 0, 0, 'RB') }, 6: { [C('ds')]: row(60, 2, 2, 70, 0, 0, 0, 'RB') } };
+  const sNow = { [C('ds')]: [29, 'TB', 13, 3, 5, 0, 1, 3, 66, 0, 0, 'RB', 'DS'], [C('young')]: row(8, 0, 0, 66, 0, 0, 0, 'QB', 'Bryce Young'), [C('pickett')]: row(92, 0, 0, 66, 0, 28, 0, 'QB', 'Kenny Pickett') };
+  const sf = whyWeek({ weeks: sw, allowed: {} }, k => k + 'th', s => s.toLowerCase(), t => t, (name, pos, team) => `${name.toLowerCase()}|${team}`, { RB: 'running backs' }, cBy, 7, sNow, { CAR: { score: [20, 17] } }, v => v.toFixed(1));
+  const s7 = sf({ name: 'DS', pos: 'RB', team: 'CAR', avg: 5 }, 7, 13, 3).join(' | ');
+  assert(/Expected about 3.0, scored 13.0/.test(s7) && /made the most of it/.test(s7) && /a touchdown, 6 of his 13.0/.test(s7) && !/pulled|Only|interception/.test(s7), 'good week, good reasons: ' + s7);
   const p = { name: 'WR A', pos: 'WR', team: 'CIN', avg: 10 };
   const w1 = f(p, 1, 5), w2 = f(p, 2, 3);
   assert(w1.length === 1 && /toughest/.test(w1[0]), 'tough defense named: ' + w1);

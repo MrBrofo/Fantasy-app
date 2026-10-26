@@ -1222,59 +1222,66 @@ const defRank = (pos, team) => { const t = rosSaved.allowed?.[pos]; return t?.[t
 // ponytail: nobody keeps past injury reports, so a big snap drop is the clue he got hurt in the game.
 // ponytail: a player traded mid-season is looked up under his current team only.
 const POS_ONE = { QB: 'quarterback', RB: 'running back', WR: 'receiver', TE: 'tight end' };
-function whyWeek(p, wk, pts) {
+function whyWeek(p, wk, pts, expected) {
   const wd = wk === week ? weekNow : rosSaved.weeks?.[wk], team = TEAM(p.team), k = pkey(p.name, p.pos, p.team);
   if (!wd || !POS_PL[p.pos] || !Object.keys(wd).some(x => x.endsWith('|' + team))) return []; // no data, or his team had no game
   const w = wd[k];
   if (!w) return ['He didn\'t play (hurt or inactive).'];
-  const out = [], other = Object.entries(rosSaved.weeks ?? {}).filter(([w2]) => +w2 !== wk).map(([, x]) => x[k]).filter(Boolean);
+  // a good week gets the reasons he beat his number, a bad week the reasons he missed it, never the other way round
+  const exp = expected ?? p.avg, good = pts != null && exp > 0 && pts >= exp * 1.4 && pts - exp >= 4, bad = pts != null && exp > 0 && pts <= exp * 0.6 && exp - pts >= 3;
+  const head = expected != null && (good || bad) ? 1 : 0, out = head ? [`Expected about ${n(expected)}, scored ${n(pts)}.`] : [];
+  const other = Object.entries(rosSaved.weeks ?? {}).filter(([w2]) => +w2 !== wk).map(([, x]) => x[k]).filter(Boolean);
   const mid = i => { const v = other.map(x => x[i]).filter(x => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
   const sc = wk === week ? gameNow[team]?.score : rosSaved.scores?.[wk]?.[team], margin = sc ? sc[0] - sc[1] : 0, blowout = Math.abs(margin) >= 17;
   const shares = Object.values(rosSaved.weeks).map(x => x[k]?.[0]).filter(v => v != null).sort((a, b) => a - b), usualShare = shares[Math.floor(shares.length / 2)];
-  if (w[0] != null && usualShare >= 40 && w[0] < usualShare * 0.6) out.push(`He was on the field for only ${w[0]}% of his team's plays (usually ${usualShare}%), so he ${blowout ? 'likely sat once the game was out of reach, or got hurt' : 'likely got hurt during the game or lost playing time'}.`);
-  if (blowout) out.push(`His team ${margin > 0 ? 'won' : 'lost'} ${sc[0]}–${sc[1]}.${margin > 0
-    ? (p.pos === 'RB' ? ' Teams far ahead run the ball a lot to use up the clock, which helps running backs.' : ' Teams far ahead stop passing late to use up the clock, and starters can sit.')
-    : (p.pos === 'RB' ? ' Teams that fall far behind stop running the ball and pass to catch up.' : ' A blowout loss usually means few good drives for the whole offense, and starters can sit late.')}`);
-  // quarterback: pulled partway through, or threw interceptions
+  if (w[0] != null && usualShare >= 40 && w[0] < usualShare * 0.6) out.push(good ? `He was on the field for only ${w[0]}% of his team's plays (usually ${usualShare}%), but made the most of it.`
+    : `He was on the field for only ${w[0]}% of his team's plays (usually ${usualShare}%), so he ${blowout ? 'likely sat once the game was out of reach, or got hurt' : 'likely got hurt during the game or lost playing time'}.`);
+  if (blowout && margin > 0 && p.pos === 'RB' && !bad) out.push(`His team won ${sc[0]}–${sc[1]}. Teams far ahead run the ball a lot to use up the clock, which helps running backs.`);
+  else if (blowout && !good) out.push(`His team ${margin > 0 ? 'won' : 'lost'} ${sc[0]}–${sc[1]}.${margin > 0 ? ' Teams far ahead stop passing late to use up the clock, and starters can sit.'
+    : p.pos === 'RB' ? ' Teams that fall far behind stop running the ball and pass to catch up.' : ' A blowout loss usually means few good drives for the whole offense, and starters can sit late.'}`);
+  // quarterback: pulled partway through (only when the usual starter really started: 5+ passes), or threw interceptions
   const squad = Object.entries(wd).filter(([key]) => key.endsWith('|' + team)), qbs = squad.filter(([, v]) => v[11] === 'QB' && v[9] >= 3).sort((a, b) => b[1][9] - a[1][9]);
-  const uq = usualStarters(team).find(s => s.pos === 'QB'), uqRow = uq && wd[uq.k], sub = uqRow && qbs.find(([key]) => key !== uq.k);
-  if (sub) out.push(uq.k === k ? `He was pulled for ${sub[1][12]}, who threw ${sub[1][9]} passes. Losing part of the game costs a QB a lot of points.`
-    : sub[0] === k ? `He came in for ${uq.name} partway through, so he only played part of the game.`
-    : `${uq.name} was pulled for ${sub[1][12]} partway through. Switching quarterbacks mid-game usually stalls the passing game.`);
+  const uq = usualStarters(team).find(s => s.pos === 'QB'), sub = wd[uq?.k]?.[9] >= 5 && qbs.find(([key]) => key !== uq.k);
   const qb = qbs[0]?.[1], qbBad = !!sub || qb?.[10] >= 2;
-  if (qb?.[10] >= 2) out.push(qbs[0][0] === k ? `He threw ${qb[10]} interceptions. Each one costs points and ends a drive.` : `${qb[12]}, his QB, threw ${qb[10]} interceptions, which ended drives and cost everyone chances.`);
-  // his chances: targets (WR/TE) or carries (RB), and why they dropped
+  if (!good) {
+    if (sub) out.push(uq.k === k ? `He was pulled for ${sub[1][12]}, who threw ${sub[1][9]} passes. Losing part of the game costs a QB a lot of points.`
+      : sub[0] === k ? `He came in for ${uq.name} partway through, so he only played part of the game.`
+      : `${uq.name} was pulled for ${sub[1][12]} partway through. Switching quarterbacks mid-game usually stalls the passing game.`);
+    if (qb?.[10] >= 2) out.push(qbs[0][0] === k ? `He threw ${qb[10]} interceptions. Each one costs points and ends a drive.` : `${qb[12]}, his QB, threw ${qb[10]} interceptions, which ended drives and cost everyone chances.`);
+  }
+  // his chances: targets (WR/TE) or carries (RB), and why they changed
   if (p.pos !== 'QB') {
     const i = p.pos === 'RB' ? 4 : 3, kind = p.pos === 'RB' ? 'carries' : 'targets', usual = mid(i), plays = w[8], usualPlays = mid(8);
     const top = squad.filter(([key, v]) => key !== k && v[11] !== 'QB').map(([, v]) => v).sort((a, b) => b[i] - a[i])[0];
-    if (usual >= 4 && w[i] <= usual * 0.6) out.push(`Only ${w[i]} ${kind} (usually about ${usual}).${
+    if (!good && usual >= 4 && w[i] <= usual * 0.6) out.push(`Only ${w[i]} ${kind} (usually about ${usual}).${
       plays && usualPlays && plays < usualPlays * 0.85 ? ` His team only ran ${plays} plays (usually about ${usualPlays}), so there were fewer chances to go around.`
       : top && top[i] >= w[i] + 3 ? ` The ball went to others instead: ${top[12]} got ${top[i]}.`
       : blowout ? ' The lopsided score changed the game plan.'
       : qbBad ? ' His QB\'s rough day meant fewer good throws to go around.'
       : ' He played his usual snaps; the team just went his way less this game.'}`);
-    else if (usual >= 3 && w[i] >= usual * 1.5 && pts > p.avg * 1.3) out.push(`Lots of chances: ${w[i]} ${kind} (usually about ${usual}).`);
-    // catches: well below his usual catch rate
+    else if (!bad && usual >= 3 && w[i] >= usual * 1.5) out.push(`Lots of chances: ${w[i]} ${kind} (usually about ${usual}).`);
+    // catches
     const tgts = other.reduce((t, x) => t + (x[3] ?? 0), 0), usualRate = tgts >= 10 ? Math.round(other.reduce((t, x) => t + (x[7] ?? 0), 0) / tgts * 100) : null;
-    if (w[3] >= 4 && usualRate && w[7] / w[3] <= 0.4 && usualRate - w[7] / w[3] * 100 >= 20) out.push(`He caught only ${w[7]} of ${w[3]} passes thrown his way (usually ${usualRate}%).${qbBad ? ' His QB struggled, so a lot of throws were off.' : ' The stats don\'t say if it was drops, bad throws or tight coverage.'}`);
+    if (!good && w[3] >= 4 && usualRate && w[7] / w[3] <= 0.4 && usualRate - w[7] / w[3] * 100 >= 20) out.push(`He caught only ${w[7]} of ${w[3]} passes thrown his way (usually ${usualRate}%).${qbBad ? ' His QB struggled, so a lot of throws were off.' : ' The stats don\'t say if it was drops, bad throws or tight coverage.'}`);
+    else if (good && w[3] >= 3 && w[7] === w[3]) out.push(`He caught all ${w[3]} passes thrown his way.`);
     // touchdowns: 6 points each, the biggest swing week to week
     const tds = other.reduce((t, x) => t + (x[6] ?? 0), 0);
-    if (w[6] === 0 && pts != null && pts < p.avg * 0.6 && tds >= 3) out.push(`No touchdown. He has ${tds} in his other games, and each is worth 6 points, so a week without one hurts a lot.`);
-    else if (w[6] >= 2) out.push(`He scored ${w[6]} touchdowns, ${w[6] * 6} points from those alone.`);
+    if (bad && w[6] === 0 && tds >= 3) out.push(`No touchdown. He has ${tds} in his other games, and each is worth 6 points, so a week without one hurts a lot.`);
+    else if (!bad && w[6] >= 1 && (good || w[6] >= 2)) out.push(`He scored ${w[6] > 1 ? `${w[6]} touchdowns` : 'a touchdown'}, ${w[6] * 6} of his ${n(pts)} points.`);
   }
   const r = defRank(p.pos, w[1]), of = Object.keys(rosSaved.allowed?.[p.pos] ?? {}).length;
-  if (r && r > of - 6) out.push(`He faced ${w[1]}, one of the toughest defenses against ${POS_PL[p.pos]} (${ordinal(of - r + 1)} fewest points given up).`);
-  else if (r && r <= 6) out.push(`He faced ${w[1]}, one of the easiest defenses for ${POS_PL[p.pos]} (${ordinal(r)} most points given up).`);
+  if (!good && r && r > of - 6) out.push(`He faced ${w[1]}, one of the toughest defenses against ${POS_PL[p.pos]} (${ordinal(of - r + 1)} fewest points given up).`);
+  else if (!bad && r && r <= 6) out.push(`He faced ${w[1]}, one of the easiest defenses for ${POS_PL[p.pos]} (${ordinal(r)} most points given up).`);
   for (const st of usualStarters(team)) {
     // missing only counts if he'd already played for them (a backup who took over later wasn't "missing" before that)
     if (st.k === k || wd[st.k] || !Object.entries(rosSaved.weeks).some(([w2, x]) => +w2 < wk && x[st.k])) continue;
-    out.push(st.pos === 'QB' ? `His team's usual quarterback, ${st.name}, didn't play, so a backup was throwing. That usually means fewer points for everyone on the team.`
-      : st.pos === p.pos ? `${st.name}, another top ${POS_ONE[p.pos]} on his team, didn't play, so more of the ball could go his way.`
-      : `${st.name}, his team's top ${POS_ONE[st.pos]}, didn't play.`);
+    if (st.pos === 'QB') { if (!good) out.push(`His team's usual quarterback, ${st.name}, didn't play, so a backup was throwing. That usually means fewer points for everyone on the team.`); }
+    else if (st.pos === p.pos) { if (!bad) out.push(`${st.name}, another top ${POS_ONE[p.pos]} on his team, didn't play, so more of the ball could go his way.`); }
+    else out.push(`${st.name}, his team's top ${POS_ONE[st.pos]}, didn't play.`);
   }
-  if (!out.length && pts != null && p.avg > 0) {
-    if (pts < p.avg * 0.6) out.push('Nothing obvious: he played his usual snaps against an average defense with his main teammates. Some weeks just go this way.');
-    else if (pts > p.avg * 1.5) out.push('Nothing unusual about the setup: he just had a big game.');
+  if (out.length === head) {
+    if (bad) out.push('Nothing obvious: he played his usual snaps against an average defense with his main teammates. Some weeks just go this way.');
+    else if (good) out.push('Nothing unusual about the setup: he just had a big game.');
   }
   return out;
 }
@@ -2695,13 +2702,14 @@ for (const [id, p] of shown) {
   const games = [];
   for (let wk = Math.max(1, week - 5); wk < week; wk++) {
     const s = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk);
-    games.push({ wk, pts: s?.appliedTotal ?? null, note: p.bye === wk ? 'bye' : '–', line: scoring(s), why: p.bye === wk ? [] : whyWeek(p, wk, s?.appliedTotal ?? null) });
+    games.push({ wk, pts: s?.appliedTotal ?? null, note: p.bye === wk ? 'bye' : '–', line: scoring(s), why: p.bye === wk ? [] : whyWeek(p, wk, s?.appliedTotal ?? null,
+      c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk)?.appliedTotal) });
   }
   // this week so far, once his game has started
   const cur = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === week), g = gameNow[TEAM(p.team)];
   const now = p.bye === week || !g || (g.state === 'pre' && !cur) ? null
     : { pts: n(cur?.appliedTotal ?? p.now ?? 0), game: g.state === 'post' ? 'Game over' : g.state === 'in' ? `Playing now (${g.text})` : g.text, line: cur ? scoring(cur) : p.nowLine ?? [],
-      why: g.state === 'post' ? whyWeek(p, week, cur?.appliedTotal ?? p.now ?? null) : [] };
+      why: g.state === 'post' ? whyWeek(p, week, cur?.appliedTotal ?? p.now ?? null, p.proj) : [] };
   const played = games.filter(g => g.pts != null).slice(-3);
   const recent = played.length ? played.reduce((s, g) => s + g.pts, 0) / played.length : null;
   const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`
