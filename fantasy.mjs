@@ -126,13 +126,18 @@ for (const [name, pos, team, pts] of cbsSaved?.rows ?? []) cbs.set(pkey(name, po
 // Rest of season: points per game each source expects from this week to the end. Used for anything
 // longer than this week (season pickups, trades, bye fill-ins). Rotowire's comes from Sleeper one week
 // at a time (12 big downloads), so like CBS it's refreshed at most once an hour and saved as ros.json.
+// One player's game (Sleeper stats) as a weeks row: [% of his team's plays he was on, opponent, points, targets, carries,
+// red-zone targets + carries, touchdowns, catches, his team's plays, passes thrown, interceptions thrown, position, name]
+const weekRow = x => [x.stats.tm_off_snp ? Math.round((x.stats.off_snp ?? 0) / x.stats.tm_off_snp * 100) : null, TEAM(x.opponent), +(x.stats.pts_half_ppr ?? 0).toFixed(1),
+  x.stats.rec_tgt ?? 0, x.stats.rush_att ?? 0, (x.stats.rec_rz_tgt ?? 0) + (x.stats.rush_rz_att ?? 0), (x.stats.rec_td ?? 0) + (x.stats.rush_td ?? 0),
+  x.stats.rec ?? 0, x.stats.tm_off_snp ?? null, x.stats.pass_att ?? 0, x.stats.pass_int ?? 0, x.player.position, `${x.player.first_name} ${x.player.last_name}`];
 let rosSaved = null, rosPrev = null;
 try {
   const old = rosPrev = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
-  if (old.week === week && Date.now() - old.at < 3600e3 && old.v === 3 && old.practice && old.weeks && old.depth && old.weather) rosSaved = old;
+  if (old.week === week && Date.now() - old.at < 3600e3 && old.v === 4 && old.practice && old.weeks && old.depth && old.weather && old.scores) rosSaved = old;
 } catch {}
 if (!rosSaved) {
-  rosSaved = { v: 3, week, at: Date.now(), roto: [], cbs: [] }; // v3: weeks rows carry touchdowns
+  rosSaved = { v: 4, week, at: Date.now(), roto: [], cbs: [] }; // v4: weeks rows carry catches, team plays and QB lines; final scores
   try {
     const sum = new Map(); // key -> [points, games]
     for (let wk = week; wk <= 18; wk++) {
@@ -150,7 +155,7 @@ if (!rosSaved) {
   // and each player's points so far, to know who a team's usual starters are
   try {
     const allowed = {}, usual = new Map(); // allowed[pos][team] = [points, Set of weeks]
-    const weeks = {}; // weeks[wk][player key] = [% of his team's plays he was on, opponent, points, targets, carries, red-zone targets + carries, touchdowns]: who played, for whyWeek(), qbSplit() and luck()
+    const weeks = {}; // weeks[wk][player key] = weekRow(): who played, for whyWeek(), qbSplit() and luck()
     for (let wk = 1; wk < week; wk++) {
       const r = await fetch(`https://api.sleeper.app/stats/nfl/${SEASON}/${wk}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`);
       for (const x of await r.json()) {
@@ -160,13 +165,26 @@ if (!rosSaved) {
         a[0] += pts; a[1].add(wk);
         const name = `${x.player.first_name} ${x.player.last_name}`, k = pkey(name, pos, x.team), u = usual.get(k) ?? [k, name, pos, TEAM(x.team), 0];
         u[4] += pts; usual.set(k, u);
-        (weeks[wk] ??= {})[k] = [x.stats.tm_off_snp ? Math.round((x.stats.off_snp ?? 0) / x.stats.tm_off_snp * 100) : null, TEAM(x.opponent), +pts.toFixed(1), x.stats.rec_tgt ?? 0, x.stats.rush_att ?? 0, (x.stats.rec_rz_tgt ?? 0) + (x.stats.rush_rz_att ?? 0), (x.stats.rec_td ?? 0) + (x.stats.rush_td ?? 0)];
+        (weeks[wk] ??= {})[k] = weekRow(x);
       }
     }
     rosSaved.weeks = weeks;
     rosSaved.allowed = Object.fromEntries(Object.entries(allowed).map(([pos, t]) => [pos, Object.fromEntries(Object.entries(t).map(([team, [pts, wks]]) => [team, pts / wks.size]))]));
     rosSaved.usual = [...usual.values()];
   } catch (err) { console.warn('Matchup data skipped:', err.message); rosSaved.allowed = {}; rosSaved.usual = []; }
+  // Final scores of past weeks (ESPN): scores[wk][team] = [his team's points, the other team's]
+  try {
+    rosSaved.scores = {};
+    for (let wk = 1; wk < week; wk++) {
+      const sb = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${wk}&seasontype=2&dates=${SEASON}`)).json();
+      for (const ev of sb.events ?? []) {
+        const [a, b] = ev.competitions[0].competitors;
+        if (ev.status?.type?.state !== 'post') continue;
+        (rosSaved.scores[wk] ??= {})[TEAM(a.team.abbreviation)] = [+a.score, +b.score];
+        rosSaved.scores[wk][TEAM(b.team.abbreviation)] = [+b.score, +a.score];
+      }
+    }
+  } catch (err) { console.warn('Past scores skipped:', err.message); rosSaved.scores = {}; }
   // Official NFL injury report (NFL.com): each listed player's latest practice this week. Tables are per team,
   // headed by the nickname ("Seahawks"); columns are player, position, injury, practice status, game status.
   try {
@@ -243,7 +261,7 @@ try {
   const d = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&dates=${SEASON}`)).json();
   for (const ev of d.events ?? []) {
     const c = ev.competitions[0], o = c.odds?.[0];
-    for (const x of c.competitors) gameNow[TEAM(x.team.abbreviation)] = { id: ev.id, state: ev.status?.type?.state, text: ev.status?.type?.shortDetail };
+    for (const x of c.competitors) gameNow[TEAM(x.team.abbreviation)] = { id: ev.id, state: ev.status?.type?.state, text: ev.status?.type?.shortDetail, score: [+x.score, +c.competitors.find(y => y !== x).score] };
     if (!o?.overUnder || o.spread == null) continue;
     const home = c.competitors.find(x => x.homeAway === 'home'), away = c.competitors.find(x => x.homeAway === 'away');
     // spread is the home team's line: -3 means home is favored by 3
@@ -251,6 +269,12 @@ try {
     vegas[TEAM(away.team.abbreviation)] = (o.overUnder + o.spread) / 2;
   }
 } catch (err) { console.warn('Vegas lines skipped:', err.message); down.push('Vegas lines'); }
+// This week's games so far (Sleeper), same rows as rosSaved.weeks, for the "why" of a game that's over
+const weekNow = {};
+if (Object.values(gameNow).some(g => g.state === 'post')) try {
+  for (const x of await (await fetch(`https://api.sleeper.app/stats/nfl/${SEASON}/${week}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`)).json())
+    if (x.player && x.stats?.gp && x.opponent) weekNow[pkey(`${x.player.first_name} ${x.player.last_name}`, x.player.position, x.team)] = weekRow(x);
+} catch (err) { console.warn('This week\'s stat lines skipped:', err.message); }
 const vegasAvg = Object.values(vegas).reduce((s, v) => s + v, 0) / Math.max(1, Object.keys(vegas).length);
 // "Experts disagree" = the highest and lowest projection are 5+ points and 35%+ apart
 const split = v => v.length > 1 && Math.max(...v) - Math.min(...v) >= 5 && Math.max(...v) - Math.min(...v) >= 0.35 * Math.max(...v);
@@ -1191,19 +1215,53 @@ const usualStarters = team => Object.entries({ QB: 1, RB: 1, WR: 2, TE: 1 }).fla
 const qbThisWeek = team => slp.filter(x => x.team === team && x.pos === 'QB' && x.pts != null).sort((a, b) => b.pts - a.pts)[0];
 // 1 = gives up the most points to that position
 const defRank = (pos, team) => { const t = rosSaved.allowed?.[pos]; return t?.[team] == null ? null : Object.values(t).filter(v => v > t[team]).length + 1; };
-// Why a past week went the way it did: he missed the game, played far fewer snaps than usual, the defense he
-// faced, or a key teammate was missing. Empty for a normal week. Only QB/RB/WR/TE (Sleeper's stats).
+// Why a week went the way it did, each with its cause: he missed the game, fewer snaps, a blowout, his QB struggled
+// or got pulled, fewer targets/carries (team ran few plays, or the ball went to a teammate), few catches, no touchdown,
+// the defense he faced, a key teammate missing. Empty for a normal week. Only QB/RB/WR/TE (Sleeper's stats).
+// "Usually" = his median in his other games this season.
 // ponytail: nobody keeps past injury reports, so a big snap drop is the clue he got hurt in the game.
 // ponytail: a player traded mid-season is looked up under his current team only.
 const POS_ONE = { QB: 'quarterback', RB: 'running back', WR: 'receiver', TE: 'tight end' };
 function whyWeek(p, wk, pts) {
-  const wd = rosSaved.weeks?.[wk], team = TEAM(p.team), k = pkey(p.name, p.pos, p.team);
+  const wd = wk === week ? weekNow : rosSaved.weeks?.[wk], team = TEAM(p.team), k = pkey(p.name, p.pos, p.team);
   if (!wd || !POS_PL[p.pos] || !Object.keys(wd).some(x => x.endsWith('|' + team))) return []; // no data, or his team had no game
   const w = wd[k];
   if (!w) return ['He didn\'t play (hurt or inactive).'];
-  const out = [];
+  const out = [], other = Object.entries(rosSaved.weeks ?? {}).filter(([w2]) => +w2 !== wk).map(([, x]) => x[k]).filter(Boolean);
+  const mid = i => { const v = other.map(x => x[i]).filter(x => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
+  const sc = wk === week ? gameNow[team]?.score : rosSaved.scores?.[wk]?.[team], margin = sc ? sc[0] - sc[1] : 0, blowout = Math.abs(margin) >= 17;
   const shares = Object.values(rosSaved.weeks).map(x => x[k]?.[0]).filter(v => v != null).sort((a, b) => a - b), usualShare = shares[Math.floor(shares.length / 2)];
-  if (w[0] != null && usualShare >= 40 && w[0] < usualShare * 0.6) out.push(`He was on the field for only ${w[0]}% of his team's plays (usually ${usualShare}%), so he likely got hurt during the game or lost playing time.`);
+  if (w[0] != null && usualShare >= 40 && w[0] < usualShare * 0.6) out.push(`He was on the field for only ${w[0]}% of his team's plays (usually ${usualShare}%), so he ${blowout ? 'likely sat once the game was out of reach, or got hurt' : 'likely got hurt during the game or lost playing time'}.`);
+  if (blowout) out.push(`His team ${margin > 0 ? 'won' : 'lost'} ${sc[0]}–${sc[1]}.${margin > 0
+    ? (p.pos === 'RB' ? ' Teams far ahead run the ball a lot to use up the clock, which helps running backs.' : ' Teams far ahead stop passing late to use up the clock, and starters can sit.')
+    : (p.pos === 'RB' ? ' Teams that fall far behind stop running the ball and pass to catch up.' : ' A blowout loss usually means few good drives for the whole offense, and starters can sit late.')}`);
+  // quarterback: pulled partway through, or threw interceptions
+  const squad = Object.entries(wd).filter(([key]) => key.endsWith('|' + team)), qbs = squad.filter(([, v]) => v[11] === 'QB' && v[9] >= 3).sort((a, b) => b[1][9] - a[1][9]);
+  const uq = usualStarters(team).find(s => s.pos === 'QB'), uqRow = uq && wd[uq.k], sub = uqRow && qbs.find(([key]) => key !== uq.k);
+  if (sub) out.push(uq.k === k ? `He was pulled for ${sub[1][12]}, who threw ${sub[1][9]} passes. Losing part of the game costs a QB a lot of points.`
+    : sub[0] === k ? `He came in for ${uq.name} partway through, so he only played part of the game.`
+    : `${uq.name} was pulled for ${sub[1][12]} partway through. Switching quarterbacks mid-game usually stalls the passing game.`);
+  const qb = qbs[0]?.[1], qbBad = !!sub || qb?.[10] >= 2;
+  if (qb?.[10] >= 2) out.push(qbs[0][0] === k ? `He threw ${qb[10]} interceptions. Each one costs points and ends a drive.` : `${qb[12]}, his QB, threw ${qb[10]} interceptions, which ended drives and cost everyone chances.`);
+  // his chances: targets (WR/TE) or carries (RB), and why they dropped
+  if (p.pos !== 'QB') {
+    const i = p.pos === 'RB' ? 4 : 3, kind = p.pos === 'RB' ? 'carries' : 'targets', usual = mid(i), plays = w[8], usualPlays = mid(8);
+    const top = squad.filter(([key, v]) => key !== k && v[11] !== 'QB').map(([, v]) => v).sort((a, b) => b[i] - a[i])[0];
+    if (usual >= 4 && w[i] <= usual * 0.6) out.push(`Only ${w[i]} ${kind} (usually about ${usual}).${
+      plays && usualPlays && plays < usualPlays * 0.85 ? ` His team only ran ${plays} plays (usually about ${usualPlays}), so there were fewer chances to go around.`
+      : top && top[i] >= w[i] + 3 ? ` The ball went to others instead: ${top[12]} got ${top[i]}.`
+      : blowout ? ' The lopsided score changed the game plan.'
+      : qbBad ? ' His QB\'s rough day meant fewer good throws to go around.'
+      : ' He played his usual snaps; the team just went his way less this game.'}`);
+    else if (usual >= 3 && w[i] >= usual * 1.5 && pts > p.avg * 1.3) out.push(`Lots of chances: ${w[i]} ${kind} (usually about ${usual}).`);
+    // catches: well below his usual catch rate
+    const tgts = other.reduce((t, x) => t + (x[3] ?? 0), 0), usualRate = tgts >= 10 ? Math.round(other.reduce((t, x) => t + (x[7] ?? 0), 0) / tgts * 100) : null;
+    if (w[3] >= 4 && usualRate && w[7] / w[3] <= 0.4 && usualRate - w[7] / w[3] * 100 >= 20) out.push(`He caught only ${w[7]} of ${w[3]} passes thrown his way (usually ${usualRate}%).${qbBad ? ' His QB struggled, so a lot of throws were off.' : ' The stats don\'t say if it was drops, bad throws or tight coverage.'}`);
+    // touchdowns: 6 points each, the biggest swing week to week
+    const tds = other.reduce((t, x) => t + (x[6] ?? 0), 0);
+    if (w[6] === 0 && pts != null && pts < p.avg * 0.6 && tds >= 3) out.push(`No touchdown. He has ${tds} in his other games, and each is worth 6 points, so a week without one hurts a lot.`);
+    else if (w[6] >= 2) out.push(`He scored ${w[6]} touchdowns, ${w[6] * 6} points from those alone.`);
+  }
   const r = defRank(p.pos, w[1]), of = Object.keys(rosSaved.allowed?.[p.pos] ?? {}).length;
   if (r && r > of - 6) out.push(`He faced ${w[1]}, one of the toughest defenses against ${POS_PL[p.pos]} (${ordinal(of - r + 1)} fewest points given up).`);
   else if (r && r <= 6) out.push(`He faced ${w[1]}, one of the easiest defenses for ${POS_PL[p.pos]} (${ordinal(r)} most points given up).`);
@@ -2122,7 +2180,8 @@ function render(p) {
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
     (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
-      (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') : '') +
+      (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
+      (p.now.why?.length ? '<p class="why" style="margin:6px 0 0"><b>Why:</b> ' + e(p.now.why.join(' ')) + '</p>' : '') : '') +
     (p.plays.length ? '<details class="plays"' + (p.plays.length <= 8 ? ' open' : '') + '><summary><b>His plays this game</b> (' + p.plays.length + ', newest first)</summary>' +
       p.plays.map(x => '<p' + (x.td ? ' class="td"' : '') + '><small>' + e(x.when) + '</small> ' + e(x.text) + '</p>').join('') + '</details>' : '') +
     '<div class="stat">' +
@@ -2641,7 +2700,8 @@ for (const [id, p] of shown) {
   // this week so far, once his game has started
   const cur = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === week), g = gameNow[TEAM(p.team)];
   const now = p.bye === week || !g || (g.state === 'pre' && !cur) ? null
-    : { pts: n(cur?.appliedTotal ?? p.now ?? 0), game: g.state === 'post' ? 'Game over' : g.state === 'in' ? `Playing now (${g.text})` : g.text, line: cur ? scoring(cur) : p.nowLine ?? [] };
+    : { pts: n(cur?.appliedTotal ?? p.now ?? 0), game: g.state === 'post' ? 'Game over' : g.state === 'in' ? `Playing now (${g.text})` : g.text, line: cur ? scoring(cur) : p.nowLine ?? [],
+      why: g.state === 'post' ? whyWeek(p, week, cur?.appliedTotal ?? p.now ?? null) : [] };
   const played = games.filter(g => g.pts != null).slice(-3);
   const recent = played.length ? played.reduce((s, g) => s + g.pts, 0) / played.length : null;
   const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`

@@ -234,11 +234,23 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
     4: { 'x|PIT': [80, 'CLE'] } }; // CIN on bye
   const allowed = { WR: Object.fromEntries(['DEN', 'BAL', 'KC', ...'ABCDEFGHIJ'].map((t, i) => [t, t === 'DEN' ? 1 : 10 + i])) };
   const usual = [[K('qb a'), 'QB A', 'QB', 'CIN', 50], [K('qb b'), 'QB B', 'QB', 'CIN', 10], [K('wr a'), 'WR A', 'WR', 'CIN', 40], [K('wr b'), 'WR B', 'WR', 'CIN', 30]];
-  const whyWeek = new Function('rosSaved', 'ordinal', 'norm', 'TEAM', 'pkey', 'POS_PL', 'usualBy',
+  const whyWeek = new Function('rosSaved', 'ordinal', 'norm', 'TEAM', 'pkey', 'POS_PL', 'usualBy', 'week', 'weekNow', 'gameNow',
     cut('const usualStarters = ', '\n') + cut('const defRank = ', '\n') + cut('const POS_ONE = ', '  return out;\n}') + '\nreturn whyWeek;');
   const usualBy = new Map();
   for (const [k, name, pos, team, pts] of usual) (usualBy.get(`${team}|${pos}`) ?? usualBy.set(`${team}|${pos}`, []).get(`${team}|${pos}`)).push({ k, name, pos, pts });
   const f = whyWeek({ weeks, allowed }, k => k + 'th', s => s.toLowerCase(), t => t, (name, pos, team) => `${name.toLowerCase()}|${team}`, { WR: 'receivers' }, usualBy);
+  // Coker, week 7: 43-13 loss, QB threw 2 picks and got pulled, 56 plays, 4 targets (usually 9+), 1 catch
+  const C = n => `${n}|CAR`, row = (snap, tgt, rec, plays, td, pa = 0, int = 0, pos = 'WR', name = '') => [snap, 'TB', 0, tgt, 0, 0, td, rec, plays, pa, int, pos, name];
+  const cw = { 5: { [C('coker')]: row(75, 9, 6, 70, 1), [C('young')]: row(100, 0, 0, 70, 0, 35, 0, 'QB', 'Bryce Young') },
+    6: { [C('coker')]: row(75, 13, 6, 79, 1), [C('young')]: row(100, 0, 0, 79, 0, 39, 0, 'QB', 'Bryce Young') },
+    4: { [C('coker')]: row(70, 8, 5, 68, 1), [C('young')]: row(100, 0, 0, 68, 0, 30, 0, 'QB', 'Bryce Young') } };
+  const cNow = { [C('coker')]: row(66, 4, 1, 56, 0), [C('young')]: row(90, 0, 0, 56, 0, 27, 2, 'QB', 'Bryce Young'), [C('pickett')]: row(10, 0, 0, 56, 0, 4, 0, 'QB', 'Kenny Pickett'),
+    [C('mcmillan')]: row(80, 6, 4, 56, 0, 0, 0, 'WR', 'Tetairoa McMillan') };
+  const cBy = new Map([['CAR|QB', [{ k: C('young'), name: 'Bryce Young', pos: 'QB', pts: 90 }]], ['CAR|WR', [{ k: C('coker'), name: 'Jalen Coker', pos: 'WR', pts: 60 }]]]);
+  const cf = whyWeek({ weeks: cw, allowed: {} }, k => k + 'th', s => s.toLowerCase(), t => t, (name, pos, team) => `${name.toLowerCase()}|${team}`, { WR: 'receivers' }, cBy, 7, cNow, { CAR: { score: [13, 43] } });
+  const cw7 = cf({ name: 'Coker', pos: 'WR', team: 'CAR', avg: 10 }, 7, 1.4).join(' | ');
+  for (const re of [/lost 13–43/, /pulled for Kenny Pickett/, /2 interceptions/, /Only 4 targets \(usually about 9\)\. His team only ran 56 plays/, /caught only 1 of 4/, /No touchdown/])
+    assert(re.test(cw7), `Coker week 7 should say ${re}: ${cw7}`);
   const p = { name: 'WR A', pos: 'WR', team: 'CIN', avg: 10 };
   const w1 = f(p, 1, 5), w2 = f(p, 2, 3);
   assert(w1.length === 1 && /toughest/.test(w1[0]), 'tough defense named: ' + w1);
