@@ -1811,7 +1811,7 @@ section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
 details.info{margin-top:6px}details.info>summary{list-style:none;position:relative;display:inline-grid;place-items:center;place-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);cursor:pointer}details.info>summary svg{width:10px;height:10px;fill:currentColor;display:block}
 details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px tap area around the small (i) */details.info>summary::-webkit-details-marker{display:none}details.info[open]>summary{color:var(--fg);border-color:var(--fg);margin-bottom:0}
-/* the generic details "+" marker hung under the (i) circle */details.info>summary::after{content:none}details.info>div{margin-top:6px;font-size:13px;color:var(--muted)}details.info p{margin:0 0 4px}
+/* the generic details "+" marker hung under the (i) circle */details.info>summary::after,details.info[open]>summary::after{content:none}details.info>div{margin-top:6px;font-size:13px;color:var(--muted)}details.info p{margin:0 0 4px}
 .tpics{display:flex;gap:6px;margin:6px 0 2px}.tpics .pic{width:36px;height:36px}.tpics [data-pid]{cursor:pointer}
 .todo b{display:block;font-size:15px}.todo p{margin:2px 0 0;color:var(--muted);font-size:14px}
 .player{display:flex;gap:12px;align-items:center;min-width:0;flex:1}
