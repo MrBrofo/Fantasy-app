@@ -234,8 +234,8 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
     4: { 'x|PIT': [80, 'CLE'] } }; // CIN on bye
   const allowed = { WR: Object.fromEntries(['DEN', 'BAL', 'KC', ...'ABCDEFGHIJ'].map((t, i) => [t, t === 'DEN' ? 1 : 10 + i])) };
   const usual = [[K('qb a'), 'QB A', 'QB', 'CIN', 50], [K('qb b'), 'QB B', 'QB', 'CIN', 10], [K('wr a'), 'WR A', 'WR', 'CIN', 40], [K('wr b'), 'WR B', 'WR', 'CIN', 30]];
-  const whyWeek = new Function('rosSaved', 'ordinal', 'norm', 'TEAM', 'pkey', 'POS_PL', 'usualBy', 'week', 'weekNow', 'gameNow', 'n',
-    cut('const usualStarters = ', '\n') + cut('const defRank = ', '\n') + cut('const POS_ONE = ', '  return out;\n}') + '\nreturn whyWeek;');
+  const whyWeek = new Function('rosSaved', 'ordinal', 'norm', 'TEAM', 'pkey', 'POS_PL', 'usualBy', 'week', 'weekNow', 'gameNow', 'n', 'kdNow',
+    cut('const usualStarters = ', '\n') + cut('const defRank = ', '\n') + cut('const POS_ONE = ', '  return out;\n}') + cut('function whyWeek(', '  return out;\n}') + '\nreturn whyWeek;');
   const usualBy = new Map();
   for (const [k, name, pos, team, pts] of usual) (usualBy.get(`${team}|${pos}`) ?? usualBy.set(`${team}|${pos}`, []).get(`${team}|${pos}`)).push({ k, name, pos, pts });
   const f = whyWeek({ weeks, allowed }, k => k + 'th', s => s.toLowerCase(), t => t, (name, pos, team) => `${name.toLowerCase()}|${team}`, { WR: 'receivers' }, usualBy);
@@ -256,6 +256,13 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   const sNow = { [C('ds')]: [29, 'TB', 13, 3, 5, 0, 1, 3, 66, 0, 0, 'RB', 'DS'], [C('young')]: row(8, 0, 0, 66, 0, 0, 0, 'QB', 'Bryce Young'), [C('pickett')]: row(92, 0, 0, 66, 0, 28, 0, 'QB', 'Kenny Pickett') };
   const sf = whyWeek({ weeks: sw, allowed: {} }, k => k + 'th', s => s.toLowerCase(), t => t, (name, pos, team) => `${name.toLowerCase()}|${team}`, { RB: 'running backs' }, cBy, 7, sNow, { CAR: { score: [20, 17] } }, v => v.toFixed(1));
   const s7 = sf({ name: 'DS', pos: 'RB', team: 'CAR', avg: 5 }, 7, 13, 3).join(' | ');
+  // kicker and defense: their own reasons (bad defense week: 30 allowed, no turnovers; good kicker week: 3 field goals, a 50+)
+  const kdf = whyWeek({ weeks: {}, allowed: {}, kd: { 5: { 'dst|NE': ['DEF', 'X', 8, 17, 3, 1, 1, 0], 's|NE': ['K', 'X', 7, 2, 1, 0, 2, 2] }, 6: { 'dst|NE': ['DEF', 'X', 8, 17, 3, 1, 0, 0], 's|NE': ['K', 'X', 7, 2, 2, 0, 2, 2] } } },
+    k => k + 'th', s => s.toLowerCase(), t => t, (name, pos, team) => (pos === 'D/ST' ? `dst|${team}` : `${name.toLowerCase()}|${team}`), {}, new Map(), 7, {}, {}, v => v.toFixed(1),
+    { 'dst|NE': ['DEF', 'BUF', 2, 30, 2, 0, 0, 0], 's|NE': ['K', 'BUF', 14, 4, 3, 1, 3, 3] });
+  const dW = kdf({ name: 'NE', pos: 'D/ST', team: 'NE', avg: 8 }, 7, 2, 8).join(' | '), kW = kdf({ name: 'S', pos: 'K', team: 'NE', avg: 7 }, 7, 14, 7).join(' | ');
+  assert(/Gave up 30 points/.test(dW) && /No turnovers/.test(dW), 'defense bad week: ' + dW);
+  assert(/Lots of kicks: 3/.test(kW) && /50\+ yards/.test(kW) && !/Missed/.test(kW), 'kicker good week: ' + kW);
   assert(/Expected about 3.0, scored 13.0/.test(s7) && /made the most of it/.test(s7) && /a touchdown, 6 of his 13.0/.test(s7) && !/pulled|Only|interception/.test(s7), 'good week, good reasons: ' + s7);
   const p = { name: 'WR A', pos: 'WR', team: 'CIN', avg: 10 };
   const w1 = f(p, 1, 5), w2 = f(p, 2, 3);
