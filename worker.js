@@ -8,35 +8,89 @@ const cors = { 'Access-Control-Allow-Origin': SITE, 'Access-Control-Allow-Header
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } });
 const ITEM_TYPES = { ROSTER: ['LINEUP', 'DROP'], FREEAGENT: ['ADD', 'DROP'], WAIVER: ['ADD', 'DROP'], TRADE_DECLINE: [], TRADE_ACCEPT: [], TRADE_PROPOSAL: ['GIVE', 'GET'] };
 const hex = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('');
-let cached = { at: 0, week: 0, body: null }; // one answer shared for 20s, so several open phones don't each hit ESPN
+// Each part refreshes on its own clock and is shared by every open phone: scores 20s, pickups 30s, trades and
+// claims 60s, news 2 min. That keeps it to a few ESPN calls a minute, inside Cloudflare's free limits.
+const memo = {}; // key -> { at, val }
+async function every(key, ms, fn) {
+  const m = memo[key];
+  if (m && Date.now() - m.at < ms) return m.val;
+  const val = await fn().catch(() => m?.val ?? null); // a failed call keeps the last good answer
+  memo[key] = { at: Date.now(), val };
+  return val;
+}
+const names = {}; // player id -> name, kept while the Worker stays warm
 
-// Live scores for my matchup: each team's points so far, ESPN's live final projection and win chance, every
-// rostered player's points so far, injury status and projection, and each NFL game's state and clock (keyed by ESPN pro team id).
+// Live data for the site: my matchup (points so far, ESPN's live final guess, win chance), every rostered player's
+// points, injury status and projection, the whole league's scores, my lineup as set on ESPN, the site's suggested
+// pickups that someone else just took, my trades and claims, news on players in my matchup, and each NFL game's clock.
 async function live(req, env) {
   if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
-  const week = Number(new URL(req.url).searchParams.get('week'));
+  const q = new URL(req.url).searchParams, week = Number(q.get('week'));
   if (!Number.isInteger(week) || week < 1 || week > 25) return reply(400, { error: 'Bad week' });
-  if (cached.week === week && Date.now() - cached.at < 20000) return reply(200, cached.body);
-  const cookie = `espn_s2=${env.ESPN_S2}${env.SWID ? `; SWID=${env.SWID}` : ''}`;
-  const [lg, sb] = await Promise.all([
-    fetch(`https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${env.SEASON}/segments/0/leagues/${env.LEAGUE_ID}?view=mMatchupScore&view=mScoreboard&scoringPeriodId=${week}`,
-      { headers: { cookie, 'x-fantasy-filter': JSON.stringify({ schedule: { filterMatchupPeriodIds: { value: [week] } } }) } }),
-    fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&dates=${env.SEASON}`),
-  ]);
-  if (!lg.ok) return reply(502, { error: `ESPN said ${lg.status}` });
-  const team = Number(env.TEAM_ID), g = (await lg.json()).schedule?.find(x => x.matchupPeriodId === week && (x.home?.teamId === team || x.away?.teamId === team));
-  const side = s => s && { pts: s.totalPointsLive ?? s.totalPoints ?? 0, proj: s.totalProjectedPointsLive ?? null, win: s.winProbability ?? null };
-  const [mine, theirs] = !g ? [] : g.home.teamId === team ? [g.home, g.away] : [g.away, g.home];
-  const players = {};
-  // players[id] = [points so far, ESPN injury status, ESPN's projection for this week]
-  for (const s of [mine, theirs]) for (const e of s?.rosterForCurrentScoringPeriod?.entries ?? []) {
-    const p = e.playerPoolEntry?.player, proj = p?.stats?.find(x => x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === week)?.appliedTotal;
-    players[e.playerId] = [e.playerPoolEntry?.appliedStatTotal ?? 0, p?.injuryStatus ?? 'ACTIVE', proj ?? null];
-  }
-  const games = {};
-  for (const ev of sb.ok ? (await sb.json()).events ?? [] : []) for (const c of ev.competitions[0].competitors) games[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail];
-  cached = { at: Date.now(), week, body: { at: Date.now(), me: side(mine), opp: side(theirs), players, games } };
-  return reply(200, cached.body);
+  const fa = [...new Set((q.get('fa') ?? '').split(',').map(Number).filter(Number.isInteger))].slice(0, 40).sort((a, b) => a - b);
+  const team = Number(env.TEAM_ID), cookie = `espn_s2=${env.ESPN_S2}${env.SWID ? `; SWID=${env.SWID}` : ''}`;
+  const LG = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${env.SEASON}/segments/0/leagues/${env.LEAGUE_ID}`;
+  const espn = async (url, filter) => { const r = await fetch(url, { headers: filter ? { cookie, 'x-fantasy-filter': JSON.stringify(filter) } : { cookie } }); if (!r.ok) throw new Error(`ESPN said ${r.status}`); return r.json(); };
+  const lookup = async ids => { // names for players this Worker hasn't seen yet
+    const need = ids.filter(id => !names[id]);
+    if (need.length) for (const x of (await espn(`${LG}?view=kona_player_info`, { players: { filterIds: { value: need } } })).players ?? []) names[x.player.id] = x.player.fullName;
+  };
+
+  const score = await every(`score:${week}`, 20000, async () => {
+    const [d, sb] = await Promise.all([
+      espn(`${LG}?view=mMatchupScore&view=mScoreboard&scoringPeriodId=${week}`, { schedule: { filterMatchupPeriodIds: { value: [week] } } }),
+      fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&dates=${env.SEASON}`).then(r => (r.ok ? r.json() : {})),
+    ]);
+    const games = d.schedule?.filter(x => x.matchupPeriodId === week) ?? [], g = games.find(x => x.home?.teamId === team || x.away?.teamId === team);
+    const side = s => s && { pts: s.totalPointsLive ?? s.totalPoints ?? 0, proj: s.totalProjectedPointsLive ?? null, win: s.winProbability ?? null };
+    const [mine, theirs] = !g ? [] : g.home.teamId === team ? [g.home, g.away] : [g.away, g.home];
+    // players[id] = [points so far, ESPN injury status, ESPN's projection for this week]; lineup[id] = ESPN lineup slot
+    const players = {}, lineup = {}, board = {};
+    for (const s of [mine, theirs]) for (const e of s?.rosterForCurrentScoringPeriod?.entries ?? []) {
+      const p = e.playerPoolEntry?.player, proj = p?.stats?.find(x => x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === week)?.appliedTotal;
+      players[e.playerId] = [e.playerPoolEntry?.appliedStatTotal ?? 0, p?.injuryStatus ?? 'ACTIVE', proj ?? null];
+      if (p?.fullName) names[e.playerId] = p.fullName;
+      if (s === mine) lineup[e.playerId] = e.lineupSlotId;
+    }
+    // board[teamId] = [points so far, ESPN's live final guess]
+    for (const x of games) for (const s of [x.home, x.away]) if (s) board[s.teamId] = [s.totalPointsLive ?? s.totalPoints ?? 0, s.totalProjectedPointsLive ?? null];
+    const clocks = {};
+    for (const ev of sb.events ?? []) for (const c of ev.competitions[0].competitors) clocks[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail];
+    return { me: side(mine), opp: side(theirs), players, lineup, board, games: clocks };
+  });
+  if (!score) return reply(502, { error: 'ESPN said no' });
+
+  // the site's suggested pickups that are on a team now: taken[id] = team id
+  const taken = !fa.length ? {} : await every(`fa:${fa.join(',')}`, 30000, async () => {
+    const out = {};
+    for (const x of (await espn(`${LG}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: fa } } })).players ?? []) {
+      names[x.player.id] = x.player.fullName;
+      if (x.onTeamId > 0) out[x.player.id] = x.onTeamId;
+    }
+    return out;
+  }) ?? {};
+
+  // my trades and claims this week and last (offers to me, accepted or turned down, claims that went through or failed)
+  const tx = await every(`tx:${week}`, 60000, async () => {
+    const all = [];
+    for (const wk of [week - 1, week].filter(w => w >= 1)) all.push(...((await espn(`${LG}?view=mTransactions2&scoringPeriodId=${wk}`)).transactions ?? []));
+    const mineTx = [...new Map(all.map(t => [t.id, t])).values()].filter(t => t.teamId === team || (t.items ?? []).some(i => i.toTeamId === team || i.fromTeamId === team))
+      .map(t => ({ id: t.id, type: t.type, status: t.status, team: t.teamId, date: t.processDate ?? t.proposedDate ?? 0, items: (t.items ?? []).map(i => [i.playerId, i.type, i.fromTeamId, i.toTeamId]) }))
+      .filter(t => Date.now() - t.date < 3 * 864e5);
+    await lookup([...new Set(mineTx.flatMap(t => t.items.map(i => i[0])))]);
+    return mineTx;
+  }) ?? [];
+
+  // news (Rotowire) on everyone in my matchup
+  const ids = Object.keys(score.players);
+  const news = !ids.length ? [] : await every(`news:${week}`, 120000, async () => {
+    const r = await fetch(`https://site.api.espn.com/apis/fantasy/v2/games/ffl/news/players?limit=40&${ids.map(id => `playerId=${id}`).join('&')}`);
+    if (!r.ok) throw new Error(`news ${r.status}`);
+    return ((await r.json()).feed ?? []).filter(x => x.type === 'Rotowire' && x.playerId && x.headline).map(x => ({ id: x.id, pid: x.playerId, h: x.headline, t: Date.parse(x.published) }));
+  }) ?? [];
+
+  const who = [...new Set([...Object.keys(taken), ...tx.flatMap(t => t.items.map(i => i[0])), ...news.map(x => x.pid)])];
+  return reply(200, { at: Date.now(), ...score, taken, tx, news, names: Object.fromEntries(who.filter(id => names[id]).map(id => [id, names[id]])) });
 }
 
 export default {

@@ -1634,7 +1634,7 @@ const tier = (v, p, kind) => { const c = p && tierCut[`${kind}|${p.pos}`]; retur
 // data-big: what the page needs to redo this week's number when the live feed brings a new ESPN projection or injury
 // status (the same average of ESPN, Rotowire and CBS, times wind, times his chance to play). Not for bye weeks or games underway.
 const liveBig = p => (p.bye === week || locked(p) || p.slot === 'IR' ? ''
-  : ` data-big="${p.id}" data-st="${p.status || 'ACTIVE'}" data-espn="${p.espn ?? ''}" data-roto="${p.roto ?? ''}" data-cbs="${p.cbs ?? ''}" data-wind="${p.wind ?? 1}" data-odds="${playOdds(p, p.inj?.type)?.pct ?? 100}" data-v="${n(weekValue(p))}"${p.slot !== 'Bench' && me.roster.includes(p) ? ' data-start' : ''}`);
+  : ` data-big="${p.id}" data-st="${p.status || 'ACTIVE'}" data-espn="${p.espn ?? ''}" data-roto="${p.roto ?? ''}" data-cbs="${p.cbs ?? ''}" data-wind="${p.wind ?? 1}" data-odds="${playOdds(p, p.inj?.type)?.pct ?? 100}" data-v="${n(weekValue(p))}"${me.roster.includes(p) ? ` data-mine${p.slot !== 'Bench' ? ' data-start' : ''}` : ''}`);
 const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"><b${t ? ` class="t-${t[0]}"` : ''}${kind === 'week' && p ? liveBig(p) : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
 
 // Playoff seeding, ESPN's way: with divisions, each division winner takes a top seed; the rest go by record.
@@ -1926,6 +1926,7 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 </div></header>
 
 <div class="wrap">
+<div id="lv-tx"></div>
 ${opp ? (() => {
   // Once games start, ESPN's live numbers replace the pre-game projection
   const live = isLive;
@@ -1936,13 +1937,13 @@ ${opp ? (() => {
   <div class="wp"><b id="lv-wp" style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag" id="lv-wpsrc">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
   <div class="tag" id="lv-score" style="margin-bottom:8px"${live ? '' : ' hidden'}>Score right now: <b>${n(mySide.totalPointsLive ?? 0)}</b> to <b>${n(oppSide.totalPointsLive ?? 0)}</b>. Final guess below.</div>
   <div class="vs">
-  <div class="t">You</div><div class="p" id="lv-a">${n(a)}</div><div class="bar"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
+  <div class="t">You</div><div class="p" id="lv-a" data-base="${n(a)}">${n(a)}</div><div class="bar"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
   <div class="t">${esc(opp.name)}</div><div class="p" id="lv-b">${n(b)}</div><div class="bar"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
 </div><div class="verdict" id="lv-verdict">${a >= b ? `<b style="color:var(--good)">You're expected to win</b> by ${n((Math.round(a * 10) - Math.round(b * 10)) / 10)} points.` : `<b style="color:var(--bad)">You're expected to lose</b> by ${n((Math.round(b * 10) - Math.round(a * 10)) / 10)} points.`}
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
 <details class="board" style="margin-top:10px"><summary><b>Whole league this week:</b> you're ${ordinal(myBoardRank)} of ${board.length}, ${below.length} team${below.length === 1 ? '' : 's'} below you. <b style="color:${lowestPct >= 15 ? 'var(--bad)' : lowestPct >= 5 ? 'var(--warn)' : 'var(--good)'}">${lowestPct < 1 ? 'Under 1' : lowestPct}% chance</b> you're the lowest score.</summary>
-<table class="cmp" style="margin-top:8px">${board.map((r, i) => `<tr${r.t === me ? ' style="font-weight:700"' : ''}><td class="num" style="text-align:left">${i + 1}</td><td>${esc(r.t === me ? 'You' : r.t.name)}</td>${isLive ? `<td class="num">${n(r.now)} now</td>` : ''}<td class="num">${n(r.proj)}</td></tr>`).join('')}</table>
+<table class="cmp" style="margin-top:8px">${board.map((r, i) => `<tr data-team="${r.t.id}"${r.t === me ? ' style="font-weight:700"' : ''}><td class="num" style="text-align:left">${i + 1}</td><td>${esc(r.t === me ? 'You' : r.t.name)}</td>${isLive ? `<td class="num" data-now>${n(r.now)} now</td>` : ''}<td class="num" data-proj>${n(r.proj)}</td></tr>`).join('')}</table>
 <p class="tag" style="margin:6px 0 0">${isLive ? 'Expected final score (ESPN live projection)' : 'Expected score with every lineup as set right now (averaged projections)'}. ${below.length ? `Below you: ${esc(below.map(r => r.t.name).join(', '))}.` : 'Nobody is projected below you.'} Lineups can still change before games start.</p></details></div>`;
 })() : ''}
 <div id="stale" class="card" hidden style="background:var(--badbg);border-color:var(--bad)"><b style="color:var(--bad)">&#9888; This page stopped updating</b><div class="tag" id="staletext"></div></div>
@@ -2194,7 +2195,7 @@ ${process.env.SITE_PASSWORD ? '<button type="button" id="signout" class="btn" st
 <script type="application/json" id="rdata">__RDATA__</script>
 <script type="application/json" id="snap">${JSON.stringify(snap).replace(/</g, '\\u003c')}</script>
 <script type="application/json" id="facts">${JSON.stringify(facts).replace(/</g, '\\u003c')}</script>
-<script type="application/json" id="live">${JSON.stringify(MOVE_URL && process.env.SITE_PASSWORD ? { url: MOVE_URL, token: crypto.createHash('sha256').update(process.env.SITE_PASSWORD + ':live').digest('hex'), week } : null)}</script>
+<script type="application/json" id="live">${JSON.stringify(MOVE_URL && process.env.SITE_PASSWORD ? { url: MOVE_URL, token: crypto.createHash('sha256').update(process.env.SITE_PASSWORD + ':live').digest('hex'), week, me: me.id, teams: Object.fromEntries(teams.map(t => [t.id, t.name])) } : null)}</script>
 <script>
 // Load the newest build when there is one: on the button, every minute, and when you come back to the app.
 // GitHub caches pages ~10 min, so a timestamped URL is used to skip the cache.
@@ -2235,7 +2236,7 @@ function load() {
   try { sessionStorage.setItem('scroll', scrollY); } catch {}
   location.replace(fresh() + location.hash);
 }
-const KEEP = /^(sheet|gloss|fab|changes|tc-|cmp-|tp-)/;
+const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-)/;
 const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || changedIn.has(n));
 async function swap(html) {
   let page = html;
@@ -2299,7 +2300,7 @@ let liveOn = false, liveNote = '';
 async function liveTick() {
   if (!LIVE || document.hidden) return;
   try {
-    const r = await fetch(LIVE.url + '?week=' + LIVE.week, { headers: { 'x-live': LIVE.token } });
+    const fa = faIds(), r = await fetch(LIVE.url + '?week=' + LIVE.week + (fa.length ? '&fa=' + fa.join(',') : ''), { headers: { 'x-live': LIVE.token } });
     if (!r.ok) { liveNote = ' \u00b7 live scores off (' + (r.status === 401 ? 'password mismatch' : 'ESPN login rejected') + ')'; return showAgo(); }
     const d = await r.json(), $ = id => document.getElementById(id), f = v => (Math.round(v * 10) / 10).toFixed(1);
     liveOn = Object.values(d.games).some(g => g[0] === 'in');
@@ -2312,10 +2313,11 @@ async function liveTick() {
       const p = P[el.dataset.live];
       if (p) p.now = { line: [], why: [], ...p.now, pts: f(pts), game: g[0] === 'post' ? 'Game over' : g[0] === 'in' ? 'Playing now (' + g[1] + ')' : g[1] };
     }
-    const delta = liveProj(d, f);
+    liveProj(d, f); liveExtras(d, f);
+    const shift = startShift(d);
     // before games start: my expected total moves with my starters' new numbers (once they start, ESPN's live guess takes over)
-    if (delta && $('lv-a') && !(d.me?.pts > 0 || d.opp?.pts > 0)) {
-      const a = +$('lv-a').textContent + delta, b = +$('lv-b').textContent, top = Math.max(a, b, 1);
+    if ($('lv-a') && !(d.me?.pts > 0 || d.opp?.pts > 0)) {
+      const a = +$('lv-a').dataset.base + shift, b = +$('lv-b').textContent, top = Math.max(a, b, 1);
       $('lv-a').textContent = f(a); $('lv-abar').style.width = Math.min(100, a / top * 100) + '%'; $('lv-bbar').style.width = Math.min(100, b / top * 100) + '%';
       $('lv-verdict').innerHTML = a >= b ? '<b style="color:var(--good)">Expected to win</b> by ' + f(a - b) + ' points.' : '<b style="color:var(--bad)">Expected to lose</b> by ' + f(b - a) + ' points.';
     }
@@ -2342,7 +2344,6 @@ async function liveTick() {
 // advice (lineup, to-do list) catches up with the next build, a few minutes later.
 const LIVE_TAG = { QUESTIONABLE: ['Might not play', 'warn'], DOUBTFUL: ['Probably won\\'t play', 'bad'], OUT: ['Out this week', 'bad'], INJURY_RESERVE: ['Hurt long-term (IR)', 'bad'], SUSPENSION: ['Suspended', 'bad'], DAY_TO_DAY: ['Day to day', 'warn'] };
 function liveProj(d, f) {
-  let delta = 0;
   for (const [id, x] of Object.entries(d.players)) {
     if (!Array.isArray(x)) continue;
     const st = x[1] || 'ACTIVE', espn = x[2];
@@ -2366,11 +2367,85 @@ function liveProj(d, f) {
       const srcs = newEspn == null ? [] : [newEspn, num(ds.roto), num(ds.cbs)].filter(v => v != null);
       const pct = ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(st) ? 0 : st === 'DOUBTFUL' ? 7 : st === 'QUESTIONABLE' ? (ds.st === 'QUESTIONABLE' ? +ds.odds : 71) : 100;
       const v = srcs.length ? srcs.reduce((t, s) => t + s, 0) / srcs.length * +ds.wind * pct / 100 : 0;
-      if ('start' in ds) delta += v - +(ds.cur ?? ds.v);
       ds.cur = v; b.textContent = f(v);
     }
   }
-  return delta;
+}
+// The rest of the live feed: pickups someone just took, lineup moves made in the ESPN app, the whole league's
+// scores, my trades and claims, and news. Each change shows once, marked "just now"; the next build folds it in.
+const SLOT_NAME = { 0: 'QB', 2: 'RB', 3: 'RB/WR', 4: 'WR', 5: 'WR/TE', 6: 'TE', 7: 'OP', 16: 'D/ST', 17: 'K', 20: '', 21: '', 23: 'FLEX' };
+const seenLive = new Set();
+const moveOf = b => { try { return JSON.parse(b.dataset.move); } catch { return null; } };
+// players the site suggests adding: the Worker checks if they're still free
+const faIds = () => [...new Set([...document.querySelectorAll('button.do[data-move]')].flatMap(b => (moveOf(b)?.items || []).filter(i => i.type === 'ADD').map(i => i.playerId)))].slice(0, 40);
+// my starters' total vs the build: new numbers, plus players moved in or out of the lineup on ESPN
+function startShift(d) {
+  let shift = 0;
+  const seen = new Set();
+  for (const b of document.querySelectorAll('[data-big][data-mine]')) {
+    const ds = b.dataset;
+    if (seen.has(ds.big)) continue;
+    seen.add(ds.big);
+    const slot = d.lineup?.[ds.big], startNow = slot == null ? 'start' in ds : slot !== 20 && slot !== 21;
+    shift += (startNow ? +(ds.cur ?? ds.v) : 0) - ('start' in ds ? +ds.v : 0);
+  }
+  return shift;
+}
+function txText(t, name, team) {
+  const got = t.items.filter(i => i[3] === LIVE.me).map(i => name(i[0])), gave = t.items.filter(i => i[2] === LIVE.me).map(i => name(i[0])), list = a => a.join(', ');
+  const swap = got.length || gave.length ? ': you get ' + list(got) + ' for ' + list(gave) : '';
+  if (t.type === 'TRADE_PROPOSAL' && t.status === 'PENDING' && t.team !== LIVE.me) return 'New trade offer from ' + team(t.team) + swap + '. See the Trades tab.';
+  if (t.type === 'TRADE_PROPOSAL' && /CANCEL|DECLIN|VETO|REJECT/.test(t.status || '')) return (t.team === LIVE.me ? 'Your trade offer' : 'The trade offer from ' + team(t.team)) + ' is off (turned down or canceled).';
+  if (t.type === 'TRADE_ACCEPT' || (t.type === 'TRADE_PROPOSAL' && t.status === 'EXECUTED')) return 'Trade done' + (swap ? swap.replace('you get', 'you got') : '') + '.';
+  if (t.type === 'WAIVER' && t.status === 'EXECUTED') return 'Your claim went through: added ' + list(got) + (gave.length ? ', dropped ' + list(gave) : '') + '.';
+  if (t.type === 'WAIVER' && /^FAILED/.test(t.status || '')) return 'Your claim for ' + list(t.items.filter(i => i[1] === 'ADD').map(i => name(i[0]))) + ' did not go through.';
+  if (t.type === 'FREEAGENT' && t.status === 'EXECUTED') return 'Added ' + list(got) + (gave.length ? ', dropped ' + list(gave) : '') + '.';
+  return '';
+}
+function liveExtras(d, f) {
+  const name = id => d.names?.[id] || P[id]?.name || 'a player', team = id => (id === LIVE.me ? 'you' : LIVE.teams?.[id] || 'another team');
+  for (const b of document.querySelectorAll('button.do[data-move]')) {
+    const m = moveOf(b), card = b.closest('.card');
+    if (!m || !card) continue;
+    // a suggested pickup someone else just took
+    const add = (m.items || []).find(i => i.type === 'ADD'), t = add && d.taken?.[add.playerId];
+    if (t && t !== LIVE.me && !card.dataset.taken) {
+      card.dataset.taken = 1; b.disabled = true; b.textContent = 'Taken by ' + team(t);
+      card.insertAdjacentHTML('afterbegin', '<span class="chip bad">' + e(name(add.playerId)) + ' was just taken by ' + e(team(t)) + '</span>');
+    }
+    // a lineup move the site suggested that's now done on ESPN
+    const ln = (m.items || []).filter(i => i.type === 'LINEUP');
+    if (m.type === 'ROSTER' && ln.length && !b.dataset.done && ln.every(i => d.lineup?.[i.playerId] === i.to)) { b.dataset.done = 1; b.disabled = true; b.textContent = 'Done on ESPN'; }
+  }
+  // slot labels on My team follow the lineup as set on ESPN
+  for (const [id, slot] of Object.entries(d.lineup || {})) for (const el of document.querySelectorAll('#lineup .row [data-pid="' + id + '"]')) {
+    const s = el.closest('.row').querySelector('.slot');
+    if (s && slot in SLOT_NAME && s.textContent !== SLOT_NAME[slot]) s.textContent = SLOT_NAME[slot];
+  }
+  // whole league this week
+  if (d.board && Object.values(d.board).some(x => x[0] > 0)) for (const tr of document.querySelectorAll('tr[data-team]')) {
+    const x = d.board[tr.dataset.team], now = tr.querySelector('[data-now]'), proj = tr.querySelector('[data-proj]');
+    if (!x) continue;
+    if (now) now.textContent = f(x[0]) + ' now';
+    if (proj && x[1] != null) proj.textContent = f(x[1]);
+  }
+  // my trades and claims since this build
+  const box = document.getElementById('lv-tx');
+  for (const t of (d.tx || []).slice().sort((a, b) => a.date - b.date)) {
+    const key = 'tx' + t.id + t.status, text = t.date > built && !seenLive.has(key) && txText(t, name, team);
+    if (!text) continue;
+    seenLive.add(key);
+    box?.insertAdjacentHTML('afterbegin', '<div class="card" style="margin-bottom:10px"><span class="chip warn" style="margin:0 6px 0 0">Just now</span>' + e(text) + '</div>');
+  }
+  // news on players in my matchup since this build
+  const list = document.querySelector('#news .list');
+  for (const x of (d.news || []).slice().sort((a, b) => a.t - b.t)) {
+    if (!(x.t > built) || seenLive.has('n' + x.id)) continue;
+    seenLive.add('n' + x.id);
+    const p = P[x.pid];
+    if (p) { p.liveNews = [x, ...(p.liveNews || [])]; if (!sheet.hidden && sheet.dataset.pid == x.pid) body.innerHTML = render(p); }
+    list?.insertAdjacentHTML('afterbegin', '<div class="card"><div class="vhead"><span data-pid="' + x.pid + '" class="lnk">' + e(name(x.pid)) + '</span><span class="chip warn" style="margin:0">Just in</span></div><p class="why" style="margin:6px 0 0">' + e(x.h) + '</p></div>');
+  }
 }
 // every 30s while the page is open (a phone in your pocket doesn't ask); the Worker shares one ESPN answer per 20s
 (function liveLoop() { liveTick().finally(() => setTimeout(liveLoop, 30000)); })();
@@ -2390,6 +2465,7 @@ function render(p) {
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
+    (p.liveNews?.length ? '<div class="group">Just in</div>' + p.liveNews.map(x => '<p class="why" style="margin:4px 0 0">' + e(x.h) + '</p>').join('') : '') +
     (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
       (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
       (p.now.why?.length ? '<p class="why" style="margin:6px 0 0"><b>Why:</b> ' + e(p.now.why.join(' ')) + '</p>' : '') : '') +
