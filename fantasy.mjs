@@ -243,7 +243,7 @@ try {
   const d = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&seasontype=2&dates=${SEASON}`)).json();
   for (const ev of d.events ?? []) {
     const c = ev.competitions[0], o = c.odds?.[0];
-    for (const x of c.competitors) gameNow[TEAM(x.team.abbreviation)] = { state: ev.status?.type?.state, text: ev.status?.type?.shortDetail };
+    for (const x of c.competitors) gameNow[TEAM(x.team.abbreviation)] = { id: ev.id, state: ev.status?.type?.state, text: ev.status?.type?.shortDetail };
     if (!o?.overUnder || o.spread == null) continue;
     const home = c.competitors.find(x => x.homeAway === 'home'), away = c.competitors.find(x => x.homeAway === 'away');
     // spread is the home team's line: -3 means home is favored by 3
@@ -1715,6 +1715,8 @@ a.news b{display:block;font-size:14px;font-weight:600}a.news small{color:var(--m
 .gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
 .why{color:var(--muted);font-size:14px;margin:10px 0 0}
 .pline{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
+.plays{margin-top:10px}.plays summary{cursor:pointer;font-size:14px}.plays p{margin:6px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
+.plays small{font-family:var(--num);color:var(--fg);margin-right:4px}.plays .td{color:var(--accent)}
 .nowpts{font-size:12px;color:var(--muted);margin-top:2px}.nowpts b{color:var(--accent);font-family:var(--num)}
 .tag{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
@@ -2110,6 +2112,8 @@ function render(p) {
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
     (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
       (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') : '') +
+    (p.plays.length ? '<details class="plays"' + (p.plays.length <= 8 ? ' open' : '') + '><summary><b>His plays this game</b> (' + p.plays.length + ', newest first)</summary>' +
+      p.plays.map(x => '<p' + (x.td ? ' class="td"' : '') + '><small>' + e(x.when) + '</small> ' + e(x.text) + '</p>').join('') + '</details>' : '') +
     '<div class="stat">' +
       '<div><b>' + e(p.proj) + '</b><small>expected this week' + (p.ceiling ? ' (up to ' + e(p.ceiling) + ')' : '') + '</small></div>' +
       '<div><b>' + e(p.avg) + '</b><small>points per game this season</small></div>' +
@@ -2206,6 +2210,29 @@ document.addEventListener('keydown', ev => {
 </script></body></html>`;
 
 // --- Player sheet data, for every player the page shows
+// Play-by-play for your players whose game has started (not D/ST): every play his name is in, newest first.
+// ESPN writes names as "P.Mahomes" (sometimes "Ja.Smith"), so match first initial + last name.
+// ponytail: refetches each game every run (~0.5 MB each); cache finished games if runs get slow.
+const plays = new Map();
+{
+  const evOf = p => p.pos !== 'D/ST' && ['in', 'post'].includes(gameNow[TEAM(p.team)]?.state) ? gameNow[TEAM(p.team)].id : null;
+  const byEv = {};
+  await Promise.all([...new Set(me.roster.map(evOf).filter(Boolean))].map(async id => {
+    try {
+      const d = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${id}`)).json();
+      byEv[id] = [...(d.drives?.previous ?? []), ...(d.drives?.current ? [d.drives.current] : [])].flatMap(x => x.plays ?? []);
+    } catch (err) { console.warn(`Plays for game ${id} skipped:`, err.message); }
+  }));
+  for (const p of me.roster) {
+    const all = byEv[evOf(p)];
+    if (!all) continue;
+    const [first, ...last] = p.name.replace(/\s+(Jr\.|Sr\.|II|III|IV|V)$/, '').split(' ');
+    const re = new RegExp(`\\b${first[0]}[a-z]*\\.${last.join(' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    const seen = new Set();
+    plays.set(p.id, all.filter(x => re.test(x.text) && !seen.has(x.id) && seen.add(x.id)).reverse()
+      .map(x => ({ when: `Q${x.period?.number ?? '?'} ${x.clock?.displayValue ?? ''}`.replace('Q5', 'OT'), text: x.text, td: !!x.scoringPlay })));
+  }
+}
 const ids = [...shown.keys()];
 const card = new Map();
 for (let i = 0; i < ids.length; i += 50) {
@@ -2617,7 +2644,7 @@ for (const [id, p] of shown) {
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
-    trend, sources, games, now, notes: notes(p),
+    trend, sources, games, now, plays: plays.get(id) ?? [], notes: notes(p),
     rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: news.get(id) ?? [],
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
   };
