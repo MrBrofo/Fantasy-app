@@ -764,7 +764,7 @@ const byeText = f => (f.byeFor.length && nextProj.has(f.add.id) ? ` ${f.byeFor.m
   + (f.close ? ` Close call: ${f.close.name}${nextProj.has(f.close.id) && f.byeFor.length ? ` (${n(nextProj.get(f.close.id))} that week)` : ''} is about as good${f.close.wa ? ', but on waivers' : ''}, so either is fine.` : '')
   + alsoText(f.alts, fillValue(f));
 // Better backups: a free player 2+ a game better (rest of season) than one of my bench players at the same spot.
-// Info, not a to-do: a backup only scores when a starter is out, so the gain is small.
+// The best one also goes on the to-do list (a free upgrade); a backup only scores when a starter is out, so the gain is small.
 const seasonStarterIds = new Set(bestLineup(baseRoster, seasonValue).lineup.map(x => x.player.id));
 const benchTaken = new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]);
 const benchUps = baseRoster.filter(p => !seasonStarterIds.has(p.id) && p.slot !== 'IR' && ['QB', 'RB', 'WR', 'TE'].includes(p.pos))
@@ -1087,6 +1087,11 @@ for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
     (s.kind === 'week' ? `Adds about ${n(s.gain)} points to your score this week.` : `Makes your team about ${n(s.gain)} points per week better for the rest of the season.`) + alsoText(s.alts.map(a => a.add), s.kind === 'week' ? weekValue : rate), locked(s.add) || locked(s.drop) ? null : pickupMove(s), [s.add, s.drop]]);
 }
+// A better backup: free, and a backup 2+ a game better covers injuries and byes better. Only the best one, and only when the
+// pickup plan doesn't already touch either player
+const planIds = new Set(plan.flatMap(s => [s.add.id, s.drop.id]));
+const bu = benchUps.find(x => !planIds.has(x.add.id) && !planIds.has(x.drop.id) && !locked(x.add) && !locked(x.drop));
+if (bu) todo.push(['week', `Better backup: add ${bu.add.name}, drop ${bu.drop.name}`, `Neither starts for you now, so your score doesn't change, but ${bu.add.name} is expected ${n(rate(bu.add))} a game the rest of the season vs ${n(rate(bu.drop))} for ${bu.drop.name}. If a ${POS_NAME[bu.add.pos].toLowerCase()} of yours gets hurt or has a bye, that's the difference.${bu.add.wa ? " He's on waivers, so this is a claim." : ' Free agent: yours right away.'}`, pickupMove(bu), [bu.add, bu.drop]]);
 const irUsed = me.roster.filter(p => p.slot === 'IR').length;
 const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 for (const p of me.roster) {
@@ -2164,7 +2169,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 
 <section id="todo"><h2>Do this now <span class="dot" hidden></span></h2><p class="sub">Your to-do list, most important first. Tap a button to do it on ESPN.</p>
 ${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
-${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${/^Pickup step/.test(title) && who.length === 2 ? exBtns([who[1]], [who[0]]) : ''}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
+${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${/^(Pickup step|Better backup)/.test(title) && who.length === 2 ? exBtns([who[1]], [who[0]]) : ''}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
   return todo.slice(0, 3).map(card).join('') + (todo.length > 3 ? `<details class="all"><summary>${todo.length - 3} more to do</summary>${todo.slice(3).map(card).join('')}</details>` : ''); })() : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
