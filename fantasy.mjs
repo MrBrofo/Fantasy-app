@@ -2713,20 +2713,22 @@ function gcField(F, A, H, ball, from, first, fx) {
     gcFly = null;
     // the last play, by kind: a pass or a kick arcs through the air, a run or a sack lies flat on the turf. ESPN gives no
     // spot for an incompletion, so it lands 8 yards past the line, 20 if deep; a field goal flies from the hold, 7 yards
-    // back, to the posts on the end line; a touchdown ends with the scorer in the middle of the end zone
+    // back, to the posts on the end line (a good one on through, coming down past them); a touchdown ends with the scorer in the middle of the end zone
     const [y0 = 0, y1 = 0, tid, type = ''] = F.play || [], own = y => tid === A[0] ? y : 100 - y;
     const kind = /field goal|extra point/i.test(type) ? (/good/i.test(type) ? 'fg' : /block/i.test(type) ? 'block' : 'miss') : /incomplet/i.test(type) ? 'inc' : /punt|kickoff/i.test(type) ? 'kick' : /interception/i.test(type) ? 'pick' : /pass|reception/i.test(type) ? 'pass' : 'run';
     // an interception lands where it was picked ("INTERCEPTED by D.Overshown at DAL 30"), not where the return ended
     const pk = kind === 'pick' && / at ([A-Z]+) ([0-9]+)/.exec(F.last.split('INTERCEPTED')[1] ?? ''), pick = pk ? (pk[1] === F.teams.find(t => t[0] === tid)?.[1] ? +pk[2] : 100 - pk[2]) : y1;
     const hold = /fg|miss|block/.test(kind), sx = fx(own(hold ? y0 - 7 : y0));
-    const lx = td ? fx(ball) : fx(own(kind === 'fg' || kind === 'miss' ? 110 : kind === 'block' ? y0 - 5 : kind === 'inc' ? y0 + (/ deep /.test(F.last) ? 20 : 8) : kind === 'pick' ? pick : y1)), dl = Math.abs(lx - sx);
+    const post = fx(own(110)), lx = td ? fx(ball) : kind === 'fg' ? post + Math.sign(post - sx) * Math.min(8, 3 + Math.abs(post - sx) * 0.2) : fx(own(kind === 'miss' ? 110 : kind === 'block' ? y0 - 5 : kind === 'inc' ? y0 + (/ deep /.test(F.last) ? 20 : 8) : kind === 'pick' ? pick : y1)), dl = Math.abs(lx - sx);
     // every play throws its own ball, picked from the play itself so a replay flies the same: how high, how much the air
     // slows it (fast off the foot or hand, slower at the end, so it comes down steeper than it went up), how fast it turns
     const rnd = (() => { let h = 2166136261; for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return () => (h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909), (h >>> 0) / 4294967296); })();
     const kicked = /fg|miss|kick|block/.test(kind), drag = kicked ? 0.8 + rnd() * 0.7 : 0.25 + rnd() * 0.5;
-    const H = (kind === 'run' || kind === 'block' ? 0 : /fg|miss|kick/.test(kind) ? Math.min(12, 3 + dl * 0.25) : dl >= 5 ? Math.min(7, 1.5 + dl * 0.22) : 0) * (0.8 + rnd() * 0.45);
+    let H = (kind === 'run' || kind === 'block' ? 0 : /fg|miss|kick/.test(kind) ? Math.min(12, 3 + dl * 0.25) : dl >= 5 ? Math.min(7, 1.5 + dl * 0.22) : 0) * (0.8 + rnd() * 0.45);
     // height at a share u of the way there: the flight's time at u, then up and down over that time
-    const up = u => { const tm = -Math.log(1 - u * (1 - Math.exp(-drag))) / drag; return H * 4 * tm * (1 - tm); };
+    const tau = u => -Math.log(1 - u * (1 - Math.exp(-drag))) / drag, up = u => { const tm = tau(u); return H * 4 * tm * (1 - tm); };
+    // a good field goal goes through the uprights: over the crossbar (10 feet, 3.3 yards up) with room to spare, under their tops
+    if (kind === 'fg') { const tp = tau(Math.abs(post - sx) / dl); H = Math.min(18, (5 + rnd() * 3) / (4 * tp * (1 - tp))); }
     // lost yards, an interception, a missed or blocked kick: red; an incompletion: faint grey
     const bad = !td && ((y1 < y0 && /run|pass/.test(kind)) || /pick|miss|block/.test(kind)), grey = kind === 'inc';
     const p = pt(F.play ? lx : fx(ball), 26.65), pb = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
@@ -2734,7 +2736,7 @@ function gcField(F, A, H, ball, from, first, fx) {
       const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, 26.65, lift ? up(u) : 0); });
       cam = (pt(sx, 26.65)[0] + p[0]) / 2;
       // a thrown ball spirals, a kicked one tumbles end over end
-      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H ? drag : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
+      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: !H ? '' : /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H ? drag : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
         a0: rnd() * 360, f0: Math.floor(rnd() * 16), wob: rnd() * rnd() * 7, wf: 1.5 + rnd() * 2.5, td:td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
     }
     // a wide arrow from where the play started to the ball; the tip stops short of the ball so it shows (less on a short play)
