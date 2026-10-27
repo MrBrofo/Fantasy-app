@@ -1892,7 +1892,8 @@ html:not(.term) #bg-field,html:not(.term) .bgring{display:none}
 .pline{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
 .plays{margin-top:10px}.plays summary{cursor:pointer;font-size:14px}.plays p{margin:6px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
 .plays small{font-family:var(--num);color:var(--fg);margin-right:4px}.plays .td{color:var(--accent)}
-.nowpts{font-size:12px;color:var(--muted);margin-top:2px}.nowpts[data-ball="1"],.nowpts[data-ball="2"]{--c:var(--warn);color:var(--fg);background:color-mix(in srgb,var(--c) 20%,transparent);box-shadow:inset 3px 0 var(--c);padding:2px 6px 2px 8px;border-radius:4px;width:fit-content}.nowpts[data-ball="2"]{--c:var(--bad)}.nowpts b{color:var(--accent);font-family:var(--num)}
+.nowpts{font-size:12px;color:var(--muted);margin-top:2px}.card.row:has(.nowpts[data-ball="1"]),.card.row:has(.nowpts[data-ball="2"]){--c:var(--warn);background:color-mix(in srgb,var(--c) 30%,var(--card));border-color:var(--c)}.card.row:has(.nowpts[data-ball="2"]){--c:var(--bad)}
+#todo h2 .dot{display:inline-block;vertical-align:middle;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:99px;background:var(--bad);color:#fff;font-size:12px;line-height:20px;text-align:center}#todo h2 .dot[hidden]{display:none}.nowpts b{color:var(--accent);font-family:var(--num)}
 .tag{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
 td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted);white-space:nowrap}tr.me td{font-weight:800;color:var(--fg)}
@@ -1991,7 +1992,7 @@ html.term nav a{border-radius:0;letter-spacing:.12em;text-transform:uppercase;fo
 html.term nav a.on{color:#fff;background:#ffffff12;text-shadow:0 0 10px #fff}
 html.term nav a.on svg{filter:drop-shadow(0 0 5px #fff)}
 html.term nav a.press{background:#ffffff26}
-html.term nav .dot{border-radius:0;background:var(--bad);box-shadow:0 0 10px var(--bad)}
+html.term nav .dot,html.term #todo h2 .dot{border-radius:0;background:var(--bad);box-shadow:0 0 10px var(--bad)}
 html.term .seg button{text-transform:uppercase;letter-spacing:.12em;font-size:11px}
 html.term .seg button.on{background:#fff;color:#000}
 html.term .gl{text-decoration-color:var(--good)}
@@ -2051,7 +2052,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <nav>${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
 <div id="seg" class="seg" hidden></div>
 
-<section id="todo"><h2>Do this now</h2><p class="sub">Your to-do list, most important first. Tap a button to do it on ESPN.</p>
+<section id="todo"><h2>Do this now <span class="dot" hidden></span></h2><p class="sub">Your to-do list, most important first. Tap a button to do it on ESPN.</p>
 ${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
 ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
   return todo.slice(0, 3).map(card).join('') + (todo.length > 3 ? `<details class="all"><summary>${todo.length - 3} more to do</summary>${todo.slice(3).map(card).join('')}</details>` : ''); })() : '<div class="card empty">You\'re all set this week.</div>'}
@@ -3200,9 +3201,9 @@ function showTab(tab, jump) {
   const seg = document.getElementById('seg');
   seg.hidden = GROUPS[g].length < 2;
   seg.innerHTML = GROUPS[g].length < 2 ? '' : GROUPS[g].map(p => '<button type="button" data-page="' + p + '"' + (p === tab ? ' class="on"' : '') + '>' + PAGE_NAME[p] + '</button>').join('');
-  // red number on Home: how many to-dos are waiting
-  const k = document.querySelectorAll('#todo .card.todo').length, dot = document.querySelector('nav .dot');
-  if (dot) { dot.hidden = !k; dot.textContent = k; }
+  // red number on Home, and the same number on the to-do list it points to
+  const k = document.querySelectorAll('#todo .card.todo').length;
+  for (const dot of document.querySelectorAll('nav .dot, #todo h2 .dot')) { dot.hidden = !k; dot.textContent = k; }
   if (jump) scrollTo({ top: 0 });
 }
 // Hold the tab bar and slide your finger like on iPhone: the tab under it lights up, letting go opens it.
