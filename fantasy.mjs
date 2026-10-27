@@ -2212,23 +2212,28 @@ html.glass details.fold .card{background:none;border:0;border-top:.5px solid var
    through; a sharp rim, brightest top-left and bottom-right; and a band along the inside of the edge where what's behind is
    brighter and more saturated, like light bunching up in the thick curved edge of real glass. Soft glows and solid fills
    read as plastic, so there are none. */
-html.glass :is(nav,.sheet-x,.sheet-card){border:0;-webkit-backdrop-filter:blur(4px) saturate(180%) brightness(1.05);backdrop-filter:blur(4px) saturate(180%) brightness(1.05);box-shadow:0 6px 20px rgba(0,0,0,.28)}
-html.glass :is(nav,.sheet-x,.sheet-card)::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:1;
+html.glass :is(nav,.seg,.sheet-x,.sheet-card){border:0;-webkit-backdrop-filter:blur(4px) saturate(180%) brightness(1.05);backdrop-filter:blur(4px) saturate(180%) brightness(1.05);box-shadow:0 6px 20px rgba(0,0,0,.28)}
+html.glass :is(nav,.seg,.sheet-x,.sheet-card,.blob)::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:1;
 background:linear-gradient(135deg,rgba(255,255,255,.9),rgba(255,255,255,.18) 20%,rgba(255,255,255,0) 45%,rgba(255,255,255,0) 60%,rgba(255,255,255,.2) 82%,rgba(255,255,255,.6));
 -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
-html.glass :is(nav,.sheet-card)::after{content:'';position:absolute;inset:0;border-radius:inherit;padding:6px;pointer-events:none;
+html.glass :is(nav,.seg,.sheet-card)::after{content:'';position:absolute;inset:0;border-radius:inherit;padding:6px;pointer-events:none;
 -webkit-backdrop-filter:blur(6px) brightness(1.35) saturate(220%);backdrop-filter:blur(6px) brightness(1.35) saturate(220%);
 -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
 html.glass nav{border-radius:999px;background:rgba(20,20,22,.22)}
 html.glass nav a{border-radius:999px;color:rgba(255,255,255,.75)}
-html.glass nav a.on{color:var(--accent);background:rgba(255,255,255,.1)}
+html.glass nav a.on{color:var(--accent)}html.glass :is(nav a,.seg button):is(.on,.press){background:none;transform:none;box-shadow:none}
+/* the bubble on the picked tab or switch button: a small clear lens (brighter and more saturated than the bar, its own rim)
+   that slides over with a springy overshoot, and swells a little while you hold the tab bar (placed by placeBlobs()) */
+.blob{display:none}
+html.glass .blob{display:block;position:absolute;left:0;top:0;border-radius:999px;pointer-events:none;background:rgba(255,255,255,.1);-webkit-backdrop-filter:brightness(1.25) saturate(160%);backdrop-filter:brightness(1.25) saturate(160%);
+transition:transform .55s cubic-bezier(.3,1.4,.5,1),width .55s cubic-bezier(.3,1.4,.5,1),scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}
+html.glass .blob.held{scale:1.12;background:rgba(255,255,255,.16)}
 html.glass .sheet-x{background:rgba(255,255,255,.06)}
 /* buttons and switches inside the page sit on solid cards, so they're flat iOS controls, not glass */
 html.glass .btn{border-radius:999px;color:#fff;background:var(--accent);box-shadow:none}
 html.glass .tools2 .btn,html.glass #refresh{background:rgba(118,118,128,.24);color:var(--fg);border:0}
 html.glass .btn:active,html.glass #refresh:active{transform:scale(.97);filter:brightness(1.1)}
-html.glass .seg,html.glass .seg button{border-radius:999px}html.glass .seg{background:rgba(118,118,128,.24);border:0}
-html.glass .seg button.on{background:#636366;color:#fff}
+html.glass .seg{position:relative;background:rgba(20,20,22,.22)}html.glass .seg button{position:relative;border-radius:999px}html.glass .seg button.on{color:#fff}
 /* the player sheet floats in from the edges like an iOS 26 sheet, darker glass so its text stays easy to read */
 html.glass .sheet-bg{background:rgba(0,0,0,.4)}
 html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(28,28,30,.55);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}
@@ -2576,7 +2581,7 @@ function load() {
 }
 const verdictText = ${verdictText.toString()};
 const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg|dict|bg-)/;
-const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || changedIn.has(n));
+const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || n.classList?.contains('blob') || changedIn.has(n));
 async function swap(html) {
   let page = html;
   const m = html.match(/salt: '([^']+)', iv: '([^']+)', data: '([^']+)'/);
@@ -2599,6 +2604,22 @@ async function swap(html) {
   Object.assign(P, np);
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
+// Glass look: each bar (tab bar, switches) gets one bubble that slides to its picked button, or the tab under your finger.
+// Re-placed whenever a class changes anywhere (picked button, look, held tab, page merges) or the screen resizes.
+const placeBlobs = () => { for (const bar of document.querySelectorAll('nav,.seg')) {
+  const on = bar.querySelector(':scope > .press') || bar.querySelector(':scope > .on');
+  let b = bar.querySelector(':scope > .blob');
+  if (!b) { b = document.createElement('i'); b.className = 'blob'; b.setAttribute('aria-hidden', 'true'); bar.prepend(b); }
+  b.hidden = !on;
+  if (!on) continue;
+  const t = 'translate(' + on.offsetLeft + 'px,' + on.offsetTop + 'px)';
+  if (b.style.transform !== t) b.style.transform = t;
+  b.style.width = on.offsetWidth + 'px'; b.style.height = on.offsetHeight + 'px';
+  b.classList.toggle('held', on.classList.contains('press'));
+} };
+let blobQ = 0;
+new MutationObserver(() => { if (!blobQ) blobQ = requestAnimationFrame(() => { blobQ = 0; placeBlobs(); }); }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['class'] });
+addEventListener('resize', placeBlobs); placeBlobs();
   if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) { body.innerHTML = render(P[sheet.dataset.pid]); drawGc(); }
   else if (!sheet.hidden && sheet.dataset.team && typeof teamPage === 'function') body.innerHTML = teamPage(sheet.dataset.team);
@@ -3934,7 +3955,8 @@ function showTab(tab, jump) {
   navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + g));
   const seg = document.getElementById('seg');
   seg.hidden = GROUPS[g].length < 2;
-  seg.innerHTML = GROUPS[g].length < 2 ? '' : GROUPS[g].map(p => '<button type="button" data-page="' + p + '"' + (p === tab ? ' class="on"' : '') + '>' + PAGE_NAME[p] + '</button>').join('');
+  if (seg.dataset.g === g) seg.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('on', b.dataset.page === tab));
+  else seg.dataset.g = g, seg.innerHTML = GROUPS[g].length < 2 ? '' : GROUPS[g].map(p => '<button type="button" data-page="' + p + '"' + (p === tab ? ' class="on"' : '') + '>' + PAGE_NAME[p] + '</button>').join('');
   // red number on Home, and the same number on the to-do list it points to
   const k = document.querySelectorAll('#todo .card.todo').length;
   for (const dot of document.querySelectorAll('nav .dot, #todo h2 .dot')) { dot.hidden = !k; dot.textContent = k; }
