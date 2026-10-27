@@ -2716,7 +2716,7 @@ function gcField(F, A, H, ball, from, first, fx) {
     }
     // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run
     if (F.play) {
-      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)) - Math.sign(fx(own(y1)) - x0) * 1.5, len = Math.abs(x1 - x0); // tip stops short of the ball so it shows
+      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(td ? ball : own(y1)) - Math.sign(fx(td ? ball : own(y1)) - x0) * 1.5, len = Math.abs(x1 - x0); // tip stops short of the ball so it shows; a touchdown runs on to the scorer in the middle of the end zone
       if (len > 1) {
         const z = 26.65, H = /pass|reception|interception/i.test(type) ? Math.min(7, 1.5 + len * 0.22) : 0, uh = 1 - Math.min(4, len * 0.6) / len;
         const at = (u, dz, lift) => { const q = pt(x0 + (x1 - x0) * u, z + dz, lift ? H * 4 * u * (1 - u) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
