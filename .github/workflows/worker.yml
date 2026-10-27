@@ -5,7 +5,7 @@ name: Deploy Worker
 on:
   push:
     branches: [main]
-    paths: [worker.js, wrangler.toml]
+    paths: [worker.js, wrangler.toml, .github/workflows/worker.yml]
   workflow_dispatch:
 
 jobs:
