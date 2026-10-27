@@ -1937,7 +1937,7 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="manifest" href="manifest.json">
 <title>${esc(me.name)}</title>
-<script>try { if (localStorage.getItem('look') !== 'classic') document.documentElement.classList.add('term'); } catch { document.documentElement.classList.add('term'); }</script>
+<script>try { const l = localStorage.getItem('look'); if (l !== 'classic') document.documentElement.classList.add(l === 'glass' ? 'glass' : 'term'); } catch { document.documentElement.classList.add('term'); }</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -2188,6 +2188,23 @@ html.term footer{letter-spacing:.1em;text-transform:uppercase;font-size:10px}
 html.term section:not(.off){animation:boot .35s ease-out}
 @keyframes boot{from{opacity:0;transform:translateY(6px)}}
 @media (prefers-reduced-motion:reduce){html.term .bgring,html.term h1::after,html.term .live{animation:none}html.term section:not(.off){animation:none}}
+/* Glass look: Apple's Liquid Glass on Classic's layout. A soft colour wash behind everything, see-through frosted panels
+   that blur it, a bright top edge like light catching glass, rounder corners and pill buttons. Every rule starts with html.glass. */
+html.glass{--bg:#07080d;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.14);--chip:rgba(255,255,255,.09);--accent:#0a84ff;--onaccent:#fff;
+--glass:rgba(36,38,48,.42);--glassline:rgba(255,255,255,.2);
+background:radial-gradient(60% 40% at 10% 5%,#2b5cff70,transparent 70%),radial-gradient(55% 40% at 95% 40%,#b03cff5c,transparent 70%),radial-gradient(60% 45% at 25% 95%,#00c2a85c,transparent 70%),#07080d}
+html.glass body{background:transparent;font-family:-apple-system,'SF Pro Text',Geist,system-ui,sans-serif}
+html.glass header{background:none}
+html.glass .card,html.glass .match,html.glass details.fold,html.glass a.news,html.glass .sh-q,html.glass .seg{background:var(--card);border-color:var(--line);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 8px 24px rgba(0,0,0,.25)}
+html.glass details.fold .card{background:rgba(255,255,255,.05);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.1)}
+html.glass .card,html.glass details.fold{border-radius:22px}html.glass .match{border-radius:28px}html.glass .sh-q,html.glass a.news{border-radius:18px}
+html.glass .list .card{border-radius:0}html.glass .list .card:first-child{border-radius:22px 22px 0 0}html.glass .list .card:last-child{border-radius:0 0 22px 22px}html.glass .list .card:only-child{border-radius:22px}
+html.glass .btn{border-radius:999px;background:linear-gradient(180deg,#3d9dff,#0a84ff);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px rgba(10,132,255,.3)}
+html.glass .seg,html.glass .seg button{border-radius:999px}html.glass .seg button.on{background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+html.glass nav{border-radius:999px;-webkit-backdrop-filter:blur(28px) saturate(200%);backdrop-filter:blur(28px) saturate(200%);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 12px 32px rgba(0,0,0,.4)}
+html.glass nav a{border-radius:999px}html.glass nav a.on{color:#fff;background:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+html.glass .sheet-bg{background:rgba(0,0,0,.35)}
+html.glass .sheet-card{background:rgba(22,24,32,.62);-webkit-backdrop-filter:blur(40px) saturate(180%);backdrop-filter:blur(40px) saturate(180%);border-top:1px solid rgba(255,255,255,.2);border-radius:28px 28px 0 0}
 </style></head><body>
 <canvas id="bg-field" aria-hidden="true"></canvas><div class="bgring" id="bg-ring1"></div><div class="bgring r2" id="bg-ring2"></div>
 
@@ -2477,7 +2494,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><p class="tag" style="margin:0">Every underlined word on this site, A to Z.</p><dl id="dict"></dl></div>
 <details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
 
-<section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button></div><p class="tag" style="margin:8px 0 0">Saved on this phone. Everything else works the same in both.</p></div></section>
+<section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div><p class="tag" style="margin:8px 0 0">Saved on this phone. Everything else works the same in all of them.</p></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
@@ -3932,13 +3949,14 @@ showTab(location.hash.slice(1), false);
   if (!still) requestAnimationFrame(draw);
 })();
 
-// Look switch (More > Settings): Terminal or Classic, saved on this phone
-const showLook = () => document.querySelectorAll('[data-look]').forEach(b => b.classList.toggle('on', (b.dataset.look === 'term') === document.documentElement.classList.contains('term')));
+// Look switch (More > Settings): Terminal, Classic or Glass, saved on this phone
+const LOOKS = ['term', 'glass'], curLook = () => LOOKS.find(c => document.documentElement.classList.contains(c)) ?? 'classic';
+const showLook = () => document.querySelectorAll('[data-look]').forEach(b => b.classList.toggle('on', b.dataset.look === curLook()));
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-look]');
   if (!b) return;
-  document.documentElement.classList.toggle('term', b.dataset.look === 'term');
-  try { localStorage.setItem('look', b.dataset.look === 'term' ? 'term' : 'classic'); } catch {}
+  for (const c of LOOKS) document.documentElement.classList.toggle(c, c === b.dataset.look);
+  try { localStorage.setItem('look', b.dataset.look); } catch {}
   showLook(); dispatchEvent(new Event('resize'));
 });
 showLook();
