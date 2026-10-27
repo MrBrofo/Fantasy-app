@@ -2825,12 +2825,16 @@ function roster(tid) {
   return ROS[tid] instanceof Promise ? {} : ROS[tid];
 }
 // The passer and the catcher, or the runner, named in the play text, with their ESPN roster entries once loaded
+// on a run, the team's quarterback stands where it started: F.qb from the game summary, or the last passer seen live
+const gcQb = {};
 function gcWho(F) {
-  const t = (F.last || '').replace(/^(\\([^)]*\\)\\s*)+/, ''), tid = F.play?.[2] || F.poss;
+  const t = (F.last || '').trim().replace(/^(\\([^)]*\\)\\s*)+/, ''), tid = F.play?.[2] || F.poss;
   const a = /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1], b = / pass /.test(t) ? / to ([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1] : null;
   if (!a || !tid) return [];
+  if (b) gcQb[tid] = a;
+  const q = !b && /rush/i.test(F.play?.[3] ?? '') ? F.qb || gcQb[tid] : null;
   const R = roster(tid);
-  return [a, b].filter(Boolean).map(n => ({ n, p: R[n] }));
+  return [q !== a && q, a, b].filter(Boolean).map(n => ({ n, p: R[n] }));
 }
 // The newest touchdown in ESPN's game summary, as [start, end, team, type, true] with yards from the team's own goal line
 function gcTdPlay(d) {
@@ -2860,12 +2864,15 @@ function gcPlays(d, short) {
   const hit = s => { const t = String(s ?? '').replace(/[.] (?=[A-Z])/g, '.').replace(/ (Jr[.]|Sr[.]|III|II|IV)(?![a-z])/g, '$1');
     for (let i = t.indexOf(short); i >= 0; i = t.indexOf(short, i + 1)) if (!/[A-Za-z]/.test(t[i - 1] || '') && !/[a-z]/.test(t[i + short.length] || '')) return true;
     return false; };
-  return (d.drives?.previous ?? []).flatMap(x => x.plays ?? []).filter(pl => pl.start?.yardsToEndzone != null && pl.end?.yardsToEndzone != null && !/No Play/i.test(pl.text) && hit(pl.text)).map(pl => {
+  // the team's passer so far, for the quarterback on a run
+  const qb = {}, passer = pl => { const t = String(pl.text ?? '').trim().replace(/^(\\([^)]*\\)\\s*)+/, ''), m = / pass /.test(t) && /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t);
+    if (m) qb[pl.start?.team?.id] = m[1]; return qb[pl.start?.team?.id]; };
+  return (d.drives?.previous ?? []).flatMap(x => x.plays ?? []).map(pl => [pl, passer(pl)]).filter(([pl]) => pl.start?.yardsToEndzone != null && pl.end?.yardsToEndzone != null && !/No Play/i.test(pl.text) && hit(pl.text)).map(([pl, q]) => {
     const t = String(pl.start.team?.id ?? ''), teams = [tm('away'), tm('home')], type = pl.type?.text ?? '';
     // after a turnover the end is counted toward the other team's end zone
     const end = pl.end.team?.id == null || String(pl.end.team.id) === t ? 100 - pl.end.yardsToEndzone : pl.end.yardsToEndzone;
     teams[0][2] = +pl.awayScore || 0; teams[1][2] = +pl.homeScore || 0;
-    return { teams, down: '', spot: pl.end.possessionText ?? '', poss: t, rz: false, dist: null, from: '', drive: '', leaders: [], last: pl.text.trim(),
+    return { teams, down: '', spot: pl.end.possessionText ?? '', poss: t, rz: false, dist: null, from: '', drive: '', leaders: [], last: pl.text.trim(), qb: q,
       when: 'Q' + (pl.period?.number ?? '') + ' ' + (pl.clock?.displayValue ?? ''), play: [100 - pl.start.yardsToEndzone, end, t, type, /touchdown/i.test(type)] };
   });
 }
