@@ -2751,13 +2751,15 @@ function gcField(F, A, H, ball, from, first, fx) {
         return '<rect x="' + (+X - wd / 2).toFixed(1) + '" y="' + (y - 15).toFixed(1) + '" width="' + wd.toFixed(1) + '" height="22" rx="11" fill="' + (q.side === 'me' ? '#16a34a' : '#dc2626') + '"/><text x="' + X + '" y="' + (y - 4).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing=".4">' + t + '</text>'; };
       const pin = (x, w, i, dx = 0) => { const q = pt(x, 26.65), cy = q[1] - 78, X = (q[0] + dx).toFixed(1), Y = cy.toFixed(1);
         // the touchdown scorer hops up and down
-        return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/><g' + (td && i ? ' class="gc-hop"' : '') + '>' + tag(w, X, cy - r * 1.32 - 10) +
-          (w.p ? '<image href="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(w.p.id) + '.png&amp;w=200" x="' + (q[0] + dx - r * 1.6).toFixed(1) + '" y="' + (cy + r - r * 2.32).toFixed(1) + '" width="' + (r * 3.2).toFixed(1) + '" height="' + (r * 2.32).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
+        return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : w.logo ? r * 1.1 : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/><g' + (td && i ? ' class="gc-hop"' : '') + '>' + tag(w, X, cy - r * 1.32 - 10) +
+          (!w.p && w.logo ? '<image href="' + logo(w.logo) + '" x="' + (q[0] + dx - r * 1.1).toFixed(1) + '" y="' + (cy - r * 1.1).toFixed(1) + '" width="' + (r * 2.2).toFixed(1) + '" height="' + (r * 2.2).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
+              '<text x="' + X + '" y="' + (cy - r * 1.1 - 6).toFixed(1) + '" font-size="15" font-weight="600" fill="#fff" fill-opacity=".7" text-anchor="middle" letter-spacing=".5">' + e(w.label) + '</text>'
+          : w.p ?'<image href="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(w.p.id) + '.png&amp;w=200" x="' + (q[0] + dx - r * 1.6).toFixed(1) + '" y="' + (cy + r - r * 2.32).toFixed(1) + '" width="' + (r * 3.2).toFixed(1) + '" height="' + (r * 2.32).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
               '<text x="' + X + '" y="' + (cy - r * 1.32 + 10).toFixed(1) + '" font-size="15" font-weight="600" fill="#fff" fill-opacity=".7" text-anchor="middle" letter-spacing=".5">' + e((w.p.shortName ?? w.n).split(' ').pop()) + '</text>'
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>') + '</g>'; };
       // two photos close together are pushed apart, their stems leaning to where each stood
       // one player who isn't a runner (a kicker, a passer with no target) stands where the play started
-      const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run' && !F.def;
+      const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run' && !F.dt;
       if (who.length === 2 || solo) o += '<g class="gc-qb">' + pin(sx, who[0], 0, solo ? 0 : -push) + '</g>';
       if (who.length && !solo) o += '<g class="gc-catch">' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
     }
@@ -2833,7 +2835,8 @@ function gcAnimate() {
 const ROS = {};
 function roster(tid) {
   if (!ROS[tid]) ROS[tid] = fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/' + tid + '/roster').then(r => r.json())
-    .then(d => Object.fromEntries((d.athletes ?? []).flatMap(g => g.items ?? []).map(a => [a.shortName.replace(/ /g, ''), a]))).catch(() => ({}))
+    // also under the name without Jr./III and as first initial + last name ("T.Watt" for T.J. Watt), as play text often writes them
+    .then(d => Object.fromEntries((d.athletes ?? []).flatMap(g => g.items ?? []).flatMap(a => { const k = a.shortName.replace(/ /g, ''); return [[(a.firstName ?? '')[0] + '.' + String(a.lastName ?? '').replace(/ /g, ''), a], [k.replace(/(Jr[.]?|Sr[.]?|II|III|IV|V)$/, ''), a], [k, a]]; }))).catch(() => ({}))
     .then(m => { ROS[tid] = m; drawGc(); });
   return ROS[tid] instanceof Promise ? {} : ROS[tid];
 }
@@ -2841,7 +2844,10 @@ function roster(tid) {
 // on a run, the team's quarterback stands where it started: F.qb from the game summary, or the last passer seen live
 const gcQb = {};
 function gcWho(F) {
-  if (F.def) return [{ n: F.def, p: roster(F.dt)[F.def] }];
+  // a defense's play: the defenders named (two on a split sack), the team's logo for one missing from its roster,
+  // and the logo with DEFENSE when the play names no one
+  if (F.dt) { const R = roster(F.dt), ab = F.teams.find(x => x[0] === F.dt)?.[1];
+    return F.def ? [F.def, F.def2].filter(Boolean).map(n => ({ n, p: R[n], logo: ab, label: n.split('.').pop() })) : [{ n: 'Defense', logo: ab, label: 'DEFENSE' }]; }
   const t = (F.last || '').trim().replace(/^(\\([^)]*\\)\\s*)+/, ''), tid = F.play?.[2] || F.poss;
   const a = /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1], b = / pass /.test(t) ? / to ([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1] : null;
   if (!a || !tid) return [];
@@ -2902,7 +2908,7 @@ function gcPlays(d, short, pos = '', team = '') {
     if (def) {
       if (String(pl.start.team?.id) === String(team) || !/sack|intercept|fumble recovery [(]opponent|safety|blocked|defensive|muff|return touchdown/i.test(type)) return [];
       // a touchdown it scored runs toward the other end zone, so it is drawn from the defense's side
-      const v = view(pl, null, { def: by(t), dt: String(team) });
+      const v = view(pl, null, { def: by(t), def2: new RegExp('sack split by ' + N + ' and ' + N).exec(t)?.[2], dt: String(team) });
       if (v.play[4]) v.play = [pl.start.yardsToEndzone, 100, String(team), type, true];
       return [v];
     }
