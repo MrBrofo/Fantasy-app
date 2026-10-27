@@ -130,7 +130,9 @@ async function ask(req, env) {
   if (m.mode === 'auto' && typeof m.q === 'string' && m.q.trim()) {
     const c = await client.messages.create({
       model: 'claude-haiku-5-5', max_tokens: 1000, output_config: { effort: 'low' },
-      system: 'Sort a fantasy football question. Reply with one word. EASY: a meaning, a rule, or looking up a fact. HARD: anything that asks for advice or a choice (start, sit, trade, add, drop, keep, worth it, what should I do). If unsure, HARD.',
+      system: 'Sort a fantasy football question. Reply with one word. EASY: a meaning, a rule, or looking up a fact. HARD: anything that asks for advice, a choice, a comparison or an opinion (start, sit, trade, add, drop, keep, worth it, better, what should I do). If unsure, HARD.\n' +
+        'Examples. HARD: Is Kelce worth keeping? / Who is better this week, Bijan or Saquon? / Thoughts on my team? / Should I pick up Johnson? / Will I make the playoffs? ' +
+        'EASY: What does start/sit mean? / What is a bye week? / How do waivers work? / Who is on bye this week? / Is Kelce hurt? / Who am I playing?',
       messages: [{ role: 'user', content: m.q.slice(0, 2000) }],
     }).catch(() => null);
     smart = !/EASY/.test(c?.content.filter(b => b.type === 'text').map(b => b.text).join('') ?? '');
