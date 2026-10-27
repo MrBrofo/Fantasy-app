@@ -1186,10 +1186,17 @@ if (process.env.PUSH_SUB) alerts.push([`hello:${JSON.parse(process.env.PUSH_SUB)
 // the bench for the best bench player who can play his spot, done on ESPN right here, since the alert may come when no
 // one is looking. A doubtful one too, once it's under an hour: inactives are out by then, so a doubtful tag still up
 // means he's dressed (ESPN often leaves it up), and he's judged at his full projection, not his odds of playing.
+// The inactive list itself, read from the game ESPN posts it in (about 90 minutes before kickoff), for each starter whose
+// game starts within 2 hours: his fantasy status can lag it
+const inactive = new Set();
+for (const gid of new Set(starters(me).filter(p => soon(p, 2)).map(p => pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[week]?.[0]?.id).filter(Boolean))) try {
+  const d = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${gid}`)).json();
+  for (const t of d.injuries ?? []) for (const x of t.injuries ?? []) if (x.details?.fantasyStatus?.abbreviation === 'INACTIVE') inactive.add(+x.athlete?.id);
+} catch (err) { console.warn('Inactive list skipped:', err.message); }
 const swapped = new Map(); // starter id -> who went in for him
 for (const p of starters(me)) {
-  const doubt = p.status === 'DOUBTFUL' && soon(p, 1);
-  if (!(HURT.includes(p.status) && soon(p, 2)) && !doubt) continue;
+  const gone = HURT.includes(p.status) || inactive.has(p.id), doubt = !gone && p.status === 'DOUBTFUL' && soon(p, 1);
+  if (!(gone && soon(p, 2)) && !doubt) continue;
   const slot = SLOT_ID[p.slot], sub = me.roster.filter(b => b.slot === 'Bench' && notStarted(b) && !HURT.includes(b.status) && b.status !== 'DOUBTFUL' && b.bye !== week &&
     SLOT_POS[slot]?.includes(b.pos) && ![...swapped.values()].includes(b) && weekValue(b) > 0).sort((a, b) => weekValue(b) - weekValue(a))[0];
   if (!sub || (doubt && weekValue(sub) <= (p.proj ?? 0))) continue;
@@ -1198,7 +1205,7 @@ for (const p of starters(me)) {
     body: JSON.stringify({ isLeagueManager: false, teamId: me.id, type: 'ROSTER', scoringPeriodId: league.scoringPeriodId, executionType: 'EXECUTE',
       items: [{ playerId: p.id, type: 'LINEUP', fromLineupSlotId: slot, toLineupSlotId: SLOT_ID.Bench }, { playerId: sub.id, type: 'LINEUP', fromLineupSlotId: SLOT_ID.Bench, toLineupSlotId: slot }] }),
   }).catch(err => ({ ok: false, json: async () => ({ messages: [err.message] }) }));
-  if (r.ok) { swapped.set(p.id, sub); console.log(`Auto swap: benched ${p.name} (${p.status}), started ${sub.name}`); continue; }
+  if (r.ok) { swapped.set(p.id, sub); console.log(`Auto swap: benched ${p.name} (${inactive.has(p.id) ? 'inactive' : p.status}), started ${sub.name}`); continue; }
   const why = await r.json().catch(() => ({}));
   console.warn(`Auto swap of ${p.name} failed:`, why.details?.[0]?.type ?? why.messages?.[0] ?? r.status);
   alerts.push([`autofail:${week}:${p.id}`, `Bench ${p.name} now`, `He's out, and the app couldn't swap him for ${sub.name} on ESPN. Do it in the ESPN app before his game starts.`, true]);
