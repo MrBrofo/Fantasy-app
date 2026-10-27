@@ -552,7 +552,12 @@ const weekScore = players => bestLineup(players, p => weekValue(p) + (locked(p) 
 // --- Waiver pickups: add each free agent, drop whichever player hurts least.
 // Injured players are never suggested as drops (they come back), unless out for the season.
 // A this-week pickup also pays for any season-long points it costs, so a star on bye is never the drop.
-const weakness = p => (p.inj?.season ? -1 : rate(p)); // tie-break: drop out-for-season players first
+// tie-break: drop out-for-season players first, then a spare kicker or defense (one you'd never start: a third kicker
+// only matters if both others are off, while a backup RB/WR/TE covers injuries), then the lowest per game
+// (a backup kicker's 8 a game beat a backup running back's 4 here, so a third kicker was kept over him)
+const weakness = (p, roster = me.roster) => { if (p.inj?.season) return -1;
+  const same = ['K', 'D/ST'].includes(p.pos) ? roster.filter(x => x.pos === p.pos && x.slot !== 'IR').sort((a, b) => rate(b) - rate(a)) : [];
+  return same.indexOf(p) >= (slotCounts[FA_SLOT[p.pos]] || 1) ? -0.5 + rate(p) / 1000 : rate(p); };
 // A long-term keeper: 1.5+ a game better rest of season than the best free agent at his position, so he'd be
 // hard to get back. Never dropped for a one-week gain (pickup plan, and the check on pending claims).
 const isKeeper = p => { const o = faBest.find(o => o.pos === p.pos); return seasonValue(p) >= (o ? seasonValue(o) : 0) + 1.5; };
@@ -574,7 +579,7 @@ function bestSwap(roster, value, used = new Set()) {
       const next = [...roster.filter(p => p !== drop), add];
       const gain = sc(next) - base + (value === seasonValue ? 0 : Math.min(0, score(next, seasonValue) - seasonBase)) + Math.min(0, byeScore(next) - byeBase);
       // on a tie, drop the weaker player
-      if (!top || gain > top.gain + 0.05 || (gain > top.gain - 0.05 && weakness(drop) < weakness(top.drop))) top = { add, drop, gain };
+      if (!top || gain > top.gain + 0.05 || (gain > top.gain - 0.05 && weakness(drop, roster) < weakness(top.drop, roster))) top = { add, drop, gain };
     }
     if (top && top.gain >= 1) out.push(top); // under a point isn't worth a roster move
   }

@@ -12,14 +12,14 @@ const code = cut('function bestLineup(', 'const lineupProj = t => weekLine(t).re
   + '\n' + cut('const faBest = ', '    after: mineAfter,\n  };\n}')
   + '\n' + cut('const weakness = ', '  return out.sort((a, b) => b.gain - a.gain).slice(0, 5);\n}')
   + '\n' + cut('const SLOT_ID = ', 'const bestMove = lineupMove();')
-  + '\nreturn { weekValue, seasonValue, locked, best, benchIn, sitOut, judge, bestSwap, bestMove };';
+  + '\nreturn { weekValue, seasonValue, locked, best, benchIn, sitOut, judge, bestSwap, bestMove, weakness };';
 
 const HOUR = 3600e3, NOW = Date.UTC(2026, 9, 25, 18); // a Sunday afternoon
 // team 1 played Thursday (locked), team 2 kicks off in an hour, team 3 is on bye
 const pro = [{ id: 1, proGamesByScoringPeriod: { 7: [{ date: NOW - 72 * HOUR }] } }, { id: 2, proGamesByScoringPeriod: { 7: [{ date: NOW + HOUR }] } }, { id: 3, proGamesByScoringPeriod: {} }, { id: 4, proGamesByScoringPeriod: { 7: [{ date: NOW + 5 * HOUR }] } }];
 const pl = (id, pos, slot, proj, team, status = '') => ({ id, name: `P${id}`, pos, slot, proj, proTeamId: team, status });
 const consts = {
-  slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 },
+  slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 }, FA_SLOT: { QB: 0, RB: 2, WR: 4, TE: 6, K: 17, 'D/ST': 16 },
   SLOT: { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 23: 'FLEX', 20: 'Bench', 21: 'IR' },
   SLOT_POS: { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'], 23: ['RB', 'WR', 'TE'] },
   HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, playOdds: p => ({ DOUBTFUL: { pct: 7 }, QUESTIONABLE: { pct: 71 } })[p.status] ?? null, pro, vor: () => 0, byeScore: () => 0,
@@ -354,3 +354,8 @@ console.log('ok');
   assert(field(next, 'salt') === field(out, 'salt') && field(next, 'iv') !== field(out, 'iv'), 'same salt, new iv each build');
   console.log('lock ok');
 }
+// a third kicker is dropped before a backup running back who scores fewer points a game
+{ const ks = [{ ...pl(40, 'K', 'K', 9, 2), ros: 9 }, { ...pl(41, 'K', 'Bench', 8, 2), ros: 8 }, { ...pl(42, 'K', 'Bench', 7, 2), ros: 7 }], rb = { ...pl(43, 'RB', 'Bench', 4, 2), ros: 4 };
+  const k1 = { ...consts, slotCounts: { ...consts.slotCounts, 17: 1 } };
+  const w = new Function(...Object.keys(k1), 'me', 'Date', code)(...Object.values(k1), { roster: [...ks, rb] }, { now: () => NOW }).weakness;
+  assert.ok(w(ks[2]) < w(rb) && w(ks[1]) < w(rb) && w(ks[0]) > w(rb)); console.log('spare kicker ok'); }
