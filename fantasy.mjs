@@ -1989,7 +1989,7 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 #gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
 .gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
-.gc-wrap{position:relative}@keyframes gcHop{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}.gc-hop{animation:gcHop .55s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.gc-hop{animation:none}}.gc-replay{position:absolute;right:8px;bottom:8px;padding:5px 10px;border:0;border-radius:999px;background:#000a;color:#fff;font:600 11px system-ui,sans-serif;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.gc-wrap{position:relative}.gc-crowd{opacity:0;animation:gcCrowd .78s step-end infinite}@keyframes gcCrowd{0%{opacity:1}16.67%{opacity:0}}@media (prefers-reduced-motion:reduce){.gc-crowd{animation:none}}@keyframes gcHop{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}.gc-hop{animation:gcHop .55s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.gc-hop{animation:none}}.gc-replay{position:absolute;right:8px;bottom:8px;padding:5px 10px;border:0;border-radius:999px;background:#000a;color:#fff;font:600 11px system-ui,sans-serif;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 html.term .gc-replay{border-radius:0;font-family:inherit;text-transform:uppercase;letter-spacing:.08em}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
 html.term .gc-fs{border-radius:0}
@@ -2674,15 +2674,16 @@ function gcField(F, A, H, ball, from, first, fx) {
   const line = (x, col) => { const p = pt(x, 0), q = pt(x, 53.3); return '<line x1="' + xy(p).replace(',', '" y1="') + '" x2="' + xy(q).replace(',', '" y2="') + '" stroke="' + col + '" stroke-width="7"/>'; };
   // a touchdown: the scoring team's end zone glows in its colour and TOUCHDOWN is painted across it, lying flat on the turf
   const td = F.play?.[4], tdLeft = td && F.play[2] !== A[0], tdTeam = td && F.teams.find(t => t[0] === F.play[2]);
-  const paint = (x1, str) => { const c = pt(x1 + 5, 26.65), q = pt(x1 + 5, 27.65), r = pt(x1 + 6, 26.65), sg = x1 ? -1 : 1;
+  const paint = (x1, str, size = 3.8, spacing = 0.6) => { const c = pt(x1 + 5, 26.65), q = pt(x1 + 5, 27.65), r = pt(x1 + 6, 26.65), sg = x1 ? -1 : 1;
     // one unit of text is one yard: it reads along the end zone, the tops of the letters toward the end line
     const m = [(q[0] - c[0]) * sg, (q[1] - c[1]) * sg, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, c[0], c[1]].map(v => v.toFixed(3)).join(' ');
-    return '<text transform="matrix(' + m + ')" font-size="3.8" font-weight="900" fill="#fff" fill-opacity=".92" text-anchor="middle" dominant-baseline="central" letter-spacing=".6">' + str + '</text>'; };
-  const zone = (x1, t, rot, scored) => { const c = pt(x1 + 5, 26.65); return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
+    return '<text transform="matrix(' + m + ')" font-size="' + size + '" font-weight="900" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="' + spacing + '">' + str + '</text>'; };
+  const zone = (x1, t, scored) => { return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
     (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + paint(x1, 'TOUCHDOWN') + '</g>' : '') +
-    (scored ? '' : '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '" font-size="48" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="6" transform="rotate(' + rot + ' ' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ')">' + e(t[1]) + '</text>'); };
-  // field-jump.webp is the same render with about a third of the fans in the air: shown in turns after a play, the crowd jumps
-  let o = '<image href="field.webp" width="1600" height="490"/><image class="gc-jump" href="field-jump.webp" width="1600" height="490" opacity="0"/>' + zone(0, A, -50, td && tdLeft) + zone(110, H, 50, td && !tdLeft);
+    (scored ? '' : paint(x1, e(t[1]), 7, 2.2)); };
+  // crowd0-5.webp are the stands (the top 240 rows of field.webp) six times over, fans jumping each on their own beat;
+  // the page shows them in turn, nonstop
+  let o = '<image href="field.webp" width="1600" height="490"/>' + [0, 1, 2, 3, 4, 5].map(i => '<image class="gc-crowd" href="crowd' + i + '.webp" width="1600" height="240" style="animation-delay:-' + (i * 0.13).toFixed(2) + 's"/>').join('') + zone(0, A, td && tdLeft) + zone(110, H, td && !tdLeft);
   if (F.poss && !td) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".1"');
   if (first != null) o += line(fx(first), '#f5d90a');
   if (F.poss || td) {
@@ -2738,7 +2739,7 @@ function gcField(F, A, H, ball, from, first, fx) {
   return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 0 960 470" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
 // A new play plays out: the passer fades in over GC_LEAD ms, then over GC_FLY ms the ball moves along gcFly (its path in the air, and its shadow's on the turf)
-const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 1800, GC_CHEER = 2000, GC_TD_CHEER = 3500;
+const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 1800;
 let gcKey = '', gcAt = 0, gcFly = null, gcRun = null;
 function gcAnimate() {
   const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly, run = gcRun = {};
@@ -2769,10 +2770,7 @@ function gcAnimate() {
       if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
     }
     if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - 0.6) / 0.3));
-    // the crowd jumps for a couple of seconds once the ball gets there, longer for a touchdown
-    const cheer = (F.td ? GC_TD_CHEER : GC_CHEER) / 1000, jump = document.querySelector('#gc .gc-jump');
-    if (jump) jump.setAttribute('opacity', tl >= 0 && tl < cheer && Math.floor(tl * 6) % 2 === 0 ? 1 : 0);
-    if (t < 1 || tl < cheer || (F.td && conf !== null)) requestAnimationFrame(step);
+    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0)) requestAnimationFrame(step);
   };
   step();
 }
@@ -2834,7 +2832,7 @@ function drawGc() {
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
   if (html === box.gcHtml) return;
   box.innerHTML = box.gcHtml = html;
-  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD_CHEER) gcAnimate();
+  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD) gcAnimate();
 }
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
