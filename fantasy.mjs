@@ -2839,12 +2839,15 @@ function gcField(F, A, H, ball, from, first, fx) {
     // lost yards, an interception, a missed or blocked kick: red; an incompletion: faint grey
     const bad = !td && ((y1 < y0 && /run|pass/.test(kind)) || /pick|miss|block/.test(kind)), grey = kind === 'inc';
     const p = pt(F.play ? lx : fx(ball), 26.65), pb = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
+    // an interception: the defender runs in from a few yards downfield, catches it where it was picked, and carries it back
+    // to where the return ended (px: the same sideline distance, so only x moves)
+    const run = kind === 'pick' && F.play ? pt(lx + 4 * Math.sign(lx - sx || 1), 26.65)[0] - p[0] : 0, ret = run && Math.abs(fx(ball) - lx) > 0.5 ? pb[0] - p[0] : 0, pe = ret ? pb : p;
     if (F.play) {
       const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, 26.65, lift ? up(u) : 0); });
       cam = (pt(sx, 26.65)[0] + p[0]) / 2;
       // a thrown ball spirals, a kicked one tumbles end over end
       gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: !H ? '' : /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H ? drag : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
-        a0: rnd() * 360, f0: Math.floor(rnd() * 16), wob: rnd() * rnd() * 7, wf: 1.5 + rnd() * 2.5, td:td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
+        run, ret, a0: rnd() * 360, f0: Math.floor(rnd() * 16), wob: rnd() * rnd() * 7, wf: 1.5 + rnd() * 2.5, td:td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
     }
     // a wide arrow from where the play started to the ball; the tip stops short of the ball so it shows (less on a short play)
     if (F.play) {
@@ -2878,7 +2881,7 @@ function gcField(F, A, H, ball, from, first, fx) {
       // one player who isn't a runner (a kicker, a passer with no target) stands where the play started
       const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run' && !F.dt;
       if (who.length === 2 || solo) o += '<g class="gc-qb">' + pin(sx, who[0], 0, solo ? 0 : -push) + '</g>';
-      if (who.length && !solo) o += '<g class="gc-catch">' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
+      if (who.length && !solo) o += '<g class="gc-catch"' + (ret ? ' transform="translate(' + ret.toFixed(1) + ' 0)"' : '') + '>' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
     }
     // spin.webp is 16 Blender renders of the ball from the field camera, side by side, each turned 1/16 further around its long
     // axis: each 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
@@ -2886,15 +2889,15 @@ function gcField(F, A, H, ball, from, first, fx) {
     const bw = 3.6 * s / 109;
     if (gcFly) gcFly.cy = -32 * bw;
     if (F.rz && !td) o += '<ellipse cx="' + pb[0].toFixed(1) + '" cy="' + pb[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
-    o += '<g id="gcShad" transform="translate(' + xy(p).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
-      '<g id="gcBall" transform="translate(' + xy(p).replace(',', ' ') + ')"><g id="gcSpin"><svg id="gcFrame" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '" viewBox="0 0 240 160"><image href="spin.webp" width="3840" height="160"/></svg></g></g>';
+    o += '<g id="gcShad" transform="translate(' + xy(pe).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
+      '<g id="gcBall" transform="translate(' + xy(pe).replace(',', ' ') + ')"><g id="gcSpin"><svg id="gcFrame" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '" viewBox="0 0 240 160"><image href="spin.webp" width="3840" height="160"/></svg></g></g>';
   }
   // show the 60% of the field around the play (or the ball), like a TV camera following it
   const cx = Math.max(480, Math.min(1120, cam ?? pt(fx(F.poss ? ball : 50), 26.65)[0]));
   return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 0 960 470" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><filter id="gcSoft"><feGaussianBlur stdDeviation=".45"/></filter><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
 // A new play plays out: the passer fades in over GC_LEAD ms, then over GC_FLY ms the ball moves along gcFly (its path in the air, and its shadow's on the turf)
-const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 2300;
+const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 2300, GC_RET = 1000;
 let gcKey = '', gcAt = 0, gcFly = null, gcRun = null;
 function gcAnimate() {
   const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly, run = gcRun = {};
@@ -2924,6 +2927,12 @@ function gcAnimate() {
     const hi = Math.max(0, gy - y);
     sh.setAttribute('transform', 'translate(' + gx.toFixed(1) + ' ' + gy.toFixed(1) + ') scale(' + Math.max(0.4, 1 - hi / 220).toFixed(2) + ')');
     sh.setAttribute('opacity', Math.max(0.35, 1 - hi / 260).toFixed(2));
+    // interception: the defender closes on the ball while it's in the air, then runs it back with the ball in his hands
+    if (F.run) {
+      const rt = Math.min(1, Math.max(0, (el - GC_LEAD - GC_FLY) / GC_RET)), dx = t < 1 ? F.run * (1 - t) : F.ret * rt * rt * (3 - 2 * rt);
+      fade('gc-catch')?.setAttribute('transform', 'translate(' + dx.toFixed(1) + ' 0)');
+      if (t >= 1 && F.ret) { const [ex, ey] = F.b[F.b.length - 1], bx = (ex + dx).toFixed(1); b.setAttribute('transform', 'translate(' + bx + ' ' + ey.toFixed(1) + ')'); sh.setAttribute('transform', 'translate(' + bx + ' ' + ey.toFixed(1) + ')'); sh.setAttribute('opacity', 1); }
+    }
     // the trail shows only behind the ball
     if (clip) { clip.setAttribute('x', t < 1 ? Math.min(F.x0, x).toFixed(1) : 0); clip.setAttribute('width', t < 1 ? Math.abs(x - F.x0).toFixed(1) : 1600); }
     if (fade('gc-qb')) fade('gc-qb').style.opacity = Math.min(1, el / GC_LEAD);
@@ -2963,8 +2972,8 @@ function gcAnimate() {
         p.r.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + (p.spin * tl).toFixed(0) + ')'); p.r.setAttribute('opacity', Math.max(0, 1 - tl / 1.8).toFixed(2)); }
       if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; pop?.remove(); pop = null; b.ownerSVGElement.style.transform = ''; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
     }
-    if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - 0.6) / 0.3));
-    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0)) requestAnimationFrame(step);
+    if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - (F.run ? 0.3 : 0.6)) / 0.3));
+    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0) || (F.ret && el < GC_LEAD + GC_FLY + GC_RET)) requestAnimationFrame(step);
   };
   step();
 }
