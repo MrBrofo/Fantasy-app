@@ -2676,8 +2676,9 @@ function gcField(F, A, H, ball, from, first, fx) {
   const td = F.play?.[4], tdLeft = td && F.play[2] !== A[0], tdTeam = td && F.teams.find(t => t[0] === F.play[2]);
   // something lying flat in an end zone, centred z yards from the near sideline: one unit is one yard, it reads along
   // the end zone with its top toward the end line (an affine stand-in for the perspective, close enough over a few yards)
-  const flat = (x1, z) => { const c = pt(x1 + 5, z), q = pt(x1 + 5, z + 1), r = pt(x1 + 6, z), sg = x1 ? -1 : 1;
-    return 'matrix(' + [(q[0] - c[0]) * sg, (q[1] - c[1]) * sg, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, c[0], c[1]].map(v => v.toFixed(3)).join(' ') + ')'; };
+  // given a width w, the frame is fitted to that many yards so both ends land where the perspective puts them
+  const flat = (x1, z, w) => { const sg = x1 ? -1 : 1, u = w || 2, c = pt(x1 + 5, z), r = pt(x1 + 6, z), a = pt(x1 + 5, z - sg * u / 2), b = pt(x1 + 5, z + sg * u / 2), o = w ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : c;
+    return 'matrix(' + [(b[0] - a[0]) / u, (b[1] - a[1]) / u, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, o[0], o[1]].map(v => v.toFixed(3)).join(' ') + ')'; };
   const painted = (x1, el) => '<clipPath id="gcP' + x1 + '">' + el.replace(/ stroke="[^"]*"| stroke-width="[^"]*"/g, '') + '</clipPath><g filter="url(#gcSoft)" opacity=".86">' + el + '</g>' +
     '<image href="field.webp" width="1600" height="490" clip-path="url(#gcP' + x1 + ')" style="mix-blend-mode:multiply" opacity=".45"/>';
   const paint = (x1, str, size = 3.8, spacing = 0.6) => painted(x1, '<text transform="' + flat(x1, 26.65) + '" font-size="' + size + '" font-weight="900" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="' + spacing + '">' + str + '</text>');
@@ -2686,8 +2687,8 @@ function gcField(F, A, H, ball, from, first, fx) {
   // stretched to a set length, with a small logo past each end
   const name = (x1, t) => { const n = String(t[5] || t[1]).toUpperCase(), len = Math.min(34, n.length * 4.6), alt = /^[0-9a-f]{6}$/i.test(t[4] || '') ? t[4] : '000000';
     const light = parseInt(alt.slice(0, 2), 16) * 0.3 + parseInt(alt.slice(2, 4), 16) * 0.59 + parseInt(alt.slice(4), 16) * 0.11 > 200;
-    return painted(x1, '<text transform="' + flat(x1, 26.65) + '" font-size="5.6" font-weight="900" fill="#fff" stroke="#' + (light ? '111' : alt) + '" stroke-width=".4" stroke-linejoin="round" style="paint-order:stroke" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs">' + e(n) + '</text>') +
-      [-1, 1].map(sd => '<image href="' + logo(t[1]) + '" x="-3" y="-3" width="6" height="6" transform="' + flat(x1, 26.65) + ' translate(' + sd * (len / 2 + 4.2) + ' 0)"/>').join(''); };
+    return painted(x1, '<text transform="' + flat(x1, 26.65, len) + '" font-size="5.6" font-weight="900" fill="#fff" stroke="#' + (light ? '111' : alt) + '" stroke-width=".4" stroke-linejoin="round" style="paint-order:stroke" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs">' + e(n) + '</text>') +
+      [-1, 1].map(sd => '<image href="' + logo(t[1]) + '" x="-3" y="-3" width="6" height="6" transform="' + flat(x1, 26.65 + sd * (len / 2 + 4.2)) + '"/>').join(''); };
   const zone = (x1, t, scored) => { return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
     (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + paint(x1, 'TOUCHDOWN') + '</g>' : '') +
     (scored ? '' : name(x1, t)); };
