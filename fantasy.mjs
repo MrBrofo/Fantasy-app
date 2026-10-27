@@ -2036,7 +2036,7 @@ html.term nav a.on{color:#fff;background:#ffffff12;text-shadow:0 0 10px #fff}
 html.term nav a.on svg{filter:drop-shadow(0 0 5px #fff)}
 html.term nav a.press{background:#ffffff26}
 html.term nav .dot,html.term #todo h2 .dot{border-radius:0;background:var(--bad);box-shadow:0 0 10px var(--bad)}
-html.term .seg button{text-transform:uppercase;letter-spacing:.12em;font-size:11px}
+html.term .seg button{text-transform:uppercase;letter-spacing:.08em;font-size:11px}/* .08em: 5 buttons on More still fit a phone */
 html.term .seg button.on{background:#fff;color:#000}
 html.term .gl{text-decoration-color:var(--good)}
 html.term #gloss{border-color:var(--good);box-shadow:0 0 24px #39ff8826}
@@ -2336,7 +2336,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><p class="tag" style="margin:0">Every underlined word on this site, A to Z.</p><dl id="dict"></dl></div>
 <details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
 
-<section id="look"><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button></div><p class="tag" style="margin:8px 0 0">Saved on this phone. Everything else works the same in both.</p></div></section>
+<section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button></div><p class="tag" style="margin:8px 0 0">Saved on this phone. Everything else works the same in both.</p></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
@@ -3249,15 +3249,15 @@ function addHim(p) {
 // One section at a time: the bottom bar picks which tab shows, like pages in an app
 // 5 tabs; Moves, Trades and More each hold a few pages, picked with the switch at the top. Each tab remembers its page.
 const navLinks = [...document.querySelectorAll('nav a')];
-const GROUPS = { home: ['home'], team: ['team'], moves: ['pickups', 'pending'], trades: ['trades', 'compare'], more: ['season', 'league', 'news', 'help'] };
-const PAGE_NAME = { pickups: 'Pickups', pending: 'Pending', trades: 'Trade ideas', compare: 'Compare', season: 'Season', league: 'League', news: 'News', help: 'How it works' };
+const GROUPS = { home: ['home'], team: ['team'], moves: ['pickups', 'pending'], trades: ['trades', 'compare'], more: ['season', 'league', 'news', 'help', 'settings'] };
+const PAGE_NAME = { pickups: 'Pickups', pending: 'Pending', trades: 'Trade ideas', compare: 'Compare', season: 'Season', league: 'League', news: 'News', help: 'How it works', settings: 'Settings' };
 const lastPage = {};
 function showTab(tab, jump) {
   let g = Object.keys(GROUPS).find(k => GROUPS[k].includes(tab));
   if (!g) { g = GROUPS[tab] ? tab : 'home'; tab = lastPage[g] || GROUPS[g][0]; }
   lastPage[g] = tab;
   if (jump) history.replaceState(null, '', '#' + tab);
-  // a section tagged with the tab itself (Sign out on More) shows on every page of that tab
+  // a section tagged with the tab itself shows on every page of that tab
   document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab && s.dataset.tab !== g));
   document.body.classList.toggle('home', tab === 'home');
   navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + g));
@@ -3308,7 +3308,7 @@ showTab(location.hash.slice(1), false);
   if (!still) requestAnimationFrame(draw);
 })();
 
-// Look switch (More tab): Terminal or Classic, saved on this phone
+// Look switch (More > Settings): Terminal or Classic, saved on this phone
 const showLook = () => document.querySelectorAll('[data-look]').forEach(b => b.classList.toggle('on', (b.dataset.look === 'term') === document.documentElement.classList.contains('term')));
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-look]');
@@ -3462,7 +3462,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { look: 'more', account: 'more', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
