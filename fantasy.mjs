@@ -1989,6 +1989,8 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 #gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
 .gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
+.gc-wrap{position:relative}.gc-replay{position:absolute;right:8px;bottom:8px;padding:5px 10px;border:0;border-radius:999px;background:#000a;color:#fff;font:600 11px system-ui,sans-serif;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+html.term .gc-replay{border-radius:0;font-family:inherit;text-transform:uppercase;letter-spacing:.08em}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
 html.term .gc-fs{border-radius:0}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
@@ -2775,7 +2777,8 @@ function drawGc() {
   const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
   box.innerHTML = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
-    gcField(F, A, H, ball, from, first, x => 10 + Math.max(0, Math.min(100, x))) +
+    '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(0, Math.min(100, x))) +
+      (F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') + '</div>' +
     (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
@@ -2784,6 +2787,7 @@ function drawGc() {
 }
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
+  if (ev.target.closest('[data-replay]')) { gcAt = Date.now(); return drawGc(); }
   const b = ev.target.closest('[data-watch]'), box = document.getElementById('gc');
   if (!b || !box) return;
   box.hidden = !box.hidden; b.textContent = box.hidden ? 'Watch his game live' : 'Hide the game';
