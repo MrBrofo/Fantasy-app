@@ -1988,18 +1988,9 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 /* Watch: live game. The field is 120 yards (two 10-yard end zones), stripes every 10 */
 #gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
-/* The field leans back like a TV shot: a flat strip rotated away from you */
-.gc-3d{perspective:520px;perspective-origin:50% 0;margin:-24px 0 8px}
-.gc-field{position:relative;height:150px;transform:rotateX(42deg);transform-origin:50% 100%;border:2px solid #fff;border-radius:6px;overflow:hidden;background:repeating-linear-gradient(90deg,#2f7d34 0 8.3333%,#38903d 8.3333% 16.6667%);box-shadow:0 18px 30px -10px #000a}
-.gc-field i{position:absolute;top:0;bottom:0;font-style:normal}.gc-field .yl{left:8.3333%;right:8.3333%;background:repeating-linear-gradient(90deg,#ffffffb0 0 2px,transparent 2px 5%),repeating-linear-gradient(90deg,transparent 0 calc(1% - 1px),#ffffff70 calc(1% - 1px) 1%) 0 12px/100% 8px no-repeat,repeating-linear-gradient(90deg,transparent 0 calc(1% - 1px),#ffffff70 calc(1% - 1px) 1%) 0 calc(100% - 12px)/100% 8px no-repeat;border-right:2px solid #ffffffb0}
-.gc-field .ez{width:8.3333%;display:grid;place-items:center;color:#fff;font:800 13px system-ui,sans-serif;letter-spacing:.12em;writing-mode:vertical-rl;text-shadow:0 1px 2px #0008}.gc-field .ez:first-child{transform:rotate(180deg)}
-.gc-field .n{top:auto;bottom:22px;width:30px;margin-left:-15px;text-align:center;color:#ffffffd0;font:700 13px system-ui,sans-serif}.gc-field .n.t{top:22px;bottom:auto;transform:rotate(180deg)}
-.gc-field .fd{width:4px;margin-left:-2px;background:#f5d90a;box-shadow:0 0 6px #f5d90a}.gc-field .ls{width:4px;margin-left:-2px;background:#3b82f6}
-.gc-field .drv{top:50%;bottom:auto;height:8px;margin-top:-4px;border-radius:4px;background:#ffffff55}
-.gc-field .bl{top:50%;bottom:auto;width:26px;height:15px;margin:-7.5px 0 0 -13px;border-radius:50%;background:radial-gradient(#a0522d,#6b3410);box-shadow:0 3px 4px #000a;border:1px solid #3a1c08}
-.gc-field .bl::after{content:'';position:absolute;left:7px;right:7px;top:6px;height:2px;background:#fff}.gc-field .bl.rz{box-shadow:0 0 0 3px var(--bad),0 3px 4px #000a}
+.gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:linear-gradient(#0a1a0e,#16401d)}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
-html.term .gc-field{border-radius:0}
+html.term .gc-fs{border-radius:0}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
 #refresh.spin span{animation:none}.btn,nav a,#refresh{transition:none}}
 @media (prefers-reduced-transparency:reduce){nav,body::before{background:var(--card);-webkit-backdrop-filter:none;backdrop-filter:none}}
@@ -2670,6 +2661,42 @@ function render(p) {
 }
 // Watch: his game right now, like ESPN's gamecast. Score, down, a field with the drive, the last play,
 // the starters from my matchup in that game, and the game's leaders. Redrawn on every live update.
+// The field as seen from the stands: x is yards from the left end line (0-120), z yards from the near sideline (0-53.3)
+function gcField(F, A, H, ball, from, first, fx) {
+  const pt = (x, z, up = 0) => { const k = 90 / (90 + z); return [180 + (x - 60) * 2.8 * k, -110 + 310 * k - up * 2.8 * k]; };
+  const xy = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+  const quad = (x1, x2, z1, z2, fill) => '<polygon points="' + [pt(x1, z1), pt(x2, z1), pt(x2, z2), pt(x1, z2)].map(xy).join(' ') + '" fill="' + fill + '"/>';
+  const line = (a, b, col, w) => { const [p, q] = [a, b]; return '<line x1="' + p[0].toFixed(1) + '" y1="' + p[1].toFixed(1) + '" x2="' + q[0].toFixed(1) + '" y2="' + q[1].toFixed(1) + '" stroke="' + col + '" stroke-width="' + w + '" stroke-linecap="round"/>'; };
+  const text = (x, z, str, size, flip, rot) => { const p = pt(x, z), k = 90 / (90 + z); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '" font-size="' + (size * k).toFixed(1) + '" fill="#fff" fill-opacity=".85" text-anchor="middle" dominant-baseline="central"' + (rot ? ' transform="rotate(' + rot + ' ' + xy(p).replace(',', ' ') + ')"' : '') + '>' + e(str) + '</text>'; };
+  let o = quad(-3, 123, -2.5, 56, '#235f29');
+  for (let i = 0; i < 20; i++) o += quad(10 + 5 * i, 15 + 5 * i, 0, 53.3, i % 2 ? '#2f7d34' : '#38903d');
+  o += quad(0, 10, 0, 53.3, '#' + (A[3] || '333')) + quad(110, 120, 0, 53.3, '#' + (H[3] || '333'));
+  o += text(5, 26.65, A[1], 15, 0, -90) + text(115, 26.65, H[1], 15, 0, 90);
+  for (let y = 10; y <= 110; y++) {
+    if (y % 5 === 0) o += line(pt(y, 0), pt(y, 53.3), '#fff', y === 10 || y === 110 ? 2 : 1);
+    else for (const z of [0.3, 23.6, 29.1, 52.4]) o += line(pt(y, z), pt(y, z + 0.6), '#fff', 0.8);
+  }
+  for (let y = 20; y <= 100; y += 10) { const n = String(Math.min(y - 10, 110 - y)); o += text(y, 9, n, 14) + text(y, 44.3, n, 14, 0, 180); }
+  o += '<polygon points="' + [pt(0, 0), pt(120, 0), pt(120, 53.3), pt(0, 53.3)].map(xy).join(' ') + '" fill="none" stroke="#fff" stroke-width="1.5"/>';
+  if (F.poss) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, '#ffffff40');
+  if (first != null) o += line(pt(fx(first), 0), pt(fx(first), 53.3), '#f5d90a', 2.5);
+  if (F.poss) o += line(pt(fx(ball), 0), pt(fx(ball), 53.3), '#3b82f6', 2.5);
+  // goal posts on the end lines: crossbar 10 ft up, uprights 6 yards apart
+  o += '<polygon points="' + [pt(0, 0), pt(120, 0), pt(120, 53.3), pt(0, 53.3)].map(xy).join(' ') + '" fill="url(#gcShade)"/>';
+  for (const gx of [0, 120]) {
+    const back = gx ? gx + 2 : gx - 2; // the post stands behind the end line and bends forward to the crossbar
+    o += line(pt(back, 26.65), pt(back, 26.65, 3.3), '#d4b800', 3) + line(pt(back, 26.65, 3.3), pt(gx, 26.65, 3.3), '#f5d90a', 2.5) + line(pt(gx, 23.6, 3.3), pt(gx, 29.7, 3.3), '#f5d90a', 2.5);
+    o += line(pt(gx, 23.6, 3.3), pt(gx, 23.6, 13), '#f5d90a', 2.5) + line(pt(gx, 29.7, 3.3), pt(gx, 29.7, 13), '#f5d90a', 2.5);
+  }
+  if (F.poss) {
+    const b = pt(fx(ball), 26.65);
+    o += '<ellipse cx="' + b[0].toFixed(1) + '" cy="' + (b[1] + 1).toFixed(1) + '" rx="10" ry="3" fill="#000" fill-opacity=".45"/>' +
+      '<ellipse cx="' + b[0].toFixed(1) + '" cy="' + (b[1] - 5).toFixed(1) + '" rx="10" ry="5.8" fill="#8a4a1c" stroke="' + (F.rz ? '#ef4444' : '#3a1c08') + '" stroke-width="' + (F.rz ? 2 : 1) + '"/>' +
+      line([b[0] - 4, b[1] - 5], [b[0] + 4, b[1] - 5], '#fff', 1.2);
+    if (F.down) { const w = F.down.length * 6.6 + 14; o += '<rect x="' + (b[0] - w / 2).toFixed(1) + '" y="' + (b[1] - 31).toFixed(1) + '" width="' + w.toFixed(1) + '" height="18" rx="9" fill="#0b0f14" fill-opacity=".85"/><text x="' + b[0].toFixed(1) + '" y="' + (b[1] - 22).toFixed(1) + '" font-size="11" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(F.down) + '</text>'; }
+  }
+  return '<svg class="gc-fs" viewBox="0 58 360 152" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><linearGradient id="gcShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".3"/><stop offset=".6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".06"/></linearGradient></defs>' + o + '</svg>';
+}
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
   if (!box || box.hidden || !p) return;
@@ -2683,12 +2710,7 @@ function drawGc() {
   const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
   box.innerHTML = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
-    '<div class="gc-3d"><div class="gc-field" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '">' +
-      '<i class="ez" style="left:0;background:#' + e(A[3] || '333') + '">' + e(A[1]) + '</i><i class="ez" style="right:0;background:#' + e(H[3] || '333') + '">' + e(H[1]) + '</i><i class="yl"></i>' +
-      [10, 20, 30, 40, 50, 60, 70, 80, 90].map(y => ['', ' t'].map(t => '<i class="n' + t + '" style="left:' + x(y) + '">' + Math.min(y, 100 - y) + '</i>').join('')).join('') +
-      (F.poss ? '<i class="drv" style="left:' + x(Math.min(from, ball)) + ';width:' + Math.abs(ball - from) / 120 * 100 + '%"></i>' : '') +
-      (first != null ? '<i class="fd" style="left:' + x(first) + '"></i>' : '') +
-      (F.poss ? '<i class="ls" style="left:' + x(ball) + '"></i><i class="bl' + (F.rz ? ' rz' : '') + '" style="left:' + x(ball) + '"></i>' : '') + '</div></div>' +
+    gcField(F, A, H, ball, from, first, x => 10 + Math.max(0, Math.min(100, x))) +
     (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
