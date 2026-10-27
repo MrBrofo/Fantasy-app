@@ -2674,16 +2674,26 @@ function gcField(F, A, H, ball, from, first, fx) {
   const line = (x, col) => { const p = pt(x, 0), q = pt(x, 53.3); return '<line x1="' + xy(p).replace(',', '" y1="') + '" x2="' + xy(q).replace(',', '" y2="') + '" stroke="' + col + '" stroke-width="7"/>'; };
   // a touchdown: the scoring team's end zone glows in its colour and TOUCHDOWN is painted across it, lying flat on the turf
   const td = F.play?.[4], tdLeft = td && F.play[2] !== A[0], tdTeam = td && F.teams.find(t => t[0] === F.play[2]);
-  const paint = (x1, str, size = 3.8, spacing = 0.6) => { const c = pt(x1 + 5, 26.65), q = pt(x1 + 5, 27.65), r = pt(x1 + 6, 26.65), sg = x1 ? -1 : 1;
-    // one unit of text is one yard: it reads along the end zone, the tops of the letters toward the end line
-    const m = [(q[0] - c[0]) * sg, (q[1] - c[1]) * sg, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, c[0], c[1]].map(v => v.toFixed(3)).join(' ');
-    return '<text transform="matrix(' + m + ')" font-size="' + size + '" font-weight="900" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="' + spacing + '">' + str + '</text>'; };
+  // something lying flat in an end zone, centred z yards from the near sideline: one unit is one yard, it reads along
+  // the end zone with its top toward the end line (an affine stand-in for the perspective, close enough over a few yards)
+  const flat = (x1, z) => { const c = pt(x1 + 5, z), q = pt(x1 + 5, z + 1), r = pt(x1 + 6, z), sg = x1 ? -1 : 1;
+    return 'matrix(' + [(q[0] - c[0]) * sg, (q[1] - c[1]) * sg, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, c[0], c[1]].map(v => v.toFixed(3)).join(' ') + ')'; };
+  const paint = (x1, str, size = 3.8, spacing = 0.6) => '<text transform="' + flat(x1, 26.65) + '" font-size="' + size + '" font-weight="900" fill="#fff" fill-opacity=".92" text-anchor="middle" dominant-baseline="central" letter-spacing="' + spacing + '">' + str + '</text>';
+  const logo = abbr => 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/' + e(String(abbr).toLowerCase()) + '.png&amp;w=200';
+  // the team's nickname in block letters, white with an outline in its second colour (dark when that colour is near white),
+  // stretched to a set length, with a small logo past each end
+  const name = (x1, t) => { const n = String(t[5] || t[1]).toUpperCase(), len = Math.min(34, n.length * 4.6), alt = /^[0-9a-f]{6}$/i.test(t[4] || '') ? t[4] : '000000';
+    const light = parseInt(alt.slice(0, 2), 16) * 0.3 + parseInt(alt.slice(2, 4), 16) * 0.59 + parseInt(alt.slice(4), 16) * 0.11 > 200;
+    return '<text transform="' + flat(x1, 26.65) + '" font-size="5.6" font-weight="900" fill="#fff" stroke="#' + (light ? '111' : alt) + '" stroke-width=".7" stroke-linejoin="round" style="paint-order:stroke" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs">' + e(n) + '</text>' +
+      [-1, 1].map(sd => '<image href="' + logo(t[1]) + '" x="-3" y="-3" width="6" height="6" transform="' + flat(x1, 26.65 + sd * (len / 2 + 4.2)) + '"/>').join(''); };
   const zone = (x1, t, scored) => { return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
     (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + paint(x1, 'TOUCHDOWN') + '</g>' : '') +
-    (scored ? '' : paint(x1, e(t[1]), 7, 2.2)); };
+    (scored ? '' : name(x1, t)); };
+  const mid = (() => { const c = pt(60, 26.65), r = pt(61, 26.65), d = pt(60, 25.65); return 'matrix(' + [r[0] - c[0], r[1] - c[1], d[0] - c[0], d[1] - c[1], c[0], c[1]].map(v => v.toFixed(3)).join(' ') + ')'; })();
+  const midLogo = '<image href="' + logo(H[1]) + '" x="-6.5" y="-6.5" width="13" height="13" opacity=".82" transform="' + mid + '"/>';
   // crowd0-5.webp are the stands (the top 240 rows of field.webp) six times over, fans jumping each on their own beat;
   // the page shows them in turn, nonstop
-  let o = '<image href="field.webp" width="1600" height="490"/>' + [0, 1, 2, 3, 4, 5].map(i => '<image class="gc-crowd" href="crowd' + i + '.webp" width="1600" height="240" style="animation-delay:-' + (i * 0.13).toFixed(2) + 's"/>').join('') + zone(0, A, td && tdLeft) + zone(110, H, td && !tdLeft);
+  let o = '<image href="field.webp" width="1600" height="490"/>' + [0, 1, 2, 3, 4, 5].map(i => '<image class="gc-crowd" href="crowd' + i + '.webp" width="1600" height="240" style="animation-delay:-' + (i * 0.13).toFixed(2) + 's"/>').join('') + zone(0, A, td && tdLeft) + zone(110, H, td && !tdLeft) + midLogo;
   if (F.poss && !td) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".1"');
   if (first != null) o += line(fx(first), '#f5d90a');
   if (F.poss || td) {
