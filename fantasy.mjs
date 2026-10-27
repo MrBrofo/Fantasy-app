@@ -2242,11 +2242,11 @@ transition:transform .55s cubic-bezier(.3,1.4,.5,1),width .55s cubic-bezier(.3,1
 /* its edge splits light into a thin rainbow, like real glass bending light (dispersion); the colours travel around the edge
    as the bubble moves (--spin follows where it is along the bar, set by placeBlobs() and the drag) */
 @property --spin{syntax:'<angle>';inherits:true;initial-value:0deg}
-html.glass .blob::after{content:'';position:absolute;inset:-1px;border-radius:inherit;padding:2px;pointer-events:none;mix-blend-mode:screen;filter:blur(.6px);
+html.glass .blob::after{content:'';position:absolute;inset:-1px;border-radius:inherit;padding:2px;pointer-events:none;mix-blend-mode:screen;
 background:conic-gradient(from var(--spin),rgba(255,140,0,0),rgba(255,140,0,.75) 12%,rgba(255,0,170,.6) 22%,rgba(90,60,255,.7) 32%,rgba(0,190,255,.6) 42%,rgba(0,190,255,0) 55% 62%,rgba(0,190,255,.45) 72%,rgba(255,0,170,.4) 84%,rgba(255,140,0,.5) 94%,rgba(255,140,0,0));
 -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
 html.glass .blob.held{scale:1.12;background:rgba(255,255,255,.16)}
-html.glass .blob{z-index:1}html.glass .blob.drag{transition:scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}html.glass :is(nav a,.seg button){z-index:2}
+html.glass .blob{z-index:1}html.glass .blob.drag{will-change:transform;transition:scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}html.glass :is(nav a,.seg button){z-index:2}
 html.glass .sheet-x{background:rgba(255,255,255,.06)}
 /* buttons and switches inside the page sit on solid cards, so they're flat iOS controls, not glass */
 html.glass .btn{border-radius:999px;color:#fff;background:var(--accent);box-shadow:none}
@@ -4043,21 +4043,24 @@ document.addEventListener('pointerdown', ev => {
   const x0 = ev.clientX, left = bar.getBoundingClientRect().left, w = (bar.querySelector(':scope > .on') ?? btns[0]).offsetWidth, y = btns[0].offsetTop; // the tab's width: the bubble's own may be mid-animation
   const lo = btns[0].offsetLeft, hi = btns.at(-1).offsetLeft + btns.at(-1).offsetWidth - w;
   const at = x => Math.min(hi, Math.max(lo, x - left - w / 2));
-  let moved = false, lastX = x0;
+  let moved = false, lastX = x0, frame = 0;
+  const paint = () => { frame = 0; const p = at(lastX); blob.style.transform = 'translate(' + p + 'px,' + y + 'px)'; blob.style.setProperty('--spin', Math.round((p + w / 2) / bar.clientWidth * 270 - 135) + 'deg'); };
   const move = e => {
     lastX = e.clientX;
     if (!moved && Math.abs(e.clientX - x0) < 4) return;
-    moved = true; dragging.add(bar); blob.classList.add('held', 'drag');
-    blob.style.transform = 'translate(' + at(e.clientX) + 'px,' + y + 'px)';
-    blob.style.setProperty('--spin', Math.round((at(e.clientX) + w / 2) / bar.clientWidth * 270 - 135) + 'deg');
+    if (!moved) { moved = true; dragging.add(bar); blob.classList.add('held', 'drag'); }
+    if (!frame) frame = requestAnimationFrame(paint);
   };
   const end = e => {
     removeEventListener('pointermove', move); removeEventListener('pointerup', end); removeEventListener('pointercancel', end);
+    cancelAnimationFrame(frame);
     // pick whatever the bubble is over, on the tab bar too (the drag may have started on its edge, not on a tab), and
     // also when the phone cancels the touch partway: it lands where you were instead of snapping back
     if (moved) {
       const c = at(e.type === 'pointerup' ? e.clientX : lastX) + w / 2, pick = btns.find(b => c >= b.offsetLeft && c < b.offsetLeft + b.offsetWidth) ?? btns.reduce((a, b) => Math.abs(b.offsetLeft + b.offsetWidth / 2 - c) < Math.abs(a.offsetLeft + a.offsetWidth / 2 - c) ? b : a);
       if (bar.tagName === 'NAV') showTab(pick.hash.slice(1), true); else if (!pick.classList.contains('on')) pick.click();
+      const eat = c => { c.stopPropagation(); c.preventDefault(); };
+      addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => removeEventListener('click', eat, true), 500);
     }
     dragging.delete(bar); blob.classList.remove('held', 'drag'); placeBlobs();
   };
@@ -4121,7 +4124,7 @@ document.addEventListener('pointerdown', ev => {
   const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; play = null; if (still) { last = -99; draw(PLAY * 0.55 * 1000); } };
   const draw = now => {
     if (!still) requestAnimationFrame(draw);
-    if (document.hidden || now - last < 33 || !document.documentElement.classList.contains('glass')) return;
+    if (document.hidden || now - last < 33 || dragging.size || !document.documentElement.classList.contains('glass')) return;
     last = now;
     const t = now / 1000;
     if (!play || t - start > PLAY) { play = newPlay(); start = still ? t - PLAY * 0.55 : t; }
