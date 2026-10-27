@@ -2682,9 +2682,8 @@ function gcField(F, A, H, ball, from, first, fx) {
     const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
     const key = F.last + '|' + F.play, fly = F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (key !== gcKey) { gcKey = key; gcAt = Date.now(); }
-    const anim = fly && Date.now() - gcAt < GC_FLY, hide = anim ? ' style="opacity:0"' : '';
     gcFly = null;
-    if (anim) {
+    if (fly) {
       const [y0, , tid, type] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), bx = fx(ball), H = /pass|reception|interception/i.test(type) ? Math.min(7, 1.5 + Math.abs(bx - sx) * 0.22) : 0;
       const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (bx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
       if (Math.abs(bx - sx) > 1) gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0] };
@@ -2699,7 +2698,7 @@ function gcField(F, A, H, ball, from, first, fx) {
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(x0, z), g1 = pt(x1, z);
         o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>' +
-          (gcFly ? '<clipPath id="gcReveal"><rect x="' + gcFly.x0.toFixed(1) + '" y="0" width="0" height="600"/></clipPath>' : '') +
+          (gcFly ? '<clipPath id="gcReveal"><rect x="0" y="0" width="1600" height="600"/></clipPath>' : '') +
           '<g class="gc-trail"' + (gcFly ? ' clip-path="url(#gcReveal)"' : '') + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
       }
     }
@@ -2714,14 +2713,13 @@ function gcField(F, A, H, ball, from, first, fx) {
       // two photos close together are pushed apart, their stems leaning to where each stood
       const gap = pt(fx(ball), 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1);
       if (who.length === 2) o += '<g>' + pin(sx, who[0], 0, -push) + '</g>';
-      if (who.length) o += '<g class="gc-catch"' + hide + '>' + pin(fx(ball), who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
+      if (who.length) o += '<g class="gc-catch">' + pin(fx(ball), who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
     const bw = 3.6 * s / 109;
     if (F.rz) o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
-    const at0 = gcFly ? gcFly.b[0] : p, g0 = gcFly ? gcFly.g[0] : p;
-    o += '<g id="gcShad" transform="translate(' + xy(g0).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
-      '<g id="gcBall" transform="translate(' + xy(at0).replace(',', ' ') + ')"><image href="ball.webp" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/></g>';
+    o += '<g id="gcShad" transform="translate(' + xy(p).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
+      '<g id="gcBall" transform="translate(' + xy(p).replace(',', ' ') + ')"><image href="ball.webp" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/></g>';
   }
   // show the 60% of the field around the ball, like a TV camera following the play
   const cx = Math.max(480, Math.min(1120, pt(fx(F.poss ? ball : 50), 26.65)[0]));
@@ -2729,20 +2727,19 @@ function gcField(F, A, H, ball, from, first, fx) {
 }
 // A new play plays out over GC_FLY ms: the ball moves along gcFly (its path in the air, and its shadow's on the turf)
 const GC_FLY = 1400;
-let gcKey = '', gcAt = 0, gcFly = null;
+let gcKey = '', gcAt = 0, gcFly = null, gcRun = null;
 function gcAnimate() {
-  const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly;
+  const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly, run = gcRun = {};
   const fade = c => document.querySelector('#gc .' + c);
-  if (!F) { if (fade('gc-catch')) fade('gc-catch').style.opacity = ''; return; }
+  if (!F || !b) return;
   const step = () => {
-    if (!b?.isConnected || gcFly !== F) return;
+    if (!b.isConnected || gcRun !== run) return;
     const t = Math.min(1, (Date.now() - gcAt) / GC_FLY), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
     const along = L => { const i = Math.min(L.length - 2, Math.floor(k * (L.length - 1))), r = k * (L.length - 1) - i; return [L[i][0] + (L[i + 1][0] - L[i][0]) * r, L[i][1] + (L[i + 1][1] - L[i][1]) * r]; };
     const [x, y] = along(F.b), [gx, gy] = along(F.g), clip = document.querySelector('#gcReveal rect'), trail = fade('gc-trail');
     b.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')'); sh.setAttribute('transform', 'translate(' + gx.toFixed(1) + ' ' + gy.toFixed(1) + ')');
     // the trail shows only behind the ball
-    if (clip) { clip.setAttribute('x', Math.min(F.x0, x).toFixed(1)); clip.setAttribute('width', Math.abs(x - F.x0).toFixed(1)); }
-    if (t >= 1 && trail) trail.removeAttribute('clip-path');
+    if (clip) { clip.setAttribute('x', t < 1 ? Math.min(F.x0, x).toFixed(1) : 0); clip.setAttribute('width', t < 1 ? Math.abs(x - F.x0).toFixed(1) : 1600); }
     if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - 0.6) / 0.3));
     if (t < 1) requestAnimationFrame(step);
   };
@@ -2768,14 +2765,14 @@ function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
   if (!box || box.hidden || !p) return;
   const g = LD?.games?.[p.pro], F = LD?.field?.[g?.[3]];
-  if (!F) { box.innerHTML = '<p class="why">The game is over.</p>'; return; }
+  if (!F) { box.innerHTML = box.gcHtml = '<p class="why">The game is over.</p>'; return; }
   const [A, H] = F.teams, ids = [A[0], H[0]];
   // yards from the left goal line (the away team's), from "DAL 13" or "50"
   const at = s => { const m = /([A-Z]+)\\s+(\\d+)/.exec(s); return !m ? 50 : m[1] === A[1] ? +m[2] : 100 - +m[2]; };
   const x = y => (10 + Math.max(0, Math.min(100, y))) / 120 * 100 + '%', ball = at(F.spot), dir = F.poss === A[0] ? 1 : -1, from = F.from ? at(F.from) : ball;
   const goal = /goal/i.test(F.down), first = F.dist == null || goal ? null : ball + dir * F.dist;
   const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
-  box.innerHTML = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
+  const html = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
     '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(0, Math.min(100, x))) +
       (F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') + '</div>' +
@@ -2783,11 +2780,13 @@ function drawGc() {
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
-  gcAnimate();
+  if (html === box.gcHtml) return;
+  box.innerHTML = box.gcHtml = html;
+  if (Date.now() - gcAt < GC_FLY) gcAnimate();
 }
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
-  if (ev.target.closest('[data-replay]')) { gcAt = Date.now(); return drawGc(); }
+  if (ev.target.closest('[data-replay]')) { gcAt = Date.now(); return gcAnimate(); }
   const b = ev.target.closest('[data-watch]'), box = document.getElementById('gc');
   if (!b || !box) return;
   box.hidden = !box.hidden; b.textContent = box.hidden ? 'Watch his game live' : 'Hide the game';
