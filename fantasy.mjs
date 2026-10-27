@@ -1820,6 +1820,8 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 *{box-sizing:border-box}html{height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
 /* The body scrolls, not the page: iOS 26 moves fixed bars (the tab bar) up and down while the page itself scrolls */
 body{height:100%;overflow-y:auto;scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top) + 12px);margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+/* Home screen app: 100% stops a status bar's height short of the bottom, 100vh is the whole screen */
+@media (display-mode:standalone){html,body{height:100vh}}
 button,a,summary,[role=button]{touch-action:manipulation}
 button,nav a,summary{-webkit-user-select:none;user-select:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
