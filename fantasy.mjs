@@ -2678,8 +2678,7 @@ function gcField(F, A, H, ball, from, first, fx) {
   if (F.poss) {
     o += line(fx(ball), '#3b82f6');
     const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
-    // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run,
-    // with its shadow on the grass under it
+    // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run
     if (F.play) {
       const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)) - Math.sign(fx(own(y1)) - x0) * 1.5, len = Math.abs(x1 - x0); // tip stops short of the ball so it shows
       if (len > 1) {
@@ -2689,7 +2688,6 @@ function gcField(F, A, H, ball, from, first, fx) {
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(x0, z), g1 = pt(x1, z);
         o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>' +
-          '<polygon points="' + shape(false) + '" fill="#000" fill-opacity="' + (H ? '.25' : '.35') + '"' + (H ? '' : ' transform="translate(0 4)"') + '/>' +
           '<polygon points="' + shape(true) + '" fill="url(#gcPlay)"/>';
       }
     }
