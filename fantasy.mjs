@@ -2223,6 +2223,8 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 
 <section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Type your question. Claude gets it with your team's facts, plus any other player or team you name, and the answer shows right here.</p></div>
 <textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="width:100%;min-height:72px;resize:vertical;margin-top:10px"></textarea>
+<div class="seg" id="askmode" style="margin-top:10px"><button type="button" data-mode="auto">Auto</button><button type="button" data-mode="quick">Quick</button><button type="button" data-mode="smart">Smart</button></div>
+<p class="tag" id="askmodetip" style="margin:6px 0 0"></p>
 <button type="button" id="askbtn" class="btn">Ask Claude</button><div id="askout" class="askout" hidden></div>
 <button type="button" id="askopen" class="linkbtn">Or open it in the Claude app</button></div></section>
 
@@ -3246,16 +3248,23 @@ const askHtml = t => t.split(String.fromCharCode(10)).map(l => l.trim()).reduce(
   const h = e(l.replace(/^[-*] /, '')).replace(/[*][*](.+?)[*][*]/g, '<b>$1</b>');
   return !l ? o : /^[-*] /.test(l) ? o + '<li>' + h + '</li>' : o + '<p>' + h + '</p>';
 }, '').replace(/((?:<li>.*?<[/]li>)+)/g, '<ul>$1</ul>');
+// which model answers: Auto lets the Worker pick from the question, Quick is Sonnet, Smart is Opus (remembered)
+const ASK_TIP = { auto: 'Picks for you: Smart for decisions, Quick for meanings and lookups.', quick: 'Sonnet: faster, about 1¢ a question.', smart: 'Opus: best for trades and start/sit, about 2¢ a question.' };
+let askMode = 'auto';
+try { askMode = ASK_TIP[localStorage.getItem('askMode')] ? localStorage.getItem('askMode') : 'auto'; } catch {}
+const askModeShow = () => { document.querySelectorAll('#askmode button').forEach(x => x.classList.toggle('on', x.dataset.mode === askMode)); document.getElementById('askmodetip').textContent = ASK_TIP[askMode]; };
+document.getElementById('askmode').onclick = ev => { const x = ev.target.closest('[data-mode]'); if (!x) return; askMode = x.dataset.mode; try { localStorage.setItem('askMode', askMode); } catch {} askModeShow(); };
+askModeShow();
 // Ask: the Worker asks Claude (paid from the Anthropic credits) and the answer shows here. No Worker: open claude.ai
 document.getElementById('askbtn').onclick = async () => {
   const b = document.getElementById('askbtn'), out = document.getElementById('askout'), facts = askFacts();
   if (!LIVE) return document.getElementById('askopen').click();
   b.disabled = true; b.textContent = 'Claude is thinking...'; out.hidden = false; out.innerHTML = '<p class="tag">This can take up to a minute.</p>';
   try {
-    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts }) });
+    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, q: document.getElementById('askq').value.trim(), mode: askMode }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
-    out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '');
+    out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '') + (d.model ? '<p class="tag">Answered by ' + e(d.model === 'Opus' ? 'Smart (Opus)' : 'Quick (Sonnet)') + '</p>' : '');
   } catch (err) { out.innerHTML = '<p class="tag">That didn&#39;t work (' + e(err.message) + '). Use Open in Claude below instead.</p>'; }
   b.disabled = false; b.textContent = 'Ask Claude';
 };
