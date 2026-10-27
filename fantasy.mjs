@@ -1058,11 +1058,12 @@ const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numer
 for (const p of me.roster) {
   if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.', locked(p) ? null : { label: 'Move him to IR on ESPN', type: 'ROSTER', items: [{ type: 'LINEUP', playerId: p.id, from: SLOT_ID[p.slot], to: SLOT_ID.IR }] }, [p]]);
   if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }, [p]]);
-  if (p.slot === 'IR' && p.inj?.back && p.inj.back - Date.now() < 8 * 864e5 && !p.inj.season) {
+  if (p.slot === 'IR' && !p.inj?.season) {
     const [w] = [p, ...baseRoster.filter(x => x.slot === 'Bench')].sort((a, b) => rate(a) - rate(b));
-    // he'd be the first cut once he's back, so keeping him in IR gains nothing: drop him now and the IR spot is open for the next injury
-    if (w === p) todo.push(['later', `Drop ${p.name}`, `He may be back around ${dateStr(p.inj.back)}, but he'd be your worst player (expected ${n(rate(p))} a game the rest of the season), so you'd drop him then anyway. Holding him in IR gains nothing, and dropping him now opens the IR spot for your next injury.`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }, [p]]);
-    else todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, `When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you'd drop. Easiest: drop ${w.name} (expected ${n(rate(w))} a game the rest of the season).`, null, [p]]);
+    // he'd be the first cut once he's back, so keeping him in IR gains nothing: drop him now and the IR spot is open for the
+    // next injury. Shown any time, with or without a return date (ESPN clears the date once it passes)
+    if (w === p) todo.push(['week', `Drop ${p.name}`, `${p.inj?.back ? `He may be back around ${dateStr(p.inj.back)}, but even` : 'Even'} healthy he'd be your worst player (expected ${n(rate(p))} a game the rest of the season), so you'd drop him once he's back anyway. Holding him in IR gains nothing, and dropping him now opens the IR spot for your next injury.${locked(p) ? " His game has started, so ESPN won't let you drop him until the week turns over." : ''}`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }, [p]]);
+    else if (p.inj?.back && p.inj.back - Date.now() < 8 * 864e5) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, `When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you'd drop. Easiest: drop ${w.name} (expected ${n(rate(w))} a game the rest of the season).`, null, [p]]);
   }
 }
 // Bye gaps, counting the players the plan adds (so a planned pickup that covers it hides the warning)
