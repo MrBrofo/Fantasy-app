@@ -1871,7 +1871,7 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .bars div{flex:1;text-align:center}.bars i{display:block;background:var(--accent);border-radius:4px 4px 0 0;margin:0 auto 4px;width:70%}
 .bars b{display:block;font-size:13px}.bars small{font-size:11px;color:var(--muted)}
 a.news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
-a.news b{display:block;font-size:14px;font-weight:600}a.news small{color:var(--muted);font-size:12px}
+a.news b{display:block;font-size:14px;font-weight:600}a.news .nsnip{display:block;font-size:13px;color:var(--muted);margin:3px 0 2px}a.news small{color:var(--muted);font-size:12px}
 .wp{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}.wp b{font:600 44px/1 var(--num);letter-spacing:-.04em}
 .live{display:inline-block;background:var(--badbg);color:var(--bad);font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
 .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat div{background:var(--chip);border-radius:12px;padding:10px}.stat b{display:block;font:600 20px var(--num)}.stat small{color:var(--muted);font-size:12px}
@@ -2607,7 +2607,7 @@ function render(p) {
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' +
       p.games.filter(g => g.why.length || g.line.length).map(g => '<p class="why" style="margin:8px 0 0"><b>Week ' + g.wk + (g.pts == null ? '' : ' (' + g.pts.toFixed(1) + ' pts)') + ':</b> ' + e(g.line.join(', ')) + (g.line.length && g.why.length ? '. ' : '') + e(g.why.join(' ')) + '</p>').join('') : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
-    (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b><small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
+    (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
 let closeTimer;
@@ -2902,17 +2902,32 @@ const NEWS_TAGS = [
   ['Roster move', 'warn', /traded|released|waived|signed|claimed/i],
 ];
 const newsTag = h => NEWS_TAGS.find(([, , re]) => re.test(h)) ?? null;
-const blurbs = new Map(); // player id -> his Rotowire updates: { id, h (headline), t (published ms), tag }
+const blurbs = new Map(); // player id -> his Rotowire updates: { id, h (headline), s (first lines of the story), t (published ms), tag }
+// First two sentences of a news story, so news like a teammate getting hurt shows the day it happens, not only the headline
+const snip = (story, h = '') => {
+  const txt = String(story ?? '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!txt || txt.startsWith(h.slice(0, 40))) return '';
+  const two = txt.match(/^(.+?[.!?])(\s+.+?[.!?])?(?=\s+[A-Z"]|$)/)?.[0] ?? txt;
+  return two.length > 260 ? two.slice(0, 257).replace(/\s+\S*$/, '') + '...' : two;
+};
+// ...but once his "What's affecting him" notes say the same thing (a player named in the story is out), the note covers it,
+// so the story lines go away instead of saying it twice. ponytail: matches by "First Last" names only.
+const freshSnip = (sn, p) => {
+  if (!sn) return '';
+  const said = notes(p).filter(t => /\b(is out|on IR|suspended|probably won't play|might not play)\b/.test(t)).join(' ');
+  const names = (sn.match(/\b[A-Z][a-z'.]+(?: [A-Z][A-Za-z'.-]+)+/g) ?? []).filter(x => x !== p.name);
+  return names.some(x => said.includes(x)) ? '' : sn;
+};
 const news = new Map(await Promise.all(ids.filter(id => id > 0).map(async id => {
   try {
     const r = await fetch(`https://site.api.espn.com/apis/fantasy/v2/games/ffl/news/players?limit=6&playerId=${id}`);
     const feed = (await r.json()).feed ?? [];
-    blurbs.set(id, feed.filter(x => x.type === 'Rotowire' && x.headline).map(x => ({ id: x.id, h: x.headline, t: Date.parse(x.published), tag: newsTag(x.headline) })));
+    blurbs.set(id, feed.filter(x => x.type === 'Rotowire' && x.headline).map(x => ({ id: x.id, h: x.headline, s: snip(x.story, x.headline), t: Date.parse(x.published), tag: newsTag(x.headline) })));
     const last = (shown.get(id).name.split(' ').filter(w => !/^(jr|sr|ii|iii|iv)\.?$/i.test(w)).pop() ?? '').toLowerCase();
     // player notes (his name in the headline) before general articles that only mention him
     const items = feed.filter(x => x.headline && (x.headline + ' ' + (x.story ?? '')).toLowerCase().includes(last))
       .sort((a, b) => b.headline.toLowerCase().includes(last) - a.headline.toLowerCase().includes(last)).slice(0, 2);
-    return [id, items.map(x => ({ h: x.headline, url: x.links?.web?.href || `https://www.espn.com/nfl/player/_/id/${id}`, when: new Date(x.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }))];
+    return [id, items.map(x => ({ h: x.headline, s: snip(x.story, x.headline), url: x.links?.web?.href || `https://www.espn.com/nfl/player/_/id/${id}`, when: new Date(x.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }))];
   } catch { return [id, []]; }
 })));
 const owner = new Map(teams.flatMap(t => t.roster.map(p => [p.id, t])));
@@ -2928,7 +2943,7 @@ const feedItems = [...blurbs].filter(([id]) => myIds.has(id) || watchIds.has(id)
   .flatMap(([id, xs]) => xs.map(x => ({ ...x, p: shown.get(id) }))).filter(x => x.p && Date.now() - x.t < 7 * 864e5).sort((a, b) => b.t - a.t)
   .filter((x, i, xs) => xs.findIndex(y => y.p.id === x.p.id) === i).slice(0, 8); // newest per player
 html = html.replace('__NEWS__', () => feedItems.length ? feedItems.map(x => `<div class="card"><div class="vhead">${lnk(x.p)}${x.tag ? `<span class="chip ${x.tag[1]}" style="margin:0">${x.tag[0]}</span>` : ''}</div>
-  <p class="why" style="margin:6px 0 2px">${esc(x.h)}</p><span class="tag">${ago(x.t)}${watchIds.has(x.p.id) && !myIds.has(x.p.id) ? ' &middot; pickup' : ''}</span></div>`).join('') : '<div class="card empty">No news on your players in the last week.</div>');
+  <p class="why" style="margin:6px 0 2px">${esc(x.h)}</p>${freshSnip(x.s, x.p) ? `<p class="why" style="margin:0 0 2px;color:var(--muted)">${esc(freshSnip(x.s, x.p))}</p>` : ''}<span class="tag">${ago(x.t)}${watchIds.has(x.p.id) && !myIds.has(x.p.id) ? ' &middot; pickup' : ''}</span></div>`).join('') : '<div class="card empty">No news on your players in the last week.</div>');
 // ...and for Claude
 const newsFacts = feedItems.length ? `Recent news on my players and pickups (Rotowire):\n${feedItems.map(x => `- ${x.p.name}, ${ago(x.t)}: ${x.h}`).join('\n')}` : 'No news on my players in the last week.';
 html = html.replace('__NEWSFACTS__', () => JSON.stringify(newsFacts).slice(1, -1).replace(/</g, '\\u003c'));
@@ -3399,7 +3414,7 @@ for (const [id, p] of shown) {
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
     trend, sources, games, now, plays: plays.get(id) ?? [], notes: notes(p),
-    rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: news.get(id) ?? [],
+    rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
   };
   // a defense is a whole team: "they", not "he"
