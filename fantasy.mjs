@@ -3248,7 +3248,7 @@ const askHtml = t => t.split(String.fromCharCode(10)).map(l => l.trim()).reduce(
   const h = e(l.replace(/^[-*] /, '')).replace(/[*][*](.+?)[*][*]/g, '<b>$1</b>');
   return !l ? o : /^[-*] /.test(l) ? o + '<li>' + h + '</li>' : o + '<p>' + h + '</p>';
 }, '').replace(/((?:<li>.*?<[/]li>)+)/g, '<ul>$1</ul>');
-// which model answers: Auto lets the Worker pick from the question, Quick is Sonnet, Smart is Opus (remembered)
+// which model answers: Auto lets the Worker pick from the question, Quick is Haiku, Smart is Opus (remembered)
 const ASK_TIP = { auto: 'Picks for you: Smart for decisions, Quick for meanings and lookups.', quick: 'Haiku: fast and almost free. Good for meanings and lookups, not decisions.', smart: 'Opus: best for trades and start/sit, about 2¢ a question.' };
 let askMode = 'auto';
 try { askMode = ASK_TIP[localStorage.getItem('askMode')] ? localStorage.getItem('askMode') : 'auto'; } catch {}
