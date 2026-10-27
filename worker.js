@@ -66,11 +66,11 @@ async function live(req, env) {
       const c0 = ev.competitions[0], sit = c0.situation;
       for (const c of c0.competitors) clocks[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail, !sit?.possession ? 0 : sit.possession === c.team.id ? (sit.isRedZone ? 2 : 1) : 3, ev.id];
       if (ev.status?.type?.state !== 'in') continue;
-      const tm = ha => { const c = c0.competitors.find(x => x.homeAway === ha); return [c.team.id, c.team.abbreviation, +c.score, c.team.color]; };
+      const tm = ha => { const c = c0.competitors.find(x => x.homeAway === ha); return [c.team.id, c.team.abbreviation, +c.score, c.team.color, c.team.alternateColor]; };
       field[ev.id] = { teams: [tm('away'), tm('home')], down: sit?.shortDownDistanceText ?? '', spot: sit?.possessionText ?? '', poss: sit?.possession ?? '', rz: !!sit?.isRedZone,
         dist: sit?.distance ?? null, from: sit?.lastPlay?.drive?.start?.text ?? '', drive: sit?.lastPlay?.drive?.description ?? '', last: sit?.lastPlay?.text?.trim() ?? '',
         // last play's start and end, yards from the playing team's own goal line
-        play: sit?.lastPlay?.start?.yardLine != null && sit?.lastPlay?.end?.yardLine != null ? [sit.lastPlay.start.yardLine, sit.lastPlay.end.yardLine, sit.lastPlay.team?.id ?? '', sit.lastPlay.type?.text ?? ''] : null,
+        play: sit?.lastPlay?.start?.yardLine != null && sit?.lastPlay?.end?.yardLine != null ? [sit.lastPlay.start.yardLine, sit.lastPlay.end.yardLine, sit.lastPlay.team?.id ?? '', sit.lastPlay.type?.text ?? '', sit.lastPlay.scoreValue >= 6 || /touchdown/i.test(sit.lastPlay.type?.text ?? '')] : null,
         leaders: (c0.leaders ?? []).map(l => [(l.displayName ?? l.name).replace(/ Leader$/, ''), l.leaders?.[0]?.athlete?.shortName, l.leaders?.[0]?.displayValue]).filter(x => x[1]) };
     }
     return { me: side(mine), opp: side(theirs), players, lineup, board, games: clocks, field, match };

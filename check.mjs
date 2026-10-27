@@ -236,6 +236,14 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert.deepEqual(w, [{ n: 'T.McKee', p: { id: '1' } }, { n: 'D.Goedert', p: undefined }], JSON.stringify(w));
   assert.deepEqual(gcWho({ last: 'S.Barkley up the middle to DAL 40 for 3 yards.', poss: '21' }).map(x => x.n), ['S.Barkley'], 'a run has one player');
 }
+// a touchdown the 30-second check missed comes from ESPN's summary, which counts yards to the end zone
+{
+  const gcTdPlay = new Function(cut('function gcTdPlay(d) {', "pl.type?.text ?? '', true] };\n}") + '\nreturn gcTdPlay;')();
+  const d = { scoringPlays: [{ id: '1', type: { text: 'Passing Touchdown' } }, { id: '2', type: { text: 'Field Goal Good' } }],
+    drives: { previous: [{ plays: [{ id: '1', text: 'TD', type: { text: 'Passing Touchdown' }, start: { yardLine: 18, yardsToEndzone: 18, team: { id: '6' } }, end: { yardLine: 0 } }] }] } };
+  assert.deepEqual(gcTdPlay(d), { last: 'TD', play: [82, 100, '6', 'Passing Touchdown', true] }, 'from the 18 to the end zone, newest touchdown only');
+  assert.equal(gcTdPlay({ scoringPlays: [] }), null);
+}
 
 // usage: last 3 games vs before, as a share of his team's targets; red zone needs 10+ team chances
 {

@@ -2672,13 +2672,20 @@ function gcField(F, A, H, ball, from, first, fx) {
   const xy = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
   const quad = (x1, x2, z1, z2, attrs) => '<polygon points="' + [pt(x1, z1), pt(x2, z1), pt(x2, z2), pt(x1, z2)].map(xy).join(' ') + '" ' + attrs + '/>';
   const line = (x, col) => { const p = pt(x, 0), q = pt(x, 53.3); return '<line x1="' + xy(p).replace(',', '" y1="') + '" x2="' + xy(q).replace(',', '" y2="') + '" stroke="' + col + '" stroke-width="7"/>'; };
-  const zone = (x1, t, rot) => { const c = pt(x1 + 5, 26.65); return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
-    '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '" font-size="48" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="6" transform="rotate(' + rot + ' ' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ')">' + e(t[1]) + '</text>'; };
-  let o = '<image href="field.webp" width="1600" height="490"/>' + zone(0, A, -50) + zone(110, H, 50);
-  if (F.poss) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".1"');
+  // a touchdown: the scoring team's end zone glows in its colour and TOUCHDOWN is painted across it, lying flat on the turf
+  const td = F.play?.[4], tdLeft = td && F.play[2] !== A[0], tdTeam = td && F.teams.find(t => t[0] === F.play[2]);
+  const paint = (x1, str) => { const c = pt(x1 + 5, 26.65), q = pt(x1 + 5, 27.65), r = pt(x1 + 6, 26.65), sg = x1 ? -1 : 1;
+    // one unit of text is one yard: it reads along the end zone, the tops of the letters toward the end line
+    const m = [(q[0] - c[0]) * sg, (q[1] - c[1]) * sg, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, c[0], c[1]].map(v => v.toFixed(3)).join(' ');
+    return '<text transform="matrix(' + m + ')" font-size="5.2" font-weight="900" fill="#fff" fill-opacity=".92" text-anchor="middle" dominant-baseline="central" letter-spacing=".6">' + str + '</text>'; };
+  const zone = (x1, t, rot, scored) => { const c = pt(x1 + 5, 26.65); return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
+    (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + paint(x1, 'TOUCHDOWN') + '</g>' : '') +
+    (scored ? '' : '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '" font-size="48" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="6" transform="rotate(' + rot + ' ' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ')">' + e(t[1]) + '</text>'); };
+  let o = '<image href="field.webp" width="1600" height="490"/>' + zone(0, A, -50, td && tdLeft) + zone(110, H, 50, td && !tdLeft);
+  if (F.poss && !td) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".1"');
   if (first != null) o += line(fx(first), '#f5d90a');
-  if (F.poss) {
-    o += line(fx(ball), '#3b82f6');
+  if (F.poss || td) {
+    if (!td) o += line(fx(ball), '#3b82f6');
     const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
     const key = F.last + '|' + F.play, fly = F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (key !== gcKey) { gcKey = key; gcAt = Date.now(); }
@@ -2686,7 +2693,7 @@ function gcField(F, A, H, ball, from, first, fx) {
     if (fly) {
       const [y0, , tid, type] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), bx = fx(ball), H = /pass|reception|interception/i.test(type) ? Math.min(7, 1.5 + Math.abs(bx - sx) * 0.22) : 0;
       const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (bx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
-      if (Math.abs(bx - sx) > 1) gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0] };
+      if (Math.abs(bx - sx) > 1) gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], td: td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
     }
     // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run
     if (F.play) {
@@ -2705,8 +2712,11 @@ function gcField(F, A, H, ball, from, first, fx) {
     if (F.play) {
       const who = gcWho(F), [y0, , tid] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), r = 31;
       // ESPN's headshots are cut out (transparent), so the player stands on a stem with no frame; no photo: initials in a dot
+      const mine = w => td && w.p && Object.values(P).find(q => q.side && q.pro === tid && q.name === w.p.displayName);
+      const tag = (w, X, y) => { const q = mine(w); if (!q) return ''; const t = (q.side === 'me' ? 'YOUR TD' : 'THEIR TD') + ' \u00b7 ' + f1(LD?.players?.[q.id]?.[0] ?? 0), wd = t.length * 8.6 + 18;
+        return '<rect x="' + (+X - wd / 2).toFixed(1) + '" y="' + (y - 15).toFixed(1) + '" width="' + wd.toFixed(1) + '" height="22" rx="11" fill="' + (q.side === 'me' ? '#16a34a' : '#dc2626') + '"/><text x="' + X + '" y="' + (y - 4).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing=".4">' + t + '</text>'; };
       const pin = (x, w, i, dx = 0) => { const q = pt(x, 26.65), cy = q[1] - 78, X = (q[0] + dx).toFixed(1), Y = cy.toFixed(1);
-        return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/>' +
+        return tag(w, X, cy - r * 1.32 - 10) + '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/>' +
           (w.p ? '<image href="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(w.p.id) + '.png&amp;w=200" x="' + (q[0] + dx - r * 1.6).toFixed(1) + '" y="' + (cy + r - r * 2.32).toFixed(1) + '" width="' + (r * 3.2).toFixed(1) + '" height="' + (r * 2.32).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
               '<text x="' + X + '" y="' + (cy - r * 1.32 + 10).toFixed(1) + '" font-size="15" font-weight="600" fill="#fff" fill-opacity=".7" text-anchor="middle" letter-spacing=".5">' + e((w.p.shortName ?? w.n).split(' ').pop()) + '</text>'
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>'); };
@@ -2717,23 +2727,24 @@ function gcField(F, A, H, ball, from, first, fx) {
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
     const bw = 3.6 * s / 109;
-    if (F.rz) o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
+    if (F.rz && !td) o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
     o += '<g id="gcShad" transform="translate(' + xy(p).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
       '<g id="gcBall" transform="translate(' + xy(p).replace(',', ' ') + ')"><image href="ball.webp" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/></g>';
   }
   // show the 60% of the field around the ball, like a TV camera following the play
-  const cx = Math.max(480, Math.min(1120, pt(fx(F.poss ? ball : 50), 26.65)[0]));
+  const cx = Math.max(480, Math.min(1120, pt(fx(F.poss || F.play?.[4] ? ball : 50), 26.65)[0]));
   return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
 // A new play plays out: the passer fades in over GC_LEAD ms, then over GC_FLY ms the ball moves along gcFly (its path in the air, and its shadow's on the turf)
-const GC_LEAD = 250, GC_FLY = 1400;
+const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 1800;
 let gcKey = '', gcAt = 0, gcFly = null, gcRun = null;
 function gcAnimate() {
   const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly, run = gcRun = {};
   const fade = c => document.querySelector('#gc .' + c);
   if (!F || !b) return;
+  let conf = null, bits = [];
   const step = () => {
-    if (!b.isConnected || gcRun !== run) return;
+    if (!b.isConnected || gcRun !== run) { conf?.remove(); return; }
     const el = Date.now() - gcAt, t = Math.min(1, Math.max(0, (el - GC_LEAD) / GC_FLY)), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
     const along = L => { const i = Math.min(L.length - 2, Math.floor(k * (L.length - 1))), r = k * (L.length - 1) - i; return [L[i][0] + (L[i + 1][0] - L[i][0]) * r, L[i][1] + (L[i + 1][1] - L[i][1]) * r]; };
     const [x, y] = along(F.b), [gx, gy] = along(F.g), clip = document.querySelector('#gcReveal rect'), trail = fade('gc-trail');
@@ -2741,8 +2752,22 @@ function gcAnimate() {
     // the trail shows only behind the ball
     if (clip) { clip.setAttribute('x', t < 1 ? Math.min(F.x0, x).toFixed(1) : 0); clip.setAttribute('width', t < 1 ? Math.abs(x - F.x0).toFixed(1) : 1600); }
     if (fade('gc-qb')) fade('gc-qb').style.opacity = Math.min(1, el / GC_LEAD);
+    // touchdown: the end zone flashes and settles, the word fades in, confetti bursts out of the end zone and falls
+    const tl = (el - GC_LEAD - GC_FLY) / 1000;
+    if (F.td) {
+      if (fade('gc-tdz')) fade('gc-tdz').style.opacity = tl < 0 ? 0 : tl < 0.15 ? tl / 0.15 : 0.7 + 0.3 * Math.exp(-(tl - 0.15) * 2.5) * Math.abs(Math.cos((tl - 0.15) * 9));
+      if (fade('gc-tdt')) fade('gc-tdt').style.opacity = Math.min(1, Math.max(0, tl / 0.3));
+      if (tl >= 0 && !conf) {
+        conf = document.createElementNS('http://www.w3.org/2000/svg', 'g'); b.ownerSVGElement.appendChild(conf);
+        bits = Array.from({ length: 70 }, (_, i) => { const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); r.setAttribute('width', 10); r.setAttribute('height', 18); r.setAttribute('fill', F.td.cols[i % 3]); conf.appendChild(r);
+          return { r, vx: (Math.random() - 0.5) * 520, vy: -260 - Math.random() * 420, spin: (Math.random() - 0.5) * 900 }; });
+      }
+      if (conf) for (const p of bits) { const x = F.td.c[0] + p.vx * tl, y = F.td.c[1] + p.vy * tl + 450 * tl * tl;
+        p.r.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + (p.spin * tl).toFixed(0) + ')'); p.r.setAttribute('opacity', Math.max(0, 1 - tl / 1.8).toFixed(2)); }
+      if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
+    }
     if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - 0.6) / 0.3));
-    if (t < 1) requestAnimationFrame(step);
+    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0)) requestAnimationFrame(step);
   };
   step();
 }
@@ -2762,16 +2787,37 @@ function gcWho(F) {
   const R = roster(tid);
   return [a, b].filter(Boolean).map(n => ({ n, p: R[n] }));
 }
+// The newest touchdown in ESPN's game summary, as [start, end, team, type, true] with yards from the team's own goal line
+function gcTdPlay(d) {
+  const sp = (d.scoringPlays ?? []).filter(p => /touchdown/i.test(p.type?.text)).pop();
+  const pl = sp && [...(d.drives?.previous ?? []), d.drives?.current].filter(Boolean).flatMap(x => x.plays ?? []).find(p => p.id === sp.id);
+  if (!pl?.start || !pl.end) return null;
+  return { last: pl.text, play: [100 - (pl.start.yardsToEndzone ?? pl.start.yardLine), 100 - (pl.end.yardsToEndzone ?? pl.end.yardLine), String(pl.start.team?.id ?? sp.team?.id ?? ''), pl.type?.text ?? '', true] };
+}
+const gcPts = {};
+let gcTd = null;
+function gcMissedTd(gid, after) {
+  gcTd = { gid, after };
+  fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=' + gid).then(r => r.json()).then(d => { if (gcTd?.gid === gid) { gcTd.F = gcTdPlay(d); drawGc(); } }).catch(() => {});
+}
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
   if (!box || box.hidden || !p) return;
-  const g = LD?.games?.[p.pro], F = LD?.field?.[g?.[3]];
+  const g = LD?.games?.[p.pro];
+  let F = LD?.field?.[g?.[3]];
   if (!F) { box.innerHTML = box.gcHtml = '<p class="why">The game is over.</p>'; return; }
+  // the score jumped by a touchdown but the last play is already the extra point or the kickoff: show the touchdown
+  // until the next play comes in
+  const gid = g[3], pts = F.teams[0][2] + F.teams[1][2];
+  if (gcPts[gid] != null && pts - gcPts[gid] >= 6 && !F.play?.[4]) gcMissedTd(gid, F.last);
+  gcPts[gid] = pts;
+  if (gcTd && (gcTd.gid !== gid || gcTd.after !== F.last)) gcTd = null;
+  if (gcTd?.F) F = { ...F, ...gcTd.F };
   const [A, H] = F.teams, ids = [A[0], H[0]];
   // yards from the left goal line (the away team's), from "DAL 13" or "50"
   const at = s => { const m = /([A-Z]+)\\s+(\\d+)/.exec(s); return !m ? 50 : m[1] === A[1] ? +m[2] : 100 - +m[2]; };
-  const x = y => (10 + Math.max(0, Math.min(100, y))) / 120 * 100 + '%', ball = at(F.spot), dir = F.poss === A[0] ? 1 : -1, from = F.from ? at(F.from) : ball;
-  const goal = /goal/i.test(F.down), first = F.dist == null || goal ? null : ball + dir * F.dist;
+  const x = y => (10 + Math.max(0, Math.min(100, y))) / 120 * 100 + '%', ball = F.play?.[4] ? (F.play[2] === A[0] ? F.play[1] : 100 - F.play[1]) : at(F.spot), dir = F.poss === A[0] ? 1 : -1, from = F.from ? at(F.from) : ball;
+  const goal = /goal/i.test(F.down), first = F.dist == null || goal || F.play?.[4] ? null : ball + dir * F.dist;
   const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
   const html = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
@@ -2783,7 +2829,7 @@ function drawGc() {
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
   if (html === box.gcHtml) return;
   box.innerHTML = box.gcHtml = html;
-  if (Date.now() - gcAt < GC_LEAD + GC_FLY) gcAnimate();
+  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD) gcAnimate();
 }
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
