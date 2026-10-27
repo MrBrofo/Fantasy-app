@@ -2188,24 +2188,48 @@ html.term footer{letter-spacing:.1em;text-transform:uppercase;font-size:10px}
 html.term section:not(.off){animation:boot .35s ease-out}
 @keyframes boot{from{opacity:0;transform:translateY(6px)}}
 @media (prefers-reduced-motion:reduce){html.term .bgring,html.term h1::after,html.term .live{animation:none}html.term section:not(.off){animation:none}}
-/* Glass look: Apple's Liquid Glass on Classic's layout. Near-black with one faint grey light at the top (no colour glow),
-   see-through frosted panels, a bright top edge like light catching glass, rounder corners and pill buttons. Cards inside
-   a folded section are flat rows, not glass on glass. Every rule starts with html.glass. */
-html.glass{--bg:#07080d;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.14);--chip:rgba(255,255,255,.09);--accent:#0a84ff;--onaccent:#fff;
---glass:rgba(36,38,48,.42);--glassline:rgba(255,255,255,.2);
-background:radial-gradient(120% 50% at 50% 0%,#24262c,transparent 70%),#07080d}
-html.glass body{background:transparent;font-family:-apple-system,'SF Pro Text',Geist,system-ui,sans-serif}
-html.glass header{background:none}
-html.glass .card,html.glass .match,html.glass details.fold,html.glass a.news,html.glass .sh-q,html.glass .seg{background:var(--card);border-color:var(--line);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 8px 24px rgba(0,0,0,.25)}
-html.glass details.fold .card{background:none;border:0;border-top:1px solid var(--line);border-radius:0!important;padding:12px 0;margin:0;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
-html.glass .card,html.glass details.fold{border-radius:22px}html.glass .match{border-radius:28px}html.glass .sh-q,html.glass a.news{border-radius:18px}
-html.glass .list .card{border-radius:0}html.glass .list .card:first-child{border-radius:22px 22px 0 0}html.glass .list .card:last-child{border-radius:0 0 22px 22px}html.glass .list .card:only-child{border-radius:22px}
-html.glass .btn{border-radius:999px;background:linear-gradient(180deg,#3d9dff,#0a84ff);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px rgba(10,132,255,.3)}
-html.glass .seg,html.glass .seg button{border-radius:999px}html.glass .seg button.on{background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
-html.glass nav{border-radius:999px;-webkit-backdrop-filter:blur(28px) saturate(200%);backdrop-filter:blur(28px) saturate(200%);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 12px 32px rgba(0,0,0,.4)}
-html.glass nav a{border-radius:999px}html.glass nav a.on{color:#fff;background:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
-html.glass .sheet-bg{background:rgba(0,0,0,.35)}
-html.glass .sheet-card{background:rgba(22,24,32,.62);-webkit-backdrop-filter:blur(40px) saturate(180%);backdrop-filter:blur(40px) saturate(180%);border-top:1px solid rgba(255,255,255,.2);border-radius:28px 28px 0 0}
+/* Glass look: Apple's Liquid Glass (iOS 26), as close as CSS gets on an iPhone. Like iOS, glass is only for the controls that
+   float over the page: the tab bar, buttons, the look switch, the player sheet. The page itself stays solid (iOS dark grouped
+   style: black, #1c1c1e cards), so the glass has real content scrolling under it and never sits on other glass. The glass is a
+   light blur that keeps the colours behind it (it bends light more than it frosts), a bright rim that is brightest top-left and
+   bottom-right where light catches a curved edge, a faint glow along the inside of the edge, and a soft shadow. Only the main
+   action is tinted (blue). ponytail: no real refraction; that needs SVG filters in backdrop-filter, which Safari doesn't do.
+   Every rule starts with html.glass. */
+html.glass{--bg:#000;--card:#1c1c1e;--fg:#fff;--muted:rgba(235,235,245,.6);--line:rgba(84,84,88,.65);--chip:#2c2c2e;--accent:#0a84ff;--onaccent:#fff;
+--good:#30d158;--goodbg:rgba(48,209,88,.16);--warn:#ff9f0a;--warnbg:rgba(255,159,10,.16);--bad:#ff453a;--badbg:rgba(255,69,58,.16);
+--glass:rgba(255,255,255,.07);--glassline:transparent;--num:-apple-system,'SF Pro Display',Geist,system-ui,sans-serif;background:#000}
+html.glass body{background:#000;font-family:-apple-system,'SF Pro Text',Geist,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+html.glass button,html.glass .btn,html.glass .seg button,html.glass #refresh{font-family:inherit}
+html.glass header{background:none}html.glass h1{font-size:34px;letter-spacing:-.02em}
+/* the page: solid, flat, iOS grouped lists */
+html.glass .card,html.glass .match,html.glass details.fold,html.glass a.news,html.glass .sh-q{background:var(--card);border:0;box-shadow:none}
+html.glass .card,html.glass details.fold,html.glass .match{border-radius:26px}html.glass .sh-q,html.glass a.news{border-radius:20px}
+html.glass .sh-q.yes{border-left:4px solid var(--good)}html.glass .sh-q.no{border-left:4px solid var(--bad)}html.glass .sh-q.maybe{border-left:4px solid var(--warn)}
+html.glass .list .card{border-radius:0}html.glass .list .card+.card{border-top:.5px solid var(--line)}
+html.glass .list .card:first-child{border-radius:26px 26px 0 0}html.glass .list .card:last-child{border-radius:0 0 26px 26px}html.glass .list .card:only-child{border-radius:26px}
+html.glass details.fold .card{background:none;border:0;border-top:.5px solid var(--line);border-radius:0!important;padding:12px 0;margin:0}
+/* the glass */
+html.glass :is(nav,.btn,.seg,#refresh,.sheet-x,.sheet-card){border:0;-webkit-backdrop-filter:blur(10px) saturate(190%) brightness(1.08);backdrop-filter:blur(10px) saturate(190%) brightness(1.08);
+box-shadow:inset 0 1px 1px rgba(255,255,255,.22),inset 0 -1px 1px rgba(255,255,255,.07),inset 0 0 14px rgba(255,255,255,.05),0 8px 28px rgba(0,0,0,.4)}
+html.glass :is(nav,.btn,.seg,#refresh,.sheet-x,.sheet-card)::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+background:linear-gradient(135deg,rgba(255,255,255,.6),rgba(255,255,255,.12) 30%,rgba(255,255,255,.03) 50%,rgba(255,255,255,.12) 70%,rgba(255,255,255,.4));
+-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+html.glass .btn,html.glass .seg{position:relative}
+html.glass nav{border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.04))}
+html.glass nav a{border-radius:999px}
+html.glass nav a.on{color:var(--accent);background:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.2),inset 0 0 0 .5px rgba(255,255,255,.08)}
+html.glass .btn{border-radius:999px;color:#fff;background:linear-gradient(180deg,rgba(64,156,255,.95),rgba(10,132,255,.9))}
+html.glass .tools2 .btn{background:rgba(255,255,255,.08);color:var(--fg)}
+html.glass .btn:active,html.glass #refresh:active{transform:scale(1.04);filter:brightness(1.15)}
+html.glass .seg,html.glass .seg button{border-radius:999px}html.glass .seg{background:rgba(118,118,128,.24)}
+html.glass .seg button.on{background:rgba(255,255,255,.16);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+html.glass #refresh{background:rgba(255,255,255,.08)}html.glass .sheet-x{background:rgba(255,255,255,.1)}
+/* the player sheet floats in from the edges like an iOS 26 sheet, darker glass so its text stays easy to read */
+html.glass .sheet-bg{background:rgba(0,0,0,.4)}
+html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(30,30,32,.74);-webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%)}
+/* top edge: the page fades and softens as it scrolls under the status bar, instead of a hard bar */
+html.glass body::before{height:calc(env(safe-area-inset-top) + 28px);background:linear-gradient(rgba(0,0,0,.8),transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
+@media (prefers-reduced-transparency:reduce){html.glass :is(nav,.sheet-card){background:#1c1c1e;-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style></head><body>
 <canvas id="bg-field" aria-hidden="true"></canvas><div class="bgring" id="bg-ring1"></div><div class="bgring r2" id="bg-ring2"></div>
 
