@@ -1988,7 +1988,7 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 /* Watch: live game. The field is 120 yards (two 10-yard end zones), stripes every 10 */
 #gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
-.gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:linear-gradient(#0a1a0e,#16401d)}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
+.gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
 html.term .gc-fs{border-radius:0}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
@@ -2661,41 +2661,31 @@ function render(p) {
 }
 // Watch: his game right now, like ESPN's gamecast. Score, down, a field with the drive, the last play,
 // the starters from my matchup in that game, and the game's leaders. Redrawn on every live update.
-// The field as seen from the stands: x is yards from the left end line (0-120), z yards from the near sideline (0-53.3)
+// The live marks drawn over field.webp, a Blender render (1600x490). x is yards from the left end line (0-120),
+// z yards from the near sideline (0-53.3). Numbers come from the render's camera: the near sideline is 13.28 px a
+// yard wide at y 402.8, the far one 9.11 px a yard at y 102.9; one yard up is 0.868 of a yard across.
 function gcField(F, A, H, ball, from, first, fx) {
-  const pt = (x, z, up = 0) => { const k = 90 / (90 + z); return [180 + (x - 60) * 2.8 * k, -110 + 310 * k - up * 2.8 * k]; };
+  const k = z => 1 / (0.075309 + 0.00064582 * z);
+  const pt = (x, z, up = 0) => { const s = k(z); return [800 + (x - 60) * s, 402.79 + (s - 13.2787) * 72.0 - up * 0.868 * s]; };
   const xy = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
-  const quad = (x1, x2, z1, z2, fill) => '<polygon points="' + [pt(x1, z1), pt(x2, z1), pt(x2, z2), pt(x1, z2)].map(xy).join(' ') + '" fill="' + fill + '"/>';
-  const line = (a, b, col, w) => { const [p, q] = [a, b]; return '<line x1="' + p[0].toFixed(1) + '" y1="' + p[1].toFixed(1) + '" x2="' + q[0].toFixed(1) + '" y2="' + q[1].toFixed(1) + '" stroke="' + col + '" stroke-width="' + w + '" stroke-linecap="round"/>'; };
-  const text = (x, z, str, size, flip, rot) => { const p = pt(x, z), k = 90 / (90 + z); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '" font-size="' + (size * k).toFixed(1) + '" fill="#fff" fill-opacity=".85" text-anchor="middle" dominant-baseline="central"' + (rot ? ' transform="rotate(' + rot + ' ' + xy(p).replace(',', ' ') + ')"' : '') + '>' + e(str) + '</text>'; };
-  let o = quad(-3, 123, -2.5, 56, '#235f29');
-  for (let i = 0; i < 20; i++) o += quad(10 + 5 * i, 15 + 5 * i, 0, 53.3, i % 2 ? '#2f7d34' : '#38903d');
-  o += quad(0, 10, 0, 53.3, '#' + (A[3] || '333')) + quad(110, 120, 0, 53.3, '#' + (H[3] || '333'));
-  o += text(5, 26.65, A[1], 15, 0, -90) + text(115, 26.65, H[1], 15, 0, 90);
-  for (let y = 10; y <= 110; y++) {
-    if (y % 5 === 0) o += line(pt(y, 0), pt(y, 53.3), '#fff', y === 10 || y === 110 ? 2 : 1);
-    else for (const z of [0.3, 23.6, 29.1, 52.4]) o += line(pt(y, z), pt(y, z + 0.6), '#fff', 0.8);
-  }
-  for (let y = 20; y <= 100; y += 10) { const n = String(Math.min(y - 10, 110 - y)); o += text(y, 9, n, 14) + text(y, 44.3, n, 14, 0, 180); }
-  o += '<polygon points="' + [pt(0, 0), pt(120, 0), pt(120, 53.3), pt(0, 53.3)].map(xy).join(' ') + '" fill="none" stroke="#fff" stroke-width="1.5"/>';
-  if (F.poss) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, '#ffffff40');
-  if (first != null) o += line(pt(fx(first), 0), pt(fx(first), 53.3), '#f5d90a', 2.5);
-  if (F.poss) o += line(pt(fx(ball), 0), pt(fx(ball), 53.3), '#3b82f6', 2.5);
-  // goal posts on the end lines: crossbar 10 ft up, uprights 6 yards apart
-  o += '<polygon points="' + [pt(0, 0), pt(120, 0), pt(120, 53.3), pt(0, 53.3)].map(xy).join(' ') + '" fill="url(#gcShade)"/>';
-  for (const gx of [0, 120]) {
-    const back = gx ? gx + 2 : gx - 2; // the post stands behind the end line and bends forward to the crossbar
-    o += line(pt(back, 26.65), pt(back, 26.65, 3.3), '#d4b800', 3) + line(pt(back, 26.65, 3.3), pt(gx, 26.65, 3.3), '#f5d90a', 2.5) + line(pt(gx, 23.6, 3.3), pt(gx, 29.7, 3.3), '#f5d90a', 2.5);
-    o += line(pt(gx, 23.6, 3.3), pt(gx, 23.6, 13), '#f5d90a', 2.5) + line(pt(gx, 29.7, 3.3), pt(gx, 29.7, 13), '#f5d90a', 2.5);
-  }
+  const quad = (x1, x2, z1, z2, attrs) => '<polygon points="' + [pt(x1, z1), pt(x2, z1), pt(x2, z2), pt(x1, z2)].map(xy).join(' ') + '" ' + attrs + '/>';
+  const line = (x, col) => { const p = pt(x, 0), q = pt(x, 53.3); return '<line x1="' + xy(p).replace(',', '" y1="') + '" x2="' + xy(q).replace(',', '" y2="') + '" stroke="' + col + '" stroke-width="7"/>'; };
+  const zone = (x1, t, rot) => { const c = pt(x1 + 5, 26.65); return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
+    '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '" font-size="48" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="6" transform="rotate(' + rot + ' ' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ')">' + e(t[1]) + '</text>'; };
+  let o = '<image href="field.webp" width="1600" height="490"/>' + zone(0, A, -50) + zone(110, H, 50);
+  if (F.poss) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".22"');
+  if (first != null) o += line(fx(first), '#f5d90a');
   if (F.poss) {
-    const b = pt(fx(ball), 26.65);
-    o += '<ellipse cx="' + b[0].toFixed(1) + '" cy="' + (b[1] + 1).toFixed(1) + '" rx="10" ry="3" fill="#000" fill-opacity=".45"/>' +
-      '<ellipse cx="' + b[0].toFixed(1) + '" cy="' + (b[1] - 5).toFixed(1) + '" rx="10" ry="5.8" fill="#8a4a1c" stroke="' + (F.rz ? '#ef4444' : '#3a1c08') + '" stroke-width="' + (F.rz ? 2 : 1) + '"/>' +
-      line([b[0] - 4, b[1] - 5], [b[0] + 4, b[1] - 5], '#fff', 1.2);
-    if (F.down) { const w = F.down.length * 6.6 + 14; o += '<rect x="' + (b[0] - w / 2).toFixed(1) + '" y="' + (b[1] - 31).toFixed(1) + '" width="' + w.toFixed(1) + '" height="18" rx="9" fill="#0b0f14" fill-opacity=".85"/><text x="' + b[0].toFixed(1) + '" y="' + (b[1] - 22).toFixed(1) + '" font-size="11" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(F.down) + '</text>'; }
+    o += line(fx(ball), '#3b82f6');
+    const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
+    o += '<ellipse cx="' + X + '" cy="' + (p[1] + 2).toFixed(1) + '" rx="' + (2.4 * s).toFixed(1) + '" ry="' + (0.7 * s).toFixed(1) + '" fill="#000" fill-opacity=".5"/>' +
+      '<ellipse cx="' + X + '" cy="' + (p[1] - 1.2 * s).toFixed(1) + '" rx="' + (2.4 * s).toFixed(1) + '" ry="' + (1.35 * s).toFixed(1) + '" fill="#8a4a1c" stroke="' + (F.rz ? '#ef4444' : '#3a1c08') + '" stroke-width="' + (F.rz ? 6 : 2) + '"/>' +
+      '<line x1="' + (p[0] - 1 * s).toFixed(1) + '" y1="' + (p[1] - 1.2 * s).toFixed(1) + '" x2="' + (p[0] + 1 * s).toFixed(1) + '" y2="' + (p[1] - 1.2 * s).toFixed(1) + '" stroke="#fff" stroke-width="3"/>';
+    if (F.down) { const w = F.down.length * 22 + 48, y = p[1] - 3.2 * s - 60; o += '<rect x="' + (p[0] - w / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w + '" height="56" rx="28" fill="#0b0f14" fill-opacity=".88"/><text x="' + X + '" y="' + (y + 28).toFixed(1) + '" font-size="34" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(F.down) + '</text>'; }
   }
-  return '<svg class="gc-fs" viewBox="0 58 360 152" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><linearGradient id="gcShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".3"/><stop offset=".6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".06"/></linearGradient></defs>' + o + '</svg>';
+  // show the 60% of the field around the ball, like a TV camera following the play
+  const cx = Math.max(480, Math.min(1120, pt(fx(F.poss ? ball : 50), 26.65)[0]));
+  return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '">' + o + '</svg>';
 }
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
