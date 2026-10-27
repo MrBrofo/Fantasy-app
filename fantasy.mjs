@@ -1937,8 +1937,8 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 @media (prefers-reduced-transparency:reduce){nav,body::before{background:var(--card);-webkit-backdrop-filter:none;backdrop-filter:none}}
 /* ===== Terminal theme: the look of the password screen. Black, mono letters, square edges, glow for good/bad. =====
    Everything above is the base layout; this block only restyles it, so removing it brings back Stadium Lime. */
-:root{--bg:#000;--card:rgba(0,0,0,.78);--fg:#fff;--muted:#ffffff8c;--line:#ffffff2e;--accent:#39ff88;--onaccent:#000;
---good:#39ff88;--goodbg:#39ff8814;--warn:#ffb020;--warnbg:#ffb02014;--bad:#ff3b3b;--badbg:#ff3b3b14;--chip:#ffffff0d;--glass:rgba(0,0,0,.82);--glassline:#ffffff40;
+:root{--bg:#000;--card:rgba(0,0,0,.78);--fg:#fff;--muted:#ffffff8c;--line:#ffffff45;--accent:#39ff88;--onaccent:#000;
+--good:#39ff88;--goodbg:#39ff8814;--warn:#ffb020;--warnbg:#ffb02014;--bad:#ff3b3b;--badbg:#ff3b3b14;--chip:#ffffff12;--glass:rgba(0,0,0,.82);--glassline:#ffffff40;
 --num:'JetBrains Mono',ui-monospace,Menlo,monospace}
 html{background:#000}
 body{background:transparent;font:14px/1.55 'JetBrains Mono',ui-monospace,Menlo,monospace}
@@ -1969,6 +1969,9 @@ section>h2::before,details.fold>summary h2::before{content:'// ';color:var(--mut
 .chip,.lvl,.lv,.live,[class^=verdict-],.gain{background:transparent!important;border:1px solid currentColor;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
 .live{animation:blink 1.4s steps(1) infinite}
 .pos{border-radius:0}
+/* things that were boxes by their gray fill get an outline, so they still read as boxes on black */
+.stat div,.worder span,.pitch,.chg,.card.row .slot,.sh-q,.bars,.tools2 .btn,#cmp-out table,.sel{border:1px solid var(--line)}
+.worder span.me{border-color:var(--accent)}.chg.good{border-color:var(--good)}.chg.bad{border-color:var(--bad)}
 /* buttons: white outline, flips to white when pressed */
 .btn{background:transparent;color:#fff;border:1px solid #fff;font-weight:700;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
 .btn:active,.btn:hover{background:#fff;color:#000;filter:none}
