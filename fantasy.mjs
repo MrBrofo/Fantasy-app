@@ -2678,16 +2678,19 @@ function gcField(F, A, H, ball, from, first, fx) {
   if (F.poss) {
     o += line(fx(ball), '#3b82f6');
     const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
-    // the last play: an arrow lying flat on the turf, from where it started to the ball
+    // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run,
+    // with its shadow on the grass under it
     if (F.play) {
-      const [y0, y1, tid] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)), d = Math.sign(x1 - x0);
-      if (Math.abs(x1 - x0) > 1) {
-        const z = 26.65, head = Math.min(4, Math.abs(x1 - x0) * 0.6), xh = x1 - d * head;
-        const shape = [[x0, z - 1.6], [xh, z - 1.6], [xh, z - 3.6], [x1, z], [xh, z + 3.6], [xh, z + 1.6], [x0, z + 1.6]];
-        const poly = (dy, attrs) => '<polygon points="' + shape.map(([x, zz]) => { const q = pt(x, zz); return q[0].toFixed(1) + ',' + (q[1] + dy).toFixed(1); }).join(' ') + '" ' + attrs + '/>';
+      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)) - Math.sign(fx(own(y1)) - x0) * 1.5, len = Math.abs(x1 - x0); // tip stops short of the ball so it shows
+      if (len > 1) {
+        const z = 26.65, H = /pass|reception|interception/i.test(type) ? Math.min(7, 1.5 + len * 0.22) : 0, uh = 1 - Math.min(4, len * 0.6) / len;
+        const at = (u, dz, lift) => { const q = pt(x0 + (x1 - x0) * u, z + dz, lift ? H * 4 * u * (1 - u) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
+        const us = Array.from({ length: 25 }, (_, i) => uh * i / 24), back = [...us].reverse();
+        const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(x0, z), g1 = pt(x1, z);
         o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>' +
-          poly(4, 'fill="#000" fill-opacity=".35"') + poly(0, 'fill="url(#gcPlay)"');
+          '<polygon points="' + shape(false) + '" fill="#000" fill-opacity="' + (H ? '.25' : '.35') + '"' + (H ? '' : ' transform="translate(0 4)"') + '/>' +
+          '<polygon points="' + shape(true) + '" fill="url(#gcPlay)"/>';
       }
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
