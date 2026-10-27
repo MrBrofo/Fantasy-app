@@ -1941,7 +1941,7 @@ table.cmp tr.bh td{font-size:11px;color:var(--muted);text-transform:uppercase;le
 .chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}
 .pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
 .pick .pic{width:34px;height:34px}#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
-#fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}
+#fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}#fab{transition:opacity .5s}#fab.idle{opacity:.35}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 .sheet-body{overscroll-behavior:contain}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
@@ -2052,7 +2052,7 @@ ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pe
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
-<a id="fab" href="https://fantasy.espn.com/football/team?leagueId=${LEAGUE_ID}&amp;teamId=${me.id}&amp;seasonId=${SEASON}" aria-label="Open the ESPN Fantasy app"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1c/b2/68/1cb2683b-9dce-d70c-8905-2562c0482eda/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/120x120bb.jpg" alt=""></a>
+<a id="fab" href="https://fantasy.espn.com/" aria-label="Open the ESPN Fantasy app"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1c/b2/68/1cb2683b-9dce-d70c-8905-2562c0482eda/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/120x120bb.jpg" alt=""></a>
 <nav>${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
 <div id="seg" class="seg" hidden></div>
 
@@ -3291,12 +3291,16 @@ document.addEventListener('click', ev => {
   const w = ev.target.closest('[data-claude]');
   if (w) navigator.clipboard.writeText(w.dataset.claude).then(() => { w.textContent = 'Copied. Paste it into Claude'; }, () => {}).finally(() => window.open('https://claude.ai/new', '_blank', 'noopener'));
 });
-// Floating ESPN button: drag to move (remembered on this phone), tap to open the app
+// Floating ESPN button: drag to move (remembered on this phone), tap to open the app, fades after 30s untouched
 (() => {
   const fab = document.getElementById('fab');
   if (!fab) return;
   try { const p = JSON.parse(localStorage.getItem('fabPos') || 'null'); if (p) { fab.style.left = p.x + 'px'; fab.style.top = p.y + 'px'; fab.style.right = 'auto'; fab.style.bottom = 'auto'; } } catch {}
-  let start = null, moved = false;
+  let start = null, moved = false, idle;
+  const wake = () => { fab.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(() => fab.classList.add('idle'), 30000); };
+  wake();
+  fab.addEventListener('pointerdown', wake);
+  fab.addEventListener('pointerup', wake);
   fab.addEventListener('pointerdown', ev => { start = { x: ev.clientX, y: ev.clientY, l: fab.offsetLeft, t: fab.offsetTop }; moved = false; fab.setPointerCapture(ev.pointerId); });
   fab.addEventListener('pointermove', ev => {
     if (!start) return;
