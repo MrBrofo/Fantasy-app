@@ -4122,7 +4122,10 @@ fs.writeFileSync(memoFile, JSON.stringify(memo));
 // Small summary for the iPhone Home Screen widget (Scriptable).
 fs.writeFileSync(path.join(dir, 'site', WIDGET), JSON.stringify({
   week, me: me.name, opp: opp?.name ?? null, myProj: n(myProj), oppProj: n(oppProj), win: winPct, live: isLive, updated: Date.now(),
+  myNow: isLive ? n(mySide.totalPointsLive) : null, oppNow: isLive ? n(oppSide.totalPointsLive) : null,
   todo: todo.map(([lvl, title]) => ({ lvl, title })),
+  // my starters' games this week, so while one is on the widget can show the latest play by one of them
+  games: starters(me).filter(p => p.pos !== 'D/ST').flatMap(p => { const g = pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[week]?.[0]; return g ? [{ id: p.id, name: p.name, gid: g.id, kick: g.date }] : []; }),
 }));
 fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
   name: me.name, short_name: 'Fantasy', start_url: '.', display: 'standalone', background_color: '#0b0d10', theme_color: '#0b0d10',
