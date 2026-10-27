@@ -2682,6 +2682,11 @@ function gcField(F, A, H, ball, from, first, fx) {
     if (key !== gcKey) { gcKey = key; gcAt = Date.now(); }
     const anim = fly && Date.now() - gcAt < GC_FLY, hide = anim ? ' style="opacity:0"' : '';
     gcFly = null;
+    if (anim) {
+      const [y0, , tid, type] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), bx = fx(ball), H = /pass|reception|interception/i.test(type) ? Math.min(7, 1.5 + Math.abs(bx - sx) * 0.22) : 0;
+      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (bx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
+      if (Math.abs(bx - sx) > 1) gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0] };
+    }
     // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run
     if (F.play) {
       const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)) - Math.sign(fx(own(y1)) - x0) * 1.5, len = Math.abs(x1 - x0); // tip stops short of the ball so it shows
@@ -2692,7 +2697,8 @@ function gcField(F, A, H, ball, from, first, fx) {
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(x0, z), g1 = pt(x1, z);
         o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>' +
-          '<g class="gc-trail"' + hide + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
+          (gcFly ? '<clipPath id="gcReveal"><rect x="' + gcFly.x0.toFixed(1) + '" y="0" width="0" height="600"/></clipPath>' : '') +
+          '<g class="gc-trail"' + (gcFly ? ' clip-path="url(#gcReveal)"' : '') + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
       }
     }
     if (F.play) {
@@ -2705,12 +2711,8 @@ function gcField(F, A, H, ball, from, first, fx) {
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>'); };
       // two photos close together are pushed apart, their stems leaning to where each stood
       const gap = pt(fx(ball), 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1);
-      o += '<g class="gc-pins"' + hide + '>' + (who.length === 2 ? pin(sx, who[0], 0, -push) + pin(fx(ball), who[1], 1, push) : who.length ? pin(fx(ball), who[who.length - 1], 1) : '') + '</g>';
-      if (anim && Math.abs(fx(ball) - sx) > 1) {
-        const bx = fx(ball), H = /pass|reception|interception/i.test(F.play[3]) ? Math.min(7, 1.5 + Math.abs(bx - sx) * 0.22) : 0;
-        const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (bx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
-        gcFly = { b: path(true), g: path(false) };
-      }
+      if (who.length === 2) o += '<g>' + pin(sx, who[0], 0, -push) + '</g>';
+      if (who.length) o += '<g class="gc-catch"' + hide + '>' + pin(fx(ball), who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
     const bw = 3.6 * s / 109;
@@ -2729,14 +2731,17 @@ let gcKey = '', gcAt = 0, gcFly = null;
 function gcAnimate() {
   const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly;
   const fade = c => document.querySelector('#gc .' + c);
-  if (!F) { for (const c of ['gc-trail', 'gc-pins']) if (fade(c)) fade(c).style.opacity = ''; return; }
+  if (!F) { if (fade('gc-catch')) fade('gc-catch').style.opacity = ''; return; }
   const step = () => {
     if (!b?.isConnected || gcFly !== F) return;
     const t = Math.min(1, (Date.now() - gcAt) / GC_FLY), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
-    const along = L => { const i = Math.min(L.length - 2, Math.floor(k * (L.length - 1))), r = k * (L.length - 1) - i; return (L[i][0] + (L[i + 1][0] - L[i][0]) * r).toFixed(1) + ' ' + (L[i][1] + (L[i + 1][1] - L[i][1]) * r).toFixed(1); };
-    b.setAttribute('transform', 'translate(' + along(F.b) + ')'); sh.setAttribute('transform', 'translate(' + along(F.g) + ')');
-    if (fade('gc-trail')) fade('gc-trail').style.opacity = k;
-    if (fade('gc-pins')) fade('gc-pins').style.opacity = Math.max(0, (t - 0.7) / 0.3);
+    const along = L => { const i = Math.min(L.length - 2, Math.floor(k * (L.length - 1))), r = k * (L.length - 1) - i; return [L[i][0] + (L[i + 1][0] - L[i][0]) * r, L[i][1] + (L[i + 1][1] - L[i][1]) * r]; };
+    const [x, y] = along(F.b), [gx, gy] = along(F.g), clip = document.querySelector('#gcReveal rect'), trail = fade('gc-trail');
+    b.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')'); sh.setAttribute('transform', 'translate(' + gx.toFixed(1) + ' ' + gy.toFixed(1) + ')');
+    // the trail shows only behind the ball
+    if (clip) { clip.setAttribute('x', Math.min(F.x0, x).toFixed(1)); clip.setAttribute('width', Math.abs(x - F.x0).toFixed(1)); }
+    if (t >= 1 && trail) trail.removeAttribute('clip-path');
+    if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - 0.6) / 0.3));
     if (t < 1) requestAnimationFrame(step);
   };
   step();
