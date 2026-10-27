@@ -2678,14 +2678,25 @@ function gcField(F, A, H, ball, from, first, fx) {
   if (F.poss) {
     o += line(fx(ball), '#3b82f6');
     const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
-    o += '<ellipse cx="' + X + '" cy="' + (p[1] + 2).toFixed(1) + '" rx="' + (2.4 * s).toFixed(1) + '" ry="' + (0.7 * s).toFixed(1) + '" fill="#000" fill-opacity=".5"/>' +
-      '<ellipse cx="' + X + '" cy="' + (p[1] - 1.2 * s).toFixed(1) + '" rx="' + (2.4 * s).toFixed(1) + '" ry="' + (1.35 * s).toFixed(1) + '" fill="#8a4a1c" stroke="' + (F.rz ? '#ef4444' : '#3a1c08') + '" stroke-width="' + (F.rz ? 6 : 2) + '"/>' +
-      '<line x1="' + (p[0] - 1 * s).toFixed(1) + '" y1="' + (p[1] - 1.2 * s).toFixed(1) + '" x2="' + (p[0] + 1 * s).toFixed(1) + '" y2="' + (p[1] - 1.2 * s).toFixed(1) + '" stroke="#fff" stroke-width="3"/>';
-    if (F.down) { const w = F.down.length * 22 + 48, y = p[1] - 3.2 * s - 60; o += '<rect x="' + (p[0] - w / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w + '" height="56" rx="28" fill="#0b0f14" fill-opacity=".88"/><text x="' + X + '" y="' + (y + 28).toFixed(1) + '" font-size="34" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(F.down) + '</text>'; }
+    // the last play: an arc for a pass, a flat line for a run, from where it started to where it ended
+    if (F.play) {
+      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)) - Math.sign(fx(own(y1)) - fx(own(y0))) * 1.4; // stop short so the ball doesn't hide the arrowhead
+      if (Math.abs(x1 - x0) > 0.5) {
+        const air = /pass|reception|interception/i.test(type), q0 = pt(x0, 26.65, 0.3), q1 = pt(x1, 26.65, 0.3), c = pt((x0 + x1) / 2, 26.65, air ? Math.min(14, 2 + Math.abs(x1 - x0) * 0.5) : 0.3);
+        const yds = y1 - y0, m = pt(x0, 20.5);
+        o += '<circle cx="' + q0[0].toFixed(1) + '" cy="' + q0[1].toFixed(1) + '" r="10" fill="#fff"/><path d="M' + xy(q0) + ' Q' + xy(c) + ' ' + xy(q1) + '" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" marker-end="url(#gcArrow)"/>' +
+          '<text x="' + m[0].toFixed(1) + '" y="' + m[1].toFixed(1) + '" font-size="36" fill="#fff" text-anchor="middle" style="paint-order:stroke" stroke="#0008" stroke-width="6">' + (yds > 0 ? '+' : '') + yds + ' yds</text>';
+      }
+    }
+    // ball.webp is a Blender render of the ball from the field camera: 300x200, its ground point at (150, 115), the 11-inch ball 60.6 px long
+    const bw = 3.6 * s / 60.6;
+    if (F.rz) o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="5"/>';
+    o += '<image href="ball.webp" x="' + (p[0] - 150 * bw).toFixed(1) + '" y="' + (p[1] - 115 * bw).toFixed(1) + '" width="' + (300 * bw).toFixed(1) + '" height="' + (200 * bw).toFixed(1) + '"/>';
+    if (F.down) { const w = F.down.length * 22 + 48, y = p[1] - 5.5 * s - 60; o += '<rect x="' + (p[0] - w / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w + '" height="56" rx="28" fill="#0b0f14" fill-opacity=".88"/><text x="' + X + '" y="' + (y + 28).toFixed(1) + '" font-size="34" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(F.down) + '</text>'; }
   }
   // show the 60% of the field around the ball, like a TV camera following the play
   const cx = Math.max(480, Math.min(1120, pt(fx(F.poss ? ball : 50), 26.65)[0]));
-  return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '">' + o + '</svg>';
+  return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><marker id="gcArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#fff"/></marker></defs>' + o + '</svg>';
 }
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
