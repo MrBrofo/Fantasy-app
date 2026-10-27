@@ -1762,7 +1762,7 @@ const shown = new Map();
 const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
-  ${p.rank || depthWord(p) ? `<div class="rank">${[p.rank ? `${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season` : '', depthWord(p)].filter(Boolean).join(' &middot; ')}</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
+  ${rankText(p) || depthWord(p) ? `<div class="rank">${[rankText(p), depthWord(p)].filter(Boolean).join(' &middot; ')}</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
 // (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
 const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
@@ -1773,6 +1773,9 @@ const lnk = p => { shown.set(p.id, p); return `<span data-pid="${p.id}" class="l
 // start on a typical team here (16 teams x starting spots, FLEX split across RB/WR/TE); "top starter" = top third of those.
 const tierPool = [...teams.flatMap(t => t.roster), ...allFa];
 const startersAt = pos => teams.length * ((slotCounts[FA_SLOT[pos]] ?? 1) + (['RB', 'WR', 'TE'].includes(pos) ? (slotCounts[23] ?? 0) / 3 : 0));
+// his season rank in plain words, against how many players at his position start in this league
+const rankTier = p => { const k = startersAt(p.pos); return !p.rank ? '' : p.rank <= k / 3 ? 'Top' : p.rank <= k ? 'Startable' : p.rank <= 2 * k ? 'Backup-level' : 'Not startable'; };
+const rankText = p => { const t = rankTier(p), w = POS_NAME[p.pos]?.toLowerCase(); return !t ? '' : t === 'Not startable' ? 'Not worth starting so far' : t + ' ' + w + ' so far'; };
 const tierCut = {};
 for (const kind of ['week', 'season']) for (const pos of Object.keys(FA_SLOT)) {
   const vals = tierPool.filter(p => p.pos === pos).map(kind === 'week' ? weekValue : seasonValue).sort((a, b) => b - a), k = startersAt(pos);
@@ -2758,7 +2761,7 @@ function render(p) {
     '<div class="stat">' +
       '<div><b>' + e(p.proj) + '</b><small>expected this week' + (p.ceiling ? ' (up to ' + e(p.ceiling) + ')' : '') + '</small></div>' +
       '<div><b>' + e(p.avg) + '</b><small>points per game this season</small></div>' +
-      '<div><b>' + e(p.rank) + '</b><small>rank at his position</small></div>' +
+      '<div><b>' + e(p.rank) + '</b><small>' + (p.rank === '-' ? 'rank at his position' : 'as a ' + e(p.rankPos) + ' this season') + '</small></div>' +
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
     (p.sources ? '<div class="group">Where "expected" comes from</div><p class="why" style="margin:0">' + e(p.sources) + '</p>' : '') +
@@ -4054,7 +4057,7 @@ for (const [id, p] of shown) {
     pro: String(p.proTeamId), side: isStarter(p) ? (mine ? 'me' : t && t === opp ? 'opp' : null) : null, // Watch view: starters in my matchup
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
-    avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
+    avg: n(p.avg), rank: rankTier(p) || '-', rankPos: POS_NAME[p.pos]?.toLowerCase() ?? '', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
     trend, sources, games, now, plays: plays.get(id) ?? [], notes: notes(p),
     rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
