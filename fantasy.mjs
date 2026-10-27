@@ -2777,11 +2777,11 @@ function gcField(F, A, H, ball, from, first, fx) {
     // slows it (fast off the foot or hand, slower at the end, so it comes down steeper than it went up), how fast it turns
     const rnd = (() => { let h = 2166136261; for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return () => (h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909), (h >>> 0) / 4294967296); })();
     const kicked = /fg|miss|kick|block/.test(kind), drag = kicked ? 0.8 + rnd() * 0.7 : 0.25 + rnd() * 0.5;
-    let H = (kind === 'run' || kind === 'block' ? 0 : /fg|miss|kick/.test(kind) ? Math.min(12, 3 + dl * 0.25) : dl >= 5 ? Math.min(7, 1.5 + dl * 0.22) : 0) * (0.8 + rnd() * 0.45);
+    let H = (kind === 'run' || kind === 'block' ? 0 : /fg|miss|kick/.test(kind) ? Math.min(17.5, 3 + dl * 0.28) : dl >= 5 ? Math.min(7, 1.5 + dl * 0.22) : 0) * (0.8 + rnd() * 0.45);
     // height at a share u of the way there: the flight's time at u, then up and down over that time
     const tau = u => -Math.log(1 - u * (1 - Math.exp(-drag))) / drag, up = u => { const tm = tau(u); return H * 4 * tm * (1 - tm); };
     // a good field goal goes through the uprights: over the crossbar (10 feet, 3.3 yards up) with room to spare, under their tops
-    if (kind === 'fg') { const tp = tau(Math.abs(post - sx) / dl); H = Math.min(18, (5 + rnd() * 3) / (4 * tp * (1 - tp))); }
+    if (kind === 'fg') { const tp = tau(Math.abs(post - sx) / dl); H = Math.min(22, (8 + rnd() * 3) / (4 * tp * (1 - tp))); }
     // lost yards, an interception, a missed or blocked kick: red; an incompletion: faint grey
     const bad = !td && ((y1 < y0 && /run|pass/.test(kind)) || /pick|miss|block/.test(kind)), grey = kind === 'inc';
     const p = pt(F.play ? lx : fx(ball), 26.65), pb = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
