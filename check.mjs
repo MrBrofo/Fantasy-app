@@ -231,13 +231,15 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
 // the Watch view names the passer and the catcher, or the runner, from the play text
 {
   const tpl = c => c.replace(/\\\\/g, '\\');
-  const gcWho = new Function('roster', 'gcQb', tpl(cut('function gcWho(F) {', "  return [q !== a && q, a, b, kr].filter(Boolean).map(n => ({ n, p: kr === n ? roster(F.teams.find(x => x[0] !== tid)?.[0])[n] : R[n] }));\n}")) + '\nreturn gcWho;')(() => ({ 'T.McKee': { id: '1' } }), {});
+  const gcWho = new Function('roster', 'gcQb', tpl(cut('function gcWho(F) {', "label: n.split('.').pop() } : { n, p: R[n] });\n}")) + '\nreturn gcWho;')(() => ({ 'T.McKee': { id: '1' } }), {});
   const w = gcWho({ last: '(No Huddle, Shotgun) T.McKee pass short left to D.Goedert to DAL 13 for 6 yards (J.Barron).', play: [81, 87, '21'] });
   assert.deepEqual(w, [{ n: 'T.McKee', p: { id: '1' } }, { n: 'D.Goedert', p: undefined }], JSON.stringify(w));
   assert.deepEqual(gcWho({ last: 'S.Barkley up the middle to DAL 40 for 3 yards.', poss: '21' }).map(x => x.n), ['S.Barkley'], 'no play type: just the runner');
   assert.deepEqual(gcWho({ last: 'S.Barkley up the middle for 3 yards.', play: [40, 43, '21', 'Rush'] }).map(x => x.n), ['T.McKee', 'S.Barkley'], 'a run: the last passer seen live hands off');
   assert.deepEqual(gcWho({ last: 'S.Barkley up the middle for 3 yards.', play: [40, 43, '21', 'Rush'], qb: 'J.Hurts' }).map(x => x.n), ['J.Hurts', 'S.Barkley'], 'the summary passer wins');
   assert.deepEqual(gcWho({ last: 'T.McKee scrambles for 5 yards.', play: [40, 45, '21', 'Rush'] }).map(x => x.n), ['T.McKee'], 'a quarterback run: him once');
+  const pk = gcWho({ last: 'T.McKee pass deep left intended for D.Goedert INTERCEPTED by T.Diggs at PHI 40. T.Diggs to PHI 30 for 10 yards.', play: [60, 70, '21', 'Pass Interception Return'], teams: [['21', 'PHI'], ['6', 'DAL']] });
+  assert.deepEqual(pk.map(x => [x.n, x.logo]), [['T.McKee', undefined], ['T.Diggs', 'DAL']], 'a pick: the passer, then the defender who caught it');
 }
 // a touchdown the 30-second check missed comes from ESPN's summary, which counts yards to the end zone
 {

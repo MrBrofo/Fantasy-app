@@ -3010,8 +3010,9 @@ function gcWho(F) {
   if (!a || !tid) return [];
   if (b) gcQb[tid] = a;
   const q = !b && /rush/i.test(F.play?.[3] ?? '') ? F.qb || gcQb[tid] : null, kr = /punt|kickoff/i.test(F.play?.[3] ?? '') && /[.] +([A-Z][.][A-Z][A-Za-z'-]+) (?:to|for|pushed|ran) /.exec(t)?.[1];
-  const R = roster(tid);
-  return [q !== a && q, a, b, kr].filter(Boolean).map(n => ({ n, p: kr === n ? roster(F.teams.find(x => x[0] !== tid)?.[0])[n] : R[n] }));
+  // a pick: the defender who caught it stands where he caught it (his team's logo when he isn't on its roster)
+  const R = roster(tid), opp = F.teams?.find(x => x[0] !== tid), pk = /interception/i.test(F.play?.[3] ?? '') && /INTERCEPTED by ([A-Z][.][A-Z][A-Za-z'-]+)/.exec(t)?.[1];
+  return [q !== a && q, a, !pk && b, kr, pk].filter(Boolean).map(n => kr === n || pk === n ? { n, p: roster(opp?.[0])[n], logo: opp?.[1], label: n.split('.').pop() } : { n, p: R[n] });
 }
 // The newest touchdown in ESPN's game summary, as [start, end, team, type, true] with yards from the team's own goal line
 function gcTdPlay(d) {
