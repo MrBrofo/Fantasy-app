@@ -1074,6 +1074,21 @@ if (memo.week && memo.week < week) memo.turns = [...(memo.turns ?? []), Date.now
 memo.week = week;
 const lastTurn = memo.turns?.at(-1) && new Date(memo.turns.at(-1)).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' });
 const turnNote = lastTurn ? `last week it turned over ${lastTurn}` : "early Tuesday morning, after Monday night's game";
+// A pending waiver claim, judged: the verdict on its card in Pending, and what the to-do list flags
+function claimCheck(m) {
+  // neither starts, so the lineup doesn't change, but one is clearly the better backup for byes and injuries (2+ a game)
+  const bdiff = m.add.length === 1 && m.drop.length === 1 ? rate(m.add[0]) - rate(m.drop[0]) : 0, backup = bdiff >= 2, worseBackup = bdiff <= -2;
+  // a kicker or defense added while you already carry a spare one, dropping someone else: drop your worst spare instead
+  const kp = m.add.length === 1 && ['K', 'D/ST'].includes(m.add[0].pos) && !m.drop.some(d => d.pos === m.add[0].pos) && m.add[0].pos;
+  const spare = kp && me.roster.filter(p => p.pos === kp && p.slot !== 'IR' && p.id !== m.add[0].id).sort((a, b) => rate(a) - rate(b)), stack = spare && spare.length > (slotCounts[FA_SLOT[kp]] || 1) ? spare[0] : null;
+  const covers = m.byeFor?.length && m.nextPts > 0;
+  // a one-week rental: helps this week, but the dropped player is better after that, or the next 2 weeks get worse
+  const ahead = byeScore([...me.roster.filter(r => !m.drop.some(d => d.id === r.id)), ...m.add.map(a => ({ ...a, slot: 'Bench' }))]) - byeScore(me.roster);
+  const worse = m.drop.length === 1 && m.add.length === 1 && seasonValue(m.drop[0]) - seasonValue(m.add[0]) >= 1, keeps = m.drop.filter(isKeeper);
+  const rental = m.week >= 1 && m.season < 0.5 && m.drop.length > 0 && (worse || ahead <= -1);
+  const v = m.likelyLost ? ['bad', 'You\'ll likely lose this claim'] : stack ? ['bad', `Drop ${stack.name} instead`] : covers ? ['good', `Covers your week ${week + 1} bye`] : rental ? (keeps.length ? ['bad', 'Drops a keeper for one week'] : ['meh', 'One-week rental']) : m.week >= 1 || m.nextGain >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : worseBackup ? ['bad', 'Worse backup, cancel it'] : ['meh', 'Barely matters'];
+  return { bdiff, backup, worseBackup, kp, spare, stack, covers, ahead, worse, keeps, rental, v };
+}
 const todo = [];
 for (const p of starters(me)) {
   if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`, bestMove, [p]]);
@@ -1092,11 +1107,30 @@ for (const [i, s] of plan.entries()) {
 const planIds = new Set(plan.flatMap(s => [s.add.id, s.drop.id]));
 const bu = benchUps.find(x => !planIds.has(x.add.id) && !planIds.has(x.drop.id) && !locked(x.add) && !locked(x.drop));
 if (bu) todo.push(['week', `Better backup: add ${bu.add.name}, drop ${bu.drop.name}`, `Neither starts for you now, so your score doesn't change, but ${bu.add.name} is expected ${n(rate(bu.add))} a game the rest of the season vs ${n(rate(bu.drop))} for ${bu.drop.name}. If a ${POS_NAME[bu.add.pos].toLowerCase()} of yours gets hurt or has a bye, that's the difference.${bu.add.wa ? " He's on waivers, so this is a claim." : ' Free agent: yours right away.'}`, pickupMove(bu), [bu.add, bu.drop]]);
+// pending moves that need you: a claim to fix or cancel before waivers run, a trade offer to answer, my own bad offer
+for (const m of claims) {
+  const { v, stack } = claimCheck(m), fix = v[0] === 'bad' || m.better;
+  if (!fix) continue;
+  const why = stack ? `You'd have 3 ${m.add[0].pos === 'K' ? 'kickers' : 'defenses'}. Cancel it and claim ${m.add[0].name} again dropping ${stack.name}, so you keep ${m.drop.map(d => d.name).join(' and ')}.`
+    : m.better && v[0] !== 'bad' ? `${m.better.c.name} would add about ${n(m.better.season)} a week instead of ${n(m.season)}, dropping the same player.` : `${v[1]}. Details under Pending.`;
+  todo.push(['urgent', `Fix your ${m.add.map(p => p.name).join(' + ')} claim`, `${why} It goes through when waivers run ${cap(waiverDay)}.`, { label: 'Cancel this claim on ESPN', type: 'WAIVER', cancel: true, related: m.id, items: [] }, [...m.add, ...m.drop]]);
+}
+for (const m of pending.filter(m => m.kind === 'trade')) {
+  if (!m.mineOffer) todo.push(['urgent', `Answer ${m.them.name}'s trade offer`, `You'd give ${m.give.map(p => p.name).join(', ')} for ${m.take.map(p => p.name).join(', ')}. ${m.mine >= 1 ? `Good for you: about +${n(m.mine)} a week, so accept` : m.mine <= -1 ? `Bad for you: about ${n(m.mine)} a week, so decline` : 'About even for you'}. Accept or decline under Pending.`, null, [...m.give, ...m.take]]);
+  else if (m.mine <= -1) todo.push(['week', `Cancel your trade offer to ${m.them.name}`, `It would cost you about ${n(-m.mine)} points a week for the rest of the season. Cancel it under Pending.`, null, [...m.give, ...m.take]]);
+}
 const irUsed = me.roster.filter(p => p.slot === 'IR').length;
 const dateStr = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 for (const p of me.roster) {
   if (p.status === 'INJURY_RESERVE' && p.slot !== 'IR' && irUsed < (slotCounts[21] ?? 0)) todo.push(['week', `Move ${p.name} to your IR spot`, 'He\'s hurt long-term. Putting him in the IR spot frees a bench spot for free, without dropping him.', locked(p) ? null : { label: 'Move him to IR on ESPN', type: 'ROSTER', items: [{ type: 'LINEUP', playerId: p.id, from: SLOT_ID[p.slot], to: SLOT_ID.IR }] }, [p]]);
   if (p.inj?.season && !plan.some(s => s.drop === p)) todo.push(['week', `Drop ${p.name}`, `He's out for the season (${p.inj.type?.toLowerCase() ?? 'injury'}), so he'll never score for you again. Use his spot on someone who plays.`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }, [p]]);
+  // healthy (or only questionable) and still in the IR spot: ESPN blocks every add, drop and trade until he's moved out
+  if (p.slot === 'IR' && !['INJURY_RESERVE', 'OUT'].includes(p.status)) {
+    const room = me.roster.filter(x => x.slot !== 'IR').length < rosterSpots, cut = [...baseRoster].filter(x => x.slot === 'Bench').sort((a, b) => weakness(a) - weakness(b))[0];
+    todo.push(['urgent', `Move ${p.name} out of your IR spot`, `He's ${p.status ? (STATUS[p.status]?.[0] ?? p.status).toLowerCase() : 'healthy'}, so he can't stay in IR, and ESPN won't let you add, drop or trade anyone until he's out of it.${room ? '' : ` Your bench is full, so drop someone first${cut ? ` (easiest: ${cut.name}, ${n(rate(cut))} a game)` : ''}.`}`,
+      room && !locked(p) ? { label: 'Move him to your bench on ESPN', type: 'ROSTER', items: [{ type: 'LINEUP', playerId: p.id, from: SLOT_ID.IR, to: SLOT_ID.Bench }] } : null, [p]]);
+    continue;
+  }
   if (p.slot === 'IR' && !p.inj?.season) {
     // worst = the first to go by the same order pickups drop in (a spare kicker or defense before a backup at another spot)
     const [w] = [p, ...baseRoster.filter(x => x.slot === 'Bench')].sort((a, b) => weakness(a, [...baseRoster, p]) - weakness(b, [...baseRoster, p]));
@@ -2248,18 +2282,8 @@ ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><d
 <section id="pending"><h2>Your pending moves</h2><p class="sub">Waiver claims and trade offers that haven't gone through yet, checked with the same math as everything else.</p>
 ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
-    // neither starts, so the lineup doesn't change, but one is clearly the better backup for byes and injuries (2+ a game)
-    const bdiff = m.add.length === 1 && m.drop.length === 1 ? rate(m.add[0]) - rate(m.drop[0]) : 0, backup = bdiff >= 2, worseBackup = bdiff <= -2;
-    // a kicker or defense added while you already carry a spare one, dropping someone else: drop your worst spare instead
-    const kp = m.add.length === 1 && ['K', 'D/ST'].includes(m.add[0].pos) && !m.drop.some(d => d.pos === m.add[0].pos) && m.add[0].pos;
-    const spare = kp && me.roster.filter(p => p.pos === kp && p.slot !== 'IR' && p.id !== m.add[0].id).sort((a, b) => rate(a) - rate(b)), stack = spare && spare.length > (slotCounts[FA_SLOT[kp]] || 1) ? spare[0] : null;
-    const covers = m.byeFor?.length && m.nextPts > 0;
-    // a one-week rental: helps this week, but the dropped player is better after that, or the next 2 weeks get worse
-    const ahead = byeScore([...me.roster.filter(r => !m.drop.some(d => d.id === r.id)), ...m.add.map(a => ({ ...a, slot: 'Bench' }))]) - byeScore(me.roster);
-    const worse = m.drop.length === 1 && m.add.length === 1 && seasonValue(m.drop[0]) - seasonValue(m.add[0]) >= 1, keeps = m.drop.filter(isKeeper);
-    const rental = m.week >= 1 && m.season < 0.5 && m.drop.length > 0 && (worse || ahead <= -1);
-    const v = m.likelyLost ? ['bad', 'You\'ll likely lose this claim'] : stack ? ['bad', `Drop ${esc(stack.name)} instead`] : covers ? ['good', `Covers your week ${week + 1} bye`] : rental ? (keeps.length ? ['bad', 'Drops a keeper for one week'] : ['meh', 'One-week rental']) : m.week >= 1 || m.nextGain >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : worseBackup ? ['bad', 'Worse backup, cancel it'] : ['meh', 'Barely matters'];
-    return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${v[1]}</span></div>
+    const { backup, worseBackup, kp, spare, stack, covers, ahead, worse, keeps, rental, v } = claimCheck(m);
+    return `<div class="card"><div class="vhead"><span class="tag">Waiver claim</span><span class="verdict-${v[0]}">${esc(v[1])}</span></div>
     <div class="swap">${m.add.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}<div class="arrow">drop</div>${m.drop.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
     <p class="why">${stack ? `<b>You'd have ${spare.length + 1} ${kp === 'K' ? 'kickers' : 'defenses'} and only start ${slotCounts[FA_SLOT[kp]] || 1}. Drop ${esc(stack.name)} (${n(rate(stack))} a game) for ${esc(m.add[0].name)} and keep ${esc(m.drop.map(d => d.name).join(' and '))}.</b> ` : ''}<b>${(backup || worseBackup) && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? `Neither of them makes your starting lineup right now, so your score doesn't change. But ${esc(m.add[0].name)} is a much ${backup ? 'better' : 'worse'} backup (${n(rate(m.add[0]))} vs ${n(rate(m.drop[0]))} a game) for bye weeks and injuries.` : ''}${(backup || worseBackup) && Math.abs(m.week) < 1 && Math.abs(m.season) < 1 ? '' : Math.abs(m.week) < 0.5 ? 'No change this week' : `${m.week > 0 ? 'Adds' : 'Costs'} about ${n(Math.abs(m.week))} points this week`}${Math.abs(m.season) < 0.5 ? (rental ? `, but ${esc(m.drop[0].name)} is the better player after that.` : ', about the same after that.') : `, and ${m.season > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.season))} a week after that.`}${Math.abs(m.nextGain) >= 0.5 ? ` Next week (week ${week + 1}): ${m.nextGain > 0 ? 'adds' : 'costs'} about ${n(Math.abs(m.nextGain))}.` : ''}</b>${nextRun ? ` It goes through ${nextRun}.` : ''}</p>
     ${rental ? `<p class="why">One-week rental: ${worse ? `${esc(m.drop[0].name)} is expected ${n(seasonValue(m.drop[0]))} a game from here on vs ${n(seasonValue(m.add[0]))} for ${esc(m.add[0].name)}` : 'it helps this week only'}${ahead <= -1 ? `, and your lineups the next 2 weeks get about ${n(-ahead)} points worse` : ''}. ${keeps.length ? `${esc(keeps[0].name)} is worth keeping long-term (free players at his spot are clearly worse), so cancel it.` : 'Fine if you want this week\'s points, since a player like the one you drop is easy to find again.'}</p>` : ''}
@@ -2274,7 +2298,7 @@ ${pending.length ? pending.map(m => {
   }
   const v = m.mine >= 1 ? ['good', m.mineOffer ? 'Good for you' : 'Good for you: accept'] : m.mine <= -1 ? ['bad', m.mineOffer ? 'Bad for you: cancel it' : 'Bad for you: decline'] : ['meh', 'About even'];
   const lost = [...new Set(m.give.map(p => p.pos))].map(pos => { const s = myStartersAt(m.after, pos).filter(p => !m.give.includes(p)); return s.length ? `your starting ${POS_NAME[pos]?.toLowerCase()}${s.length > 1 ? 's' : ''} would be ${startersText(s)}` : `you'd have no ${POS_NAME[pos]?.toLowerCase()}`; });
-  return `<div class="card"><div class="vhead"><span class="tag">${m.mineOffer ? 'You offered' : 'Offered to you by'} <b>${esc(m.them.name)}</b></span><span class="verdict-${v[0]}">${v[1]}</span></div>
+  return `<div class="card"><div class="vhead"><span class="tag">${m.mineOffer ? 'You offered' : 'Offered to you by'} <b>${esc(m.them.name)}</b></span><span class="verdict-${v[0]}">${esc(v[1])}</span></div>
   <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
   <p class="why"><b style="color:var(--${v[0] === 'meh' ? 'fg' : v[0]})">${Math.abs(m.mine) < 1 ? 'About even for you' : `You'd ${m.mine > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.mine))} point${Math.round(Math.abs(m.mine)) === 1 ? '' : 's'} a week`} for the rest of the season.</b>
