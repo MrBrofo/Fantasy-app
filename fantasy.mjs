@@ -1762,7 +1762,7 @@ const shown = new Map();
 const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
-  ${rankText(p) || depthWord(p) ? `<div class="rank">${[rankText(p), depthWord(p)].filter(Boolean).join(' &middot; ')}</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
+  ${(r => r.length ? `<div class="rank">${r.join(' &middot; ')}</div>` : '')([rankText(p), depthWord(p), hitLine(p)?.[0]].filter(Boolean))}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
 // (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
 const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
@@ -1777,6 +1777,24 @@ const startersAt = pos => teams.length * ((slotCounts[FA_SLOT[pos]] ?? 1) + (['R
 // ("#9 of 12 starting kickers", or "#20 kicker, only the top 12 start")
 const rankWhy = p => { const k = Math.round(startersAt(p.pos)), w = POS_NAME[p.pos]?.toLowerCase(); return p.rank <= k ? 'of ' + k + ' starting ' + (p.pos === 'D/ST' ? 'defenses' : w + 's') : w + ', only the top ' + k + ' start'; };
 const rankText = p => !p.rank ? '' : '#' + p.rank + ' ' + rankWhy(p);
+// how often he connects this season, from the weekly stat lines: a kicker's field goals and extra points made of tried,
+// a pass catcher's catches of his targets, each next to what everyone at his position does. [card text, sheet text]
+const pctOf = (a, b) => Math.round(a / b * 100) + '%';
+const hitAll = { K: [0, 0] };
+for (const wd of Object.values(rosSaved.kd ?? {})) for (const w of Object.values(wd)) if (w[0] === 'K') { hitAll.K[0] += w[4]; hitAll.K[1] += w[3]; }
+for (const wd of Object.values(rosSaved.weeks ?? {})) for (const w of Object.values(wd)) { const h = hitAll[w[11]] ??= [0, 0]; h[0] += w[7]; h[1] += w[3]; }
+const hitLine = p => {
+  const k = pkey(p.name, p.pos, p.team), all = hitAll[p.pos];
+  if (p.pos === 'K') {
+    const g = Object.values(rosSaved.kd ?? {}).map(x => x[k]).filter(Boolean), s = i => g.reduce((t, w) => t + w[i], 0), [fga, fgm, long, xpa, xpm] = [3, 4, 5, 6, 7].map(s);
+    if (!fga) return null;
+    return [`FG ${fgm}/${fga} (${pctOf(fgm, fga)})`, `Field goals: made ${fgm} of ${fga} (${pctOf(fgm, fga)}${all[1] ? `; kickers this season make ${pctOf(...all)}` : ''})${long ? `, ${long} from 50+ yards` : ''}. Extra points: ${xpm} of ${xpa}.`];
+  }
+  if (!['RB', 'WR', 'TE'].includes(p.pos)) return null;
+  const g = Object.values(rosSaved.weeks ?? {}).map(x => x[k]).filter(Boolean), tgt = g.reduce((t, w) => t + w[3], 0), rec = g.reduce((t, w) => t + w[7], 0);
+  if (tgt < 5) return null;
+  return [`Caught ${rec}/${tgt} (${pctOf(rec, tgt)})`, `Caught ${rec} of the ${tgt} passes thrown to him (${pctOf(rec, tgt)}${all?.[1] ? `; the average ${POS_NAME[p.pos].toLowerCase()} catches ${pctOf(...all)}` : ''}). Deep throws are caught less often, so a deep threat's number runs lower.`];
+};
 const tierCut = {};
 for (const kind of ['week', 'season']) for (const pos of Object.keys(FA_SLOT)) {
   const vals = tierPool.filter(p => p.pos === pos).map(kind === 'week' ? weekValue : seasonValue).sort((a, b) => b - a), k = startersAt(pos);
@@ -2765,6 +2783,7 @@ function render(p) {
       '<div><b>' + e(p.rank) + '</b><small>' + e(p.rankWhy || 'rank at his position') + '</small></div>' +
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
+    (p.hit ? '<div class="group">How often he connects</div><p class="why" style="margin:0">' + e(p.hit) + '</p>' : '') +
     (p.sources ? '<div class="group">Where "expected" comes from</div><p class="why" style="margin:0">' + e(p.sources) + '</p>' : '') +
     (p.notes.length ? '<div class="group">What&rsquo;s affecting him</div>' + p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') : '') +
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
@@ -4059,7 +4078,7 @@ for (const [id, p] of shown) {
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? '#' + p.rank : '-', rankWhy: p.rank ? rankWhy(p) + ' (this season)' : '', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
-    trend, sources, games, now, plays: plays.get(id) ?? [], notes: notes(p),
+    trend, hit: hitLine(p)?.[1] ?? '', sources, games, now, plays: plays.get(id) ?? [], notes: notes(p),
     rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye}, already done. He plays every week from now on.` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}. He won't play that week, so you'll need someone else.`,
   };
