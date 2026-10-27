@@ -1990,6 +1990,7 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
 .gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
 .gc-wrap{position:relative}.gc-crowd{opacity:0;animation:gcCrowd .78s step-end infinite}@keyframes gcCrowd{0%{opacity:1}16.67%{opacity:0}}@media (prefers-reduced-motion:reduce){.gc-crowd{animation:none}}@keyframes gcHop{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}.gc-hop{animation:gcHop .55s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.gc-hop{animation:none}}.gc-replay{position:absolute;right:8px;bottom:8px;padding:5px 10px;border:0;border-radius:999px;background:#000a;color:#fff;font:600 11px system-ui,sans-serif;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.gc-pager{left:8px;right:auto;display:flex;align-items:center;gap:4px;padding:2px 4px;font-variant-numeric:tabular-nums}.gc-pager button{border:0;background:none;color:inherit;font:inherit;font-size:20px;line-height:1;padding:6px 14px;cursor:pointer}.gc-pager button:disabled{opacity:.3;cursor:default}
 html.term .gc-replay{border-radius:0;font-family:inherit;text-transform:uppercase;letter-spacing:.08em}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
 html.term .gc-fs{border-radius:0}
@@ -2638,7 +2639,7 @@ function render(p) {
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
-    (LD?.field?.[LD.games?.[p.pro]?.[3]] ? '<button type="button" class="btn" data-watch>Watch his game live</button><div id="gc" hidden></div>' : '') +
+    (LD?.field?.[LD.games?.[p.pro]?.[3]] || LD?.games?.[p.pro]?.[0] === 'post' ? (l => '<button type="button" class="btn" data-watch data-label="' + l + '">' + l + '</button><div id="gc" hidden></div>')(LD.field?.[LD.games[p.pro][3]] ? 'Watch his game live' : 'Watch his plays') : '') +
     (p.liveNews?.length ? '<div class="group">Just in</div>' + p.liveNews.map(x => '<p class="why" style="margin:4px 0 0">' + e(x.h) + '</p>').join('') : '') +
     (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
       (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
@@ -2842,19 +2843,54 @@ function gcMissedTd(gid, after) {
   gcTd = { gid, after };
   fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=' + gid).then(r => r.json()).then(d => { if (gcTd?.gid === gid) { gcTd.F = gcTdPlay(d); drawGc(); } }).catch(() => {});
 }
+// A finished game's summary from ESPN, fetched once
+const GCP = {}, gcIdx = {};
+function gcGame(gid) {
+  if (!GCP[gid]) GCP[gid] = fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=' + gid).then(r => r.json()).catch(() => ({})).then(d => { GCP[gid] = d; drawGc(); });
+  return GCP[gid] instanceof Promise ? null : GCP[gid];
+}
+// Every play in a game summary that names this player (his short name as the roster spells it, "S.Barkley" or "A.St.Brown"), oldest first, leaving out plays called back by a penalty, each
+// as a Watch view: the score after it, where it started and ended in yards from the playing team's own goal line
+function gcPlays(d, short) {
+  const c = d.header?.competitions?.[0];
+  if (!c || !short) return [];
+  const tm = ha => { const x = c.competitors.find(y => y.homeAway === ha); return [x.team.id, x.team.abbreviation, 0, x.team.color, x.team.alternateColor, x.team.name]; };
+  const hit = s => { const t = String(s ?? '').replace(/[.] (?=[A-Z])/g, '.').replace(/ (Jr[.]|Sr[.]|III|II|IV)(?![a-z])/g, '$1');
+    for (let i = t.indexOf(short); i >= 0; i = t.indexOf(short, i + 1)) if (!/[A-Za-z]/.test(t[i - 1] || '') && !/[a-z]/.test(t[i + short.length] || '')) return true;
+    return false; };
+  return (d.drives?.previous ?? []).flatMap(x => x.plays ?? []).filter(pl => pl.start?.yardsToEndzone != null && pl.end?.yardsToEndzone != null && !/No Play/i.test(pl.text) && hit(pl.text)).map(pl => {
+    const t = String(pl.start.team?.id ?? ''), teams = [tm('away'), tm('home')], type = pl.type?.text ?? '';
+    // after a turnover the end is counted toward the other team's end zone
+    const end = pl.end.team?.id == null || String(pl.end.team.id) === t ? 100 - pl.end.yardsToEndzone : pl.end.yardsToEndzone;
+    teams[0][2] = +pl.awayScore || 0; teams[1][2] = +pl.homeScore || 0;
+    return { teams, down: '', spot: pl.end.possessionText ?? '', poss: t, rz: false, dist: null, from: '', drive: '', leaders: [], last: pl.text.trim(),
+      when: 'Q' + (pl.period?.number ?? '') + ' ' + (pl.clock?.displayValue ?? ''), play: [100 - pl.start.yardsToEndzone, end, t, type, /touchdown/i.test(type)] };
+  });
+}
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
   if (!box || box.hidden || !p) return;
   const g = LD?.games?.[p.pro];
-  let F = LD?.field?.[g?.[3]];
+  let F = LD?.field?.[g?.[3]], past = null;
+  // the game is over: step through his plays, starting at his last
+  if (!F && g?.[0] === 'post') {
+    const d = gcGame(g[3]);
+    if (!d) { if (box.gcHtml !== 'load') box.innerHTML = '<p class="why">Loading his plays&hellip;</p>'; box.gcHtml = 'load'; return; }
+    const R = roster(p.pro), short = Object.keys(R).find(k => R[k].displayName === p.name) ?? (p.name[0] + '.' + p.name.split(' ').slice(1).join('')), list = gcPlays(d, short), k = g[3] + '|' + p.id;
+    if (!list.length) { box.innerHTML = box.gcHtml = '<p class="why">No plays with him in this game.</p>'; return; }
+    gcIdx[k] = Math.max(0, Math.min(list.length - 1, gcIdx[k] ?? list.length - 1));
+    F = list[gcIdx[k]]; past = [gcIdx[k], list.length];
+  }
   if (!F) { box.innerHTML = box.gcHtml = '<p class="why">The game is over.</p>'; return; }
   // the score jumped by a touchdown but the last play is already the extra point or the kickoff: show the touchdown
   // until the next play comes in
   const gid = g[3], pts = F.teams[0][2] + F.teams[1][2];
-  if (gcPts[gid] != null && pts - gcPts[gid] >= 6 && !F.play?.[4]) gcMissedTd(gid, F.last);
-  gcPts[gid] = pts;
-  if (gcTd && (gcTd.gid !== gid || gcTd.after !== F.last)) gcTd = null;
-  if (gcTd?.F) F = { ...F, ...gcTd.F };
+  if (!past) {
+    if (gcPts[gid] != null && pts - gcPts[gid] >= 6 && !F.play?.[4]) gcMissedTd(gid, F.last);
+    gcPts[gid] = pts;
+    if (gcTd && (gcTd.gid !== gid || gcTd.after !== F.last)) gcTd = null;
+    if (gcTd?.F) F = { ...F, ...gcTd.F };
+  }
   const [A, H] = F.teams, ids = [A[0], H[0]];
   // yards from the left goal line (the away team's), from "DAL 13" or "50"
   const at = s => { const m = /([A-Z]+)\\s+(\\d+)/.exec(s); return !m ? 50 : m[1] === A[1] ? +m[2] : 100 - +m[2]; };
@@ -2865,8 +2901,9 @@ function drawGc() {
   const html = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
     '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(-5, Math.min(105, x))) +
-      (F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') + '</div>' +
-    (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
+      (F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') +
+      (past ? '<div class="gc-replay gc-pager"><button type="button" data-gcstep="-1" aria-label="Earlier play"' + (past[0] ? '' : ' disabled') + '>&lsaquo;</button><span>' + (past[0] + 1) + ' / ' + past[1] + '</span><button type="button" data-gcstep="1" aria-label="Later play"' + (past[0] < past[1] - 1 ? '' : ' disabled') + '>&rsaquo;</button></div>' : '') + '</div>' +
+    (F.last ? '<p class="why" style="margin:10px 0 0"><b>' + (past ? e(F.when) : 'Last play') + ':</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
@@ -2877,9 +2914,11 @@ function drawGc() {
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-replay]')) { gcAt = Date.now(); return gcAnimate(); }
+  const st = ev.target.closest('[data-gcstep]');
+  if (st) { const p = P[sheet.dataset.pid], k = LD.games[p.pro][3] + '|' + p.id; gcIdx[k] += +st.dataset.gcstep; return drawGc(); }
   const b = ev.target.closest('[data-watch]'), box = document.getElementById('gc');
   if (!b || !box) return;
-  box.hidden = !box.hidden; b.textContent = box.hidden ? 'Watch his game live' : 'Hide the game';
+  box.hidden = !box.hidden; b.textContent = box.hidden ? b.dataset.label : 'Hide the game';
   drawGc();
 });
 let closeTimer;

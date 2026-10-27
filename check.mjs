@@ -244,6 +244,21 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert.deepEqual(gcTdPlay(d), { last: 'TD', play: [82, 100, '6', 'Passing Touchdown', true] }, 'from the 18 to the end zone, newest touchdown only');
   assert.equal(gcTdPlay({ scoringPlays: [] }), null);
 }
+// a finished game: every play naming him, by short name with spaces ignored, not a longer name that starts the same
+{
+  const gcPlays = new Function(cut('function gcPlays(d, short) {', "/touchdown/i.test(type)] };\n  });\n}") + '\nreturn gcPlays;')();
+  const pl = (text, s, e, et = '21', type = 'Rush') => ({ text, type: { text: type }, awayScore: 3, homeScore: 7, period: { number: 2 }, clock: { displayValue: '4:10' },
+    start: { yardsToEndzone: s, team: { id: '21' } }, end: { yardsToEndzone: e, possessionText: 'X', team: { id: et } } });
+  const d = { header: { competitions: [{ competitors: [{ homeAway: 'home', team: { id: '21', abbreviation: 'PHI' } }, { homeAway: 'away', team: { id: '6', abbreviation: 'DAL' } }] }] },
+    drives: { previous: [{ plays: [pl('S.Barkley left end for 5 yards.', 75, 70), pl('S.Barkleyson runs.', 70, 60), pl('S.Barkley right end for 5 yards. PENALTY on X, Holding - No Play.', 70, 85), pl('M.Harrison Jr. left end for 2 yards.', 60, 58), pl('J.Hurts pass to A.St. Brown, INTERCEPTED by X.', 60, 30, '6', 'Pass Interception Return'),
+      pl('S.Barkley right end for 8 yards, TOUCHDOWN.', 8, 0, '21', 'Rushing Touchdown')] }] } };
+  const r = gcPlays(d, 'S.Barkley');
+  assert.deepEqual(r.map(x => x.play), [[25, 30, '21', 'Rush', false], [92, 100, '21', 'Rushing Touchdown', true]], JSON.stringify(r.map(x => x.play)));
+  assert.deepEqual(r[0].teams.map(t => [t[1], t[2]]), [['DAL', 3], ['PHI', 7]]);
+  assert.equal(r[0].when, 'Q2 4:10');
+  assert.equal(gcPlays(d, 'M.HarrisonJr.').length, 1, 'suffix joined like the roster spells it');
+  assert.deepEqual(gcPlays(d, 'A.St.Brown').map(x => x.play[1]), [30], 'after a pick the end counts toward the other end zone');
+}
 
 // usage: last 3 games vs before, as a share of his team's targets; red zone needs 10+ team chances
 {
