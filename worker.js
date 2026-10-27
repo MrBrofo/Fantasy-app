@@ -123,6 +123,11 @@ async function ask(req, env) {
   try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
   if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 250000) return reply(400, { error: 'Bad question' });
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  // what this question cost, from the tokens each call used ($ per million: input, output, cache write, cache read), so
+  // the page can take it off the credits it shows. ponytail: a fallback model's answer is priced as Opus
+  const PRICE = { opus: [4, 20, 5, 0.2], haiku: [0.1, 0.5, 0.125, 0.01] };
+  let cost = 0;
+  const bill = (which, u) => { const [i, o, w, rd] = PRICE[which]; cost += ((u?.input_tokens ?? 0) * i + (u?.output_tokens ?? 0) * o + (u?.cache_creation_input_tokens ?? 0) * w + (u?.cache_read_input_tokens ?? 0) * rd) / 1e6; };
   // Quick = Haiku (a tiny fraction of the price, fast), Smart = Opus. Auto: Haiku reads just the question (a fraction
   // of a cent, about a second) and sends anything that asks me to decide something to Opus; only plain lookups and
   // meanings go to Haiku, and anything unclear goes to Opus
@@ -152,6 +157,7 @@ async function ask(req, env) {
       ].join('\n'),
       messages: [{ role: 'user', content: m.q.slice(0, 2000) }],
     }).catch(() => null);
+    bill('haiku', c?.usage);
     smart = !/EASY/.test(c?.content.filter(b => b.type === 'text').map(b => b.text).join('') ?? '');
   }
   // Opus gets fallbacks: if it declines by mistake (a false alarm from its safety checks), the API answers with another
@@ -184,6 +190,7 @@ async function ask(req, env) {
       ...(tools ? { tools, tool_choice: round < 3 ? { type: 'auto' } : { type: 'none' } } : {}),
       messages: msgs,
     });
+    bill(smart ? 'opus' : 'haiku', r.usage);
     if (r.stop_reason !== 'tool_use') break;
     msgs.push({ role: 'assistant', content: r.content });
     msgs.push({ role: 'user', content: r.content.filter(b => b.type === 'tool_use').map(b => ({
@@ -191,8 +198,8 @@ async function ask(req, env) {
       content: (Array.isArray(b.input?.drawers) ? b.input.drawers : []).map(d => drawers[d] ?? `No drawer called "${d}".`).join('\n\n') || 'No drawer named.',
     })) });
   }
-  if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
-  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Opus' : 'Haiku' });
+  if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.', cost });
+  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Opus' : 'Haiku', cost });
 }
 
 export default {

@@ -2327,7 +2327,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <section id="changes" hidden><h2>What changed</h2>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
 
-<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b></div>
+<section id="ask"><div class="card ask"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>Ask Claude about your team</b><button type="button" id="askbal" class="linkbtn" style="font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums">Set credits</button></div>
 <textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="width:100%;min-height:72px;resize:vertical;margin-top:10px"></textarea>
 <div class="seg" id="askmode" style="margin-top:10px"><button type="button" data-mode="auto">Auto</button><button type="button" data-mode="quick">Quick</button><button type="button" data-mode="smart">Smart</button></div>
 
@@ -2612,7 +2612,7 @@ function load() {
   location.replace(fresh() + location.hash);
 }
 const verdictText = ${verdictText.toString()};
-const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg|dict|bg-)/;
+const KEEP = /^(askbal|sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg|dict|bg-)/;
 const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || n.classList?.contains('blob') || changedIn.has(n));
 async function swap(html) {
   let page = html;
@@ -3369,6 +3369,19 @@ try { askMode = ASK_TIP[localStorage.getItem('askMode')] ? localStorage.getItem(
 const askModeShow = () => { document.querySelectorAll('#askmode button').forEach(x => x.classList.toggle('on', x.dataset.mode === askMode)); };
 document.getElementById('askmode').onclick = ev => { const x = ev.target.closest('[data-mode]'); if (!x) return; askMode = x.dataset.mode; try { localStorage.setItem('askMode', askMode); } catch {} askModeShow(); };
 askModeShow();
+// credits left: the API can't tell the page the balance, so it's typed in once (from console.anthropic.com > Billing)
+// and each answer's cost, worked out by the Worker from the tokens it used, comes off it. Saved on this phone only
+const money = x => x < 0.995 ? (x * 100).toFixed(x < 0.1 ? 2 : 1) + '¢' : '$' + x.toFixed(2);
+const balGet = () => { try { const b = parseFloat(localStorage.getItem('askBal')); return isNaN(b) ? null : b; } catch { return null; } };
+const balShow = spent => { const b = balGet(); document.getElementById('askbal').textContent = (b == null ? 'Set credits' : '$' + b.toFixed(2) + ' left') + (spent != null ? ' (−' + money(spent) + ')' : ''); };
+document.getElementById('askbal').onclick = () => {
+  const v = prompt('How much Anthropic credit is left? (console.anthropic.com, Billing)', balGet()?.toFixed(2) ?? '');
+  if (v == null) return;
+  const b = parseFloat(v.replace('$', ''));
+  try { isNaN(b) ? localStorage.removeItem('askBal') : localStorage.setItem('askBal', String(b)); } catch {}
+  balShow();
+};
+balShow();
 // Ask: the Worker asks Claude (paid from the Anthropic credits) and the answer shows here. No Worker: open claude.ai
 document.getElementById('askbtn').onclick = async () => {
   const b = document.getElementById('askbtn'), out = document.getElementById('askout'), facts = askFacts();
@@ -3377,6 +3390,7 @@ document.getElementById('askbtn').onclick = async () => {
   try {
     const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode }) });
     const d = await r.json().catch(() => ({}));
+    if (typeof d.cost === 'number') { const b = balGet(); if (b != null) try { localStorage.setItem('askBal', String(b - d.cost)); } catch {} balShow(d.cost); }
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
     out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '');
   } catch (err) { out.innerHTML = '<p class="tag">That didn&#39;t work (' + e(err.message) + '). Use Open in Claude below instead.</p>'; }
