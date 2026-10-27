@@ -1537,7 +1537,9 @@ for (const [k, name, pos, team] of rosSaved.usual ?? []) {
   if (!u || u.snapBefore == null || u.shareBefore == null) continue;
   const snapUp = u.snapNow - u.snapBefore, shareUp = u.shareNow - u.shareBefore;
   if (!((snapUp >= 15 && u.snapNow >= 50) || (shareUp >= 8 && u.shareNow >= (pos === 'RB' ? 35 : 18)))) continue;
-  breakouts.push({ k, name, pos, team, u, snapUp, shareUp, recent: avgOf(recentPts(k)), size: Math.max(0, snapUp) / 15 + Math.max(0, shareUp) / 8 });
+  // a teammate at his spot who's out is the usual reason the work moved to him
+  const cause = (rosSaved.usual ?? []).filter(([k2, , p2, t2]) => t2 === team && p2 === pos && k2 !== k && statusOf(k2).out).map(x => x[1]);
+  breakouts.push({ k, name, pos, team, u, cause, snapUp, shareUp, recent: avgOf(recentPts(k)), size: Math.max(0, snapUp) / 15 + Math.max(0, shareUp) / 8 });
 }
 breakouts.sort((a, b) => b.size - a.size).splice(6);
 const breakRows = await freeRows(breakouts.map(b => b.k));
@@ -1605,6 +1607,8 @@ todo.splice(firstLater < 0 ? todo.length : firstLater, 0, ...fillIns.filter(f =>
 for (const f of fillIns.filter(f => f.gain >= 0.5)) alerts.push([`fillin:${week}:${f.k}`, `Grab ${f.name} (${f.team} ${f.pos})`,
   `${f.starter.name} ${f.word}, so ${f.name} should start${f.long ? ' for a while' : ' this week'}. Nobody in your league has him. He'd add about ${n(f.gain)} a week to your lineup. ${f.p?.wa ? 'On waivers: put in a claim.' : 'Add him before someone else does.'}`, true]);
 // a free player with no ESPN row yet still gets a card: name, team and position
+// "Pick him up": opens his page at Add him, where you choose who to drop (best choice first)
+const pickBtn = p => (MOVE_URL && p && !locked(p) && !rosteredBy.has(pkey(p.name, p.pos, p.team)) ? `<button type="button" class="btn" data-pickup="${p.id}">Pick him up</button>` : '');
 const freeCard = (p, name, team, pos) => (p ? player(p) : `<div class="player"><span class="pic" data-i="${initials(name)}"></span><div class="who"><div class="name">${esc(name)}</div><div class="meta"><span class="pos pos-${pos}">${pos}</span> ${esc(team)}</div></div></div>`);
 
 // Tapping a player opens his detail sheet; every player shown is remembered so the sheet data
@@ -1726,6 +1730,10 @@ const fixedProj = best.total;
 // projected score after pending claims and the to-do list (best lineup from that roster)
 const planProj = weekScore(baseRoster) + weekPlanGain;
 const lineupRows = [...me.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
+// the matchup line under the scores: 'final' = all games over, 'decided' = ESPN gives 0% or 100%
+const verdictText = (win, by, how) => how === 'final' ? `<b style="color:var(--${win ? 'good' : 'bad'})">You ${win ? 'won' : 'lost'}</b> by ${by} points. Final.`
+  : how === 'decided' ? `<b style="color:var(--${win ? 'good' : 'bad'})">${win ? 'Locked up' : 'Out of reach'}:</b> you'll ${win ? 'win' : 'lose'} by about ${by} points. ESPN gives ${win ? 'them' : 'you'} no chance with the games left.`
+  : `<b style="color:var(--${win ? 'good' : 'bad'})">You're expected to ${win ? 'win' : 'lose'}</b> by ${by} points.`;
 const levelName = { urgent: 'Do now', week: 'This week', later: 'Plan ahead' };
 
 // Plain status words, shared by the "what changed" snapshot and the Claude facts
@@ -1789,7 +1797,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);width:min(560px,calc(100%
 /* 5 tabs that all fit: icon over label, like a phone app */
 nav a{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 0 6px;border-radius:20px;color:var(--muted);text-decoration:none;font-weight:600;font-size:11px;line-height:14px;transition:background .2s,color .2s,transform .1s ease-out}
 nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-nav{touch-action:none}
+nav{touch-action:none}nav a,#fab{-webkit-touch-callout:none}
 nav a.on{color:var(--accent);background:rgba(198,244,50,.1)}
 nav a.press{background:rgba(255,255,255,.14);color:var(--fg);transform:scale(1.1)}
 nav .dot{position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--bad);color:#fff;font-size:10px;line-height:16px;text-align:center}
@@ -1943,14 +1951,20 @@ ${opp ? (() => {
   const live = isLive;
   const [a, b] = live ? [mySide.totalProjectedPointsLive, oppSide.totalProjectedPointsLive] : [myProj, oppProj];
   const wp = winPct;
+  // all NFL games this week over: the score is the real result
+  const done = live && Object.values(gameNow).length && Object.values(gameNow).every(g => g.state === 'post');
   // lv-*: the parts the page updates with live scores from the Worker
   return `<div class="match"><h2>This week vs ${esc(opp.name)}<span class="live" id="lv-badge"${live ? '' : ' hidden'}>LIVE</span></h2>
   <div class="wp"><b id="lv-wp" style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag" id="lv-wpsrc">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
-  <div class="tag" id="lv-score" style="margin-bottom:8px"${live ? '' : ' hidden'}>Score right now: <b>${n(mySide.totalPointsLive ?? 0)}</b> to <b>${n(oppSide.totalPointsLive ?? 0)}</b>. Final guess below.</div>
+  <div class="tag" id="lv-score" style="margin-bottom:8px"${live ? '' : ' hidden'}>${done ? 'Final score' : 'Score right now'}: <b>${n(mySide.totalPointsLive ?? 0)}</b> to <b>${n(oppSide.totalPointsLive ?? 0)}</b>.${done ? '' : ' Final guess below.'}</div>
   <div class="vs">
   <div class="t">You</div><div class="p" id="lv-a" data-base="${n(a)}">${n(a)}</div><div class="bar"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
   <div class="t">${esc(opp.name)}</div><div class="p" id="lv-b">${n(b)}</div><div class="bar"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
-</div><div class="verdict" id="lv-verdict">${a >= b ? `<b style="color:var(--good)">You're expected to win</b> by ${n((Math.round(a * 10) - Math.round(b * 10)) / 10)} points.` : `<b style="color:var(--bad)">You're expected to lose</b> by ${n((Math.round(b * 10) - Math.round(a * 10)) / 10)} points.`}
+</div><div class="verdict" id="lv-verdict">${(() => {
+  // 0% or 100% from ESPN: decided, just not official yet
+  const [x, y] = done ? [mySide.totalPointsLive ?? 0, oppSide.totalPointsLive ?? 0] : [a, b], by = n(Math.abs(Math.round(x * 10) - Math.round(y * 10)) / 10);
+  return verdictText(x >= y, by, done ? 'final' : live && (wp <= 0 || wp >= 100) ? 'decided' : '');
+})()}
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
 <details class="board" style="margin-top:10px"><summary><b>Whole league this week:</b> you're ${ordinal(myBoardRank)} of ${board.length}, ${below.length} team${below.length === 1 ? '' : 's'} below you. <b style="color:${lowestPct >= 15 ? 'var(--bad)' : lowestPct >= 5 ? 'var(--warn)' : 'var(--good)'}">${lowestPct < 1 ? 'Under 1' : lowestPct}% chance</b> you're the lowest score.</summary>
@@ -2031,11 +2045,12 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
 ${benchUps.length ? `<details class="fold"><summary class="group">Better backups available (${benchUps.length})</summary><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
   <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}${esc(alsoText(x.alts, rate))}</p>${info([x.add, x.drop, ...x.alts])}
   ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div></details>` : ''}
-${trending.length ? `<details class="fold"><summary class="group">Trending in other leagues (${Math.min(5, trending.length)})</summary><div class="list">${trending.slice(0, 5).map(p => `<div class="card row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>`).join('')}</div>
+${trending.length ? `<details class="fold"><summary class="group">Trending in other leagues (${Math.min(5, trending.length)})</summary><div class="list">${trending.slice(0, 5).map(p => `<div class="card"><div class="row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>${pickBtn(p)}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p></details>` : ''}
 ${breakouts.length ? `<details class="fold"><summary class="group">Breakout watch: bigger role (${breakouts.length})</summary><p class="sub">His playing time or share of his team's targets/carries jumped over his last 3 games. Role changes come before the points, and the experts' numbers follow the points, so these players are cheapest right now. Good use of a spare bench spot.</p><div class="list">${breakouts.map(b => `<div class="card"><div class="row">${freeCard(b.p, b.name, b.team, b.pos)}${b.recent != null ? big(b.recent, 'per game, last 3', null, b.p ?? null, 'season') : ''}</div>
-  <p class="why">On the field for <b>${b.u.snapNow}%</b> of plays (was ${b.u.snapBefore}%), <b>${b.u.shareNow}%</b> of his team's ${b.u.kind} (was ${b.u.shareBefore}%).${b.p ? ` ${b.p.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}` : ' Search his name in the ESPN app to add him.'}</p>
-  ${MOVE_URL && addMove(b.p, roomFor()) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...addMove(b.p, roomFor()), week: league.scoringPeriodId }))}">${esc(addMove(b.p, roomFor()).label)}</button>` : ''}</div>`).join('')}</div></details>` : ''}
+  <p class="why"><b>Why:</b> his team is using him a lot more. ${b.cause.length ? `${esc(b.cause.join(' and '))} ${b.cause.length > 1 ? 'are' : 'is'} out, so more of the work goes to him. ` : ''}In his last 3 games he was on the field for <b>${b.u.snapNow}%</b> of his team's plays (${b.u.snapBefore}% before that), and <b>${b.u.shareNow}%</b> of his team's ${b.u.kind === 'carries' ? 'runs went to him' : 'passes were thrown to him'} (${b.u.shareBefore}% before).</p>
+  <p class="why"><b>When:</b> more playing time usually turns into more points this week or next. Most managers only notice once the big games show up, so right now he's easy to get.${b.p ? ` ${b.p.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}` : ' Search his name in the ESPN app to add him.'}</p>
+  ${pickBtn(b.p)}</div>`).join('')}</div></details>` : ''}
 ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><div class="list">${fills.map(f => `<div class="card"><div class="row">${player(f.add)}${big(rate(f.add), 'per game, rest of season', null, f.add, 'season')}</div>
   <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${esc(byeText(f))}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the next two weeks covering your starters' bye weeks.` : ' A backup for injuries.'}</p>${info([f.add, ...f.byeFor, ...f.alts])}
   ${MOVE_URL && !locked(f.add) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...fillMove(f), week: league.scoringPeriodId }))}">${f.add.wa ? 'Put in a claim for him on ESPN' : 'Add him on ESPN'}</button>` : ''}</div>`).join('')}</div>` : ''}
@@ -2201,7 +2216,9 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}${runMin != null ? `, starting as early as ${clock(runMin)} Pacific (get claims in before then)` : ''}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
-</dl></div></section>
+</dl></div>
+<div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><p class="tag" style="margin:0">Every underlined word on this site, A to Z.</p><dl id="dict"></dl></div>
+<details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
 
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
@@ -2252,7 +2269,8 @@ function load() {
   try { sessionStorage.setItem('scroll', scrollY); } catch {}
   location.replace(fresh() + location.hash);
 }
-const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg)/;
+const verdictText = ${verdictText.toString()};
+const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg|dict)/;
 const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || changedIn.has(n));
 async function swap(html) {
   let page = html;
@@ -2335,12 +2353,13 @@ async function liveTick() {
     if ($('lv-a') && !(d.me?.pts > 0 || d.opp?.pts > 0)) {
       const a = +$('lv-a').dataset.base + shift, b = +$('lv-b').textContent, top = Math.max(a, b, 1);
       $('lv-a').textContent = f(a); $('lv-abar').style.width = Math.min(100, a / top * 100) + '%'; $('lv-bbar').style.width = Math.min(100, b / top * 100) + '%';
-      $('lv-verdict').innerHTML = a >= b ? '<b style="color:var(--good)">Expected to win</b> by ' + f(a - b) + ' points.' : '<b style="color:var(--bad)">Expected to lose</b> by ' + f(b - a) + ' points.';
+      $('lv-verdict').innerHTML = verdictText(a >= b, f(Math.abs(a - b)), '');
     }
     if (!d.me || !d.opp || !$('lv-wp') || !(d.me.pts > 0 || d.opp.pts > 0)) return;
     $('lv-badge').hidden = false;
     $('lv-score').hidden = false;
-    $('lv-score').innerHTML = 'Score right now: <b>' + f(d.me.pts) + '</b> to <b>' + f(d.opp.pts) + '</b>. Final guess below.';
+    const done = Object.keys(d.games || {}).length && Object.values(d.games).every(g => g[0] === 'post');
+    $('lv-score').innerHTML = done ? 'Final score: <b>' + f(d.me.pts) + '</b> to <b>' + f(d.opp.pts) + '</b>.' : 'Score right now: <b>' + f(d.me.pts) + '</b> to <b>' + f(d.opp.pts) + '</b>. Final guess below.';
     if (d.me.win != null) {
       const wp = Math.round(d.me.win * 100);
       $('lv-wp').textContent = wp + '%';
@@ -2351,7 +2370,8 @@ async function liveTick() {
       const a = d.me.proj, b = d.opp.proj, top = Math.max(a, b, 1);
       $('lv-a').textContent = f(a); $('lv-b').textContent = f(b);
       $('lv-abar').style.width = Math.min(100, a / top * 100) + '%'; $('lv-bbar').style.width = Math.min(100, b / top * 100) + '%';
-      $('lv-verdict').innerHTML = a >= b ? '<b style="color:var(--good)">Expected to win</b> by ' + f(a - b) + ' points.' : '<b style="color:var(--bad)">Expected to lose</b> by ' + f(b - a) + ' points.';
+      const wp = d.me.win == null ? 50 : Math.round(d.me.win * 100), x = done ? d.me.pts : a, y = done ? d.opp.pts : b;
+      $('lv-verdict').innerHTML = verdictText(x >= y, f(Math.abs(x - y)), done ? 'final' : wp <= 0 || wp >= 100 ? 'decided' : '');
     }
   } catch {}
 }
@@ -2643,7 +2663,73 @@ const GLOSS = [
   ['game script', 'Game script', 'How the score shapes the game plan: teams far ahead run more, teams far behind pass more.'],
 ];
 const GLOSS_RE = new RegExp('\\\\b(' + GLOSS.map(g => g[0]).join('|') + ')\\\\b', 'gi'), GLOSS_ONE = GLOSS.map(g => [new RegExp('^(?:' + g[0] + ')$', 'i'), g[1], g[2]]);
-const GLOSS_SKIP = 'a,button,summary,input,textarea,select,script,style,label,nav,svg,.gl,[data-pid],#gloss,#sheet .sheet-x';
+const GLOSS_SKIP = 'a,button,summary,input,textarea,select,script,style,label,nav,svg,.gl,[data-pid],#gloss,#sheet .sheet-x,#dict,#dict2';
+// Words the site doesn't use, for the dictionary in How it works
+const MORE_WORDS = [
+  ["Down", "One try to move the ball. The offense gets 4 downs to go 10 yards. Make it and they get a fresh set of 4."],
+  ["First down", "Gaining the 10 yards. The offense gets a new set of 4 downs."],
+  ["Line of scrimmage", "The imaginary line where each play starts, at the spot of the ball."],
+  ["End zone", "The 10-yard area at each end of the field. Get the ball in there for a touchdown."],
+  ["Drive", "One stretch of plays where a team keeps the ball, until it scores, punts or turns it over."],
+  ["Possession", "Which team has the ball."],
+  ["Huddle", "The quick meeting before a play where the offense hears the play call."],
+  ["Audible", "The quarterback changes the play at the line after seeing the defense."],
+  ["Shotgun", "The quarterback stands a few yards back to take the snap instead of right behind the center."],
+  ["Play action", "The quarterback fakes a handoff, then throws."],
+  ["Pocket", "The space the blockers make around the quarterback so he has time to throw."],
+  ["Scramble", "The quarterback runs around, or runs with the ball himself, when nobody is open."],
+  ["Completion", "A pass that gets caught. An incompletion is one that hits the ground."],
+  ["Check-down", "A short, safe pass, usually to a running back, when the long ones are covered."],
+  ["Route", "The path a receiver runs to get open."],
+  ["Slot receiver", "A receiver who lines up close to the middle of the field. Catches lots of short passes."],
+  ["Deep threat", "A fast receiver who catches long passes. Big games, but up and down week to week."],
+  ["Hail Mary", "A long, desperate throw into the end zone at the end of a half."],
+  ["Blitz", "Extra defenders rush the quarterback instead of covering receivers."],
+  ["Pass rush", "Defenders trying to reach the quarterback before he throws."],
+  ["Coverage", "How defenders guard the receivers: man-to-man (each takes one player) or zone (each guards an area)."],
+  ["Tackle for loss", "Tackling the ball carrier behind the line of scrimmage."],
+  ["Pick-six", "An interception returned for a touchdown. Big points for a fantasy defense."],
+  ["Strip sack", "A sack where the quarterback also loses the ball."],
+  ["Shutout", "Holding the other team to 0 points. The best possible day for a fantasy defense."],
+  ["Points allowed", "How many points a defense lets the other team score. Fewer means more fantasy points for that defense."],
+  ["Special teams", "The players on the field for kicks and punts."],
+  ["Kick return / punt return", "Catching the other team's kick and running it back. A return touchdown scores for your D/ST."],
+  ["Touchback", "A kick that goes into the end zone and isn't run out. The ball starts at the 25-yard line."],
+  ["Fair catch", "The returner waves his hand: he catches the punt but can't be hit, and can't run with it."],
+  ["Onside kick", "A short kickoff the kicking team tries to get back. Used when they're losing late."],
+  ["Penalty", "A rule broken, costing yards. Flags thrown by the referees mark them."],
+  ["Holding", "A blocker grabbing a defender. 10-yard penalty."],
+  ["Pass interference", "Grabbing or blocking a player before the ball arrives. Often a big penalty."],
+  ["False start", "An offensive player moves before the snap. 5-yard penalty."],
+  ["Offside", "A defender is past the line when the play starts. 5-yard penalty."],
+  ["Two-minute warning", "An automatic timeout with 2 minutes left in each half. Teams hurry after it."],
+  ["Overtime", "Extra time when the game is tied after 4 quarters."],
+  ["Garbage time", "The end of a game that's already decided. Losing teams pile up stats that count the same in fantasy."],
+  ["Workhorse back", "A running back who gets nearly all his team's carries. Rare and valuable."],
+  ["Committee", "When a team splits carries among 2 or 3 running backs. Hurts each one's points."],
+  ["Goal-line back", "The running back a team uses right near the end zone. Gets touchdowns without many yards."],
+  ["Vulture", "A player who steals a touchdown near the goal line from the main guy."],
+  ["Handcuff", "The backup to your running back. If your starter gets hurt, the handcuff takes his job."],
+  ["Sleeper", "A player who could score a lot more than people expect."],
+  ["Bust", "A player who scores a lot less than expected."],
+  ["Boom or bust", "A player who either has a huge game or almost nothing, with little in between."],
+  ["Streaming", "Picking up a player for just one week because of an easy matchup, then dropping him. Common for defenses and kickers."],
+  ["Stack", "Starting a quarterback and his own receiver. When one scores, the other does too."],
+  ["Lineup lock", "A player locks when his game starts. You can't move him in or out after that."],
+  ["Thursday / Sunday / Monday night", "When NFL games are played. Most are Sunday; one game on Thursday night and Monday night."],
+  ["Trade deadline", "The last day trades are allowed in your league."],
+  ["Waiver priority", "Your place in line for claims. Same as your waiver number on this site."],
+  ["FAAB", "Free agent budget: some leagues bid fake money on free players. Your league uses a waiver order instead."],
+  ["Snake draft", "Each team picks a player in turn, and the order reverses every round."],
+  ["ADP", "Average draft position: where a player usually gets picked in drafts."],
+  ["Keeper / dynasty league", "Leagues where you keep some or all players from one season to the next."],
+];
+// the dictionary: every glossary word, then the extra ones, A to Z
+function fillDict() {
+  const dl = (id, rows) => { const el = document.getElementById(id); if (el && !el.children.length) el.innerHTML = rows.slice().sort((a, b) => a[0].localeCompare(b[0])).map(r => '<dt>' + e(r[0]) + '</dt><dd>' + e(r[1]) + '</dd>').join(''); };
+  dl('dict', GLOSS.map(g => [g[1], g[2]])); dl('dict2', MORE_WORDS);
+}
+fillDict();
 function gloss(root) {
   const found = [], w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: t => (GLOSS_RE.lastIndex = 0, GLOSS_RE.test(t.data) && !t.parentElement?.closest(GLOSS_SKIP) ? 1 : 2) });
   for (let t; (t = w.nextNode());) found.push(t);
@@ -2771,13 +2857,17 @@ const photo = p => p.id < 0 || p.pos === 'D/ST' ? '<span class="pic logo"><img s
 // Compare / Trade buttons on a player page
 const toolBtns = p => { const x = plOf(p.id); if (!x) return ''; const onTeam = R.teams.some(t => t.ids.includes(x.id)); return '<div class="tools2"><button type="button" class="btn" data-cmp="' + x.id + '">Compare</button>' + (onTeam ? '<button type="button" class="btn" data-trade="' + x.id + '">Trade check</button>' : '') + '</div>'; };
 const rosterOf = teamId => R.teams.find(t => t.id === teamId).ids.map(plOf).filter(Boolean);
-// "Add him" on a free agent's page: one button per player you could drop (lowest rest-of-season first)
+// "Add him" on a free agent's page: one button per player you could drop, best choice first. Best = your lineup
+// loses the least (or gains the most) over the rest of the season with him in and that player out.
+let dropCost = null; // set by the trade tools below: (player to add, player to drop) => change in your best lineup per week
 function addHim(p) {
   if (!p.free || !R.moves) return '';
-  if (p.free.locked) return '<div class="group">Add him</div><p class="why" style="margin:0">His game already started, so ESPN locks him until next week.</p>';
-  const drops = rosterOf(R.me).filter(x => !x.locked).sort((a, b) => a.rate - b.rate);
-  return '<div class="group">Add him</div><p class="why" style="margin:0 0 4px">' + (p.free.wa ? "He is on waivers, so this puts in a claim. It goes through when waivers run." : "He is a free agent, so he joins your team right away.") + ' Pick who to drop:</p>' +
-    drops.map(x => '<button type="button" class="btn do" style="background:var(--chip);color:var(--fg);text-align:left" data-move="' + e(JSON.stringify({ label: 'Add ' + p.name + ', drop ' + x.name, type: p.free.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: p.id }, { type: 'DROP', playerId: x.id }], week: R.week })) + '">Drop ' + e(x.name) + ' <span class="tag">' + x.pos + ', ' + x.rate.toFixed(1) + ' per game</span></button>').join('');
+  if (p.free.locked) return '<div class="group" id="addhim">Add him</div><p class="why" style="margin:0">His game already started, so ESPN locks him until next week.</p>';
+  const add = plOf(p.id), drops = rosterOf(R.me).filter(x => !x.locked).map(x => ({ x, d: add && dropCost ? dropCost(add, x) : -x.rate })).sort((a, b) => b.d - a.d);
+  const word = (d, i) => !add || !dropCost ? '' : i === 0 ? '<b style="color:var(--good)">Best choice</b> &middot; ' : i >= drops.length - 2 && d < -1 ? '<b style="color:var(--bad)">Worst choice</b> &middot; ' : '';
+  const change = d => !add || !dropCost ? '' : Math.abs(d) < 0.1 ? 'your lineup stays the same' : 'your lineup ' + (d > 0 ? 'gains ' : 'loses ') + Math.abs(d).toFixed(1) + ' a week';
+  return '<div class="group" id="addhim">Add him</div><p class="why" style="margin:0 0 4px">' + (p.free.wa ? "He is on waivers, so this puts in a claim. It goes through when waivers run." : "He is a free agent, so he joins your team right away.") + ' Pick who to drop. Best choices are at the top: your lineup misses them least.</p>' +
+    drops.map(({ x, d }, i) => '<button type="button" class="btn do" style="background:var(--chip);color:var(--fg);text-align:left" data-move="' + e(JSON.stringify({ label: 'Add ' + p.name + ', drop ' + x.name, type: p.free.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: p.id }, { type: 'DROP', playerId: x.id }], week: R.week })) + '">Drop ' + e(x.name) + '<br><span class="tag">' + word(d, i) + x.pos + ', ' + x.rate.toFixed(1) + ' per game' + (change(d) ? ' &middot; ' + change(d) : '') + '</span></button>').join('');
 }
 (() => {
   const slotCounts = R.slotCounts, SLOT_POS = R.slotPos, SLOT = R.slotName;
@@ -2786,6 +2876,7 @@ function addHim(p) {
   const seasonV = p => (p.playable ? p.rate : 0);
   const weekV = p => (p.playable && !(p.locked && !isStarter(p)) ? p.proj : 0);
   const total = (ps, v) => bestLineup(ps, v).total;
+  dropCost = (add, x) => { const ps = rosterOf(R.me); return total(ps.filter(y => y.id !== x.id).concat(add), seasonV) - total(ps, seasonV); };
   const weekTotal = ps => bestLineup(ps, p => weekV(p) + (p.locked && isStarter(p) ? 1e3 : 0)).lineup.reduce((t, x) => t + weekV(x.player), 0);
   const vor = p => Math.max(0, p.rate - (R.repl[p.pos] || 0));
   const f1 = x => (x > 0 ? '+' : '') + x.toFixed(1);
@@ -3017,6 +3108,14 @@ tabBar.addEventListener('pointercancel', () => press(null));
 navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); if (!ev.detail) showTab(a.hash.slice(1), true); }));
 document.getElementById('seg').addEventListener('click', ev => { const b = ev.target.closest('[data-page]'); if (b) showTab(b.dataset.page, true); });
 showTab(location.hash.slice(1), false);
+
+// "Pick him up": his page, scrolled to the list of who to drop
+document.addEventListener('click', ev => {
+  const u = ev.target.closest('[data-pickup]');
+  if (!u) return;
+  openSheet(u.dataset.pickup);
+  document.getElementById('addhim')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 // "Copy text" buttons: put the text on the clipboard
 document.addEventListener('click', ev => {
