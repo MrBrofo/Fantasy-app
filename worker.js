@@ -1,4 +1,5 @@
 // Cloudflare Worker: makes roster moves on my ESPN team when the site asks (POST), and serves live scores (GET).
+// GitHub puts this file live on every change (.github/workflows/worker.yml); no pasting into the dashboard.
 // Secrets (Cloudflare dashboard > Worker > Settings > Variables and Secrets):
 //   ESPN_S2 and SWID (login cookies), LEAGUE_ID, TEAM_ID, SEASON, KEY (the password the site sends for moves),
 //   SITE_PASSWORD (the site's password; live scores only answer a page that could unlock the site).
