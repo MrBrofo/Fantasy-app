@@ -56,8 +56,12 @@ async function live(req, env) {
     }
     // board[teamId] = [points so far, ESPN's live final guess]
     for (const x of games) for (const s of [x.home, x.away]) if (s) board[s.teamId] = [s.totalPointsLive ?? s.totalPoints ?? 0, s.totalProjectedPointsLive ?? null];
+    // clocks[NFL team id] = [pre/in/post, clock text, 1 = has the ball, 2 = has it inside the other team's 20 (red zone)]
     const clocks = {};
-    for (const ev of sb.events ?? []) for (const c of ev.competitions[0].competitors) clocks[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail];
+    for (const ev of sb.events ?? []) {
+      const sit = ev.competitions[0].situation;
+      for (const c of ev.competitions[0].competitors) clocks[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail, sit?.possession === c.team.id ? (sit.isRedZone ? 2 : 1) : 0];
+    }
     return { me: side(mine), opp: side(theirs), players, lineup, board, games: clocks, match };
   });
   if (!score) return reply(502, { error: 'ESPN said no' });

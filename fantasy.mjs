@@ -1892,7 +1892,7 @@ html:not(.term) #bg-field,html:not(.term) .bgring{display:none}
 .pline{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
 .plays{margin-top:10px}.plays summary{cursor:pointer;font-size:14px}.plays p{margin:6px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
 .plays small{font-family:var(--num);color:var(--fg);margin-right:4px}.plays .td{color:var(--accent)}
-.nowpts{font-size:12px;color:var(--muted);margin-top:2px}.nowpts b{color:var(--accent);font-family:var(--num)}
+.nowpts{font-size:12px;color:var(--muted);margin-top:2px}.nowpts[data-ball="1"],.nowpts[data-ball="2"]{--c:var(--warn);color:var(--fg);background:color-mix(in srgb,var(--c) 20%,transparent);box-shadow:inset 3px 0 var(--c);padding:2px 6px 2px 8px;border-radius:4px;width:fit-content}.nowpts[data-ball="2"]{--c:var(--bad)}.nowpts b{color:var(--accent);font-family:var(--num)}
 .tag{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
 td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted);white-space:nowrap}tr.me td{font-weight:800;color:var(--fg)}
@@ -2418,7 +2418,10 @@ async function liveTick() {
       const x = d.players[el.dataset.live], pts = Array.isArray(x) ? x[0] : x, g = d.games[el.dataset.pro];
       if (pts == null || !g || (g[0] === 'pre' && !pts)) continue;
       el.hidden = false;
-      el.innerHTML = '<b>' + f(pts) + ' pts</b> ' + (g[0] === 'post' ? 'final' : 'so far &middot; ' + e(g[1]));
+      // like ESPN: yellow while his team has the ball, red inside the other team's 20
+      const ball = g[0] === 'in' ? g[2] || 0 : 0;
+      el.dataset.ball = ball;
+      el.innerHTML = '<b>' + f(pts) + ' pts</b> ' + (g[0] === 'post' ? 'final' : 'so far &middot; ' + e(g[1])) + (ball === 2 ? ' &middot; red zone' : ball ? ' &middot; has the ball' : '');
       const p = P[el.dataset.live];
       if (p) p.now = { line: [], why: [], ...p.now, pts: f(pts), game: g[0] === 'post' ? 'Game over' : g[0] === 'in' ? 'Playing now (' + g[1] + ')' : g[1] };
     }
