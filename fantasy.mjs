@@ -967,15 +967,19 @@ const pfRank = [...teams].sort((a, b) => b.pf - a.pf).indexOf(me) + 1;
 const apPct = apW / Math.max(1, apW + apL);
 const realPct = me.w / Math.max(1, me.w + me.l);
 
-// --- Schedule ahead: remaining opponents and how strong they've been
 const gamesPlayed = Object.keys(weekly).length || 1;
 const leagueAvg = teams.reduce((s, t) => s + t.pf, 0) / teams.length / gamesPlayed;
+// --- Schedule ahead: each remaining opponent's best lineup that week (ESPN's projection for that week, so his NFL
+// matchup counts; players on bye, on IR or out for the season count 0), against the league's average that week.
+// Starters from their full-strength lineup who are off that week are named; losing 15+ points of them makes it easy.
 const ahead = (league.schedule ?? []).filter(g => g.matchupPeriodId > week && g.matchupPeriodId <= lastWeek && (g.home.teamId === me.id || g.away?.teamId === me.id))
   .sort((a, b) => a.matchupPeriodId - b.matchupPeriodId)
   .map(g => {
-    const t = teams.find(x => x.id === (g.home.teamId === me.id ? g.away.teamId : g.home.teamId));
-    const avg = t.pf / gamesPlayed;
-    return { week: g.matchupPeriodId, t, avg, level: avg > leagueAvg + 5 ? 'hard' : avg < leagueAvg - 5 ? 'easy' : 'medium' };
+    const w = g.matchupPeriodId, v = futValue(w), t = teams.find(x => x.id === (g.home.teamId === me.id ? g.away.teamId : g.home.teamId));
+    const proj = score(t.roster, v), avg = teams.reduce((s, x) => s + score(x.roster, v), 0) / teams.length;
+    const full = bestLineup(t.roster, seasonValue).lineup.map(x => x.player), off = full.filter(p => !v(p));
+    const lost = off.reduce((s, p) => s + seasonValue(p), 0);
+    return { week: w, t, proj, off, level: lost >= 15 || proj < avg - 5 ? 'easy' : proj > avg + 5 ? 'hard' : 'medium' };
   });
 
 // --- Waiver competition: teams that pick before you and would also want the player
@@ -1832,7 +1836,7 @@ const facts = [
   pending.length ? `Pending moves:\n${pending.map(m => m.kind === 'waiver' ? `- Waiver claim: add ${m.add.map(p => p.name).join(', ')}, drop ${m.drop.map(p => p.name).join(', ')}`
     : `- Trade ${m.mineOffer ? 'I offered' : 'offered to me by'} ${m.them.name}: I give ${m.give.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}; I get ${m.take.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}`).join('\n')}` : '',
   `Best free agents (points per game expected rest of season, expected this week):\n${Object.entries(fa).map(([pos, list]) => `- ${pos}: ${[...list].filter(p => !HURT.includes(p.status)).sort((a, b) => rate(b) - rate(a)).slice(0, 4).map(p => `${p.name} ${n(rate(p))}/g ahead, ${n(p.proj)} exp`).join('; ')}`).join('\n')}`,
-  ahead.length ? `My remaining schedule: ${ahead.map(g => `wk ${g.week} ${g.t.name} (${g.t.w}-${g.t.l}, ${n(g.avg)} pts/wk)`).join('; ')}.` : '',
+  ahead.length ? `My remaining schedule: ${ahead.map(g => `wk ${g.week} ${g.t.name} (${g.t.w}-${g.t.l}, projected ${n(g.proj)} that week${g.off.length ? `, without ${g.off.map(p => p.name).join(', ')}` : ''})`).join('; ')}.` : '',
   '__NEWSFACTS__',
   'Explain things simply, I\'m new to football. My question:',
 ].filter(Boolean).join('\n\n');
@@ -2333,8 +2337,8 @@ ${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last wee
     : apPct < realPct - 0.08 ? 'You\'ve been <b>lucky</b>: your record is better than your points. Keep improving the lineup.'
     : 'Your record matches how you\'ve played.'}${pfRank > teams.length / 2 ? ' Your team scores less than most, so pickups and trades matter.' : ''}</p></div>
 ${ahead.length ? `<div class="card"><div class="group" style="margin:0 0 4px">Your schedule ahead</div><table>
-${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><td>${esc(g.t.name)} <span class="tag">${g.t.w}-${g.t.l}</span></td><td class="num">scores ~${Math.round(g.avg)}/wk</td><td style="text-align:right"><span class="lv ${g.level}">${g.level}</span></td></tr>`).join('')}</table>
-<p class="tag">Hard = they score a lot more than average. Easy weeks are the ones you should win.</p></div>` : ''}
+${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><td>${esc(g.t.name)} <span class="tag">${g.t.w}-${g.t.l}</span></td><td class="num">proj ~${Math.round(g.proj)}${g.off.length ? `<br><small>no ${esc(g.off.map(p => p.name.split(' ').pop()).join(', '))}</small>` : ''}</td><td style="text-align:right"><span class="lv ${g.level}">${g.level}</span></td></tr>`).join('')}</table>
+<p class="tag">Each opponent's best lineup that week (ESPN's projection, so NFL matchups count; byes and injured players left out) vs the league average that week. "No" lists their starters who are off. Missing 15+ points of starters makes it easy.</p></div>` : ''}
 </section>
 
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
