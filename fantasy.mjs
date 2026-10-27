@@ -1989,8 +1989,6 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 #gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
 .gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
-.gc-who{display:flex;align-items:center;gap:10px;margin-top:12px}.gc-who span{display:flex;align-items:center;gap:8px;min-width:0}.gc-who b{font-size:14px;white-space:nowrap}.gc-who i{font-style:normal;color:var(--muted)}
-.gc-who img{width:36px;height:36px;border-radius:50%;object-fit:cover;object-position:top;background:var(--line)}html.term .gc-who img{border-radius:0}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
 html.term .gc-fs{border-radius:0}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
@@ -2693,6 +2691,18 @@ function gcField(F, A, H, ball, from, first, fx) {
           '<polygon points="' + shape(true) + '" fill="url(#gcPlay)"/>';
       }
     }
+    if (F.play) {
+      const who = gcWho(F), [y0, , tid] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), r = 36;
+      const pin = (x, w, i, dx = 0) => { const q = pt(x, 26.65), cy = q[1] - 105, X = (q[0] + dx).toFixed(1), Y = cy.toFixed(1);
+        return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + Y + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/>' +
+          '<clipPath id="gcPin' + i + '"><circle cx="' + X + '" cy="' + Y + '" r="' + r + '"/></clipPath><circle cx="' + X + '" cy="' + Y + '" r="' + (r + 4) + '" fill="#fff"/><circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340"/>' +
+          (w.p ? '<image href="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(w.p.id) + '.png&amp;w=160" x="' + (q[0] + dx - r * 1.4).toFixed(1) + '" y="' + (cy - r).toFixed(1) + '" width="' + (r * 2.8).toFixed(1) + '" height="' + (r * 2.05).toFixed(1) + '" clip-path="url(#gcPin' + i + ')"/>'
+            : '<text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>'); };
+      // two photos close together are pushed apart, their stems leaning to where each stood
+      const gap = pt(fx(ball), 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (2 * r + 16 - Math.abs(gap)) / 2) * Math.sign(gap || 1);
+      if (who.length === 2) o += pin(sx, who[0], 0, -push) + pin(fx(ball), who[1], 1, push);
+      else if (who.length) o += pin(fx(ball), who[who.length - 1], 1);
+    }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
     const bw = 3.6 * s / 109;
     if (F.rz) o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
@@ -2711,13 +2721,13 @@ function roster(tid) {
     .then(m => { ROS[tid] = m; drawGc(); });
   return ROS[tid] instanceof Promise ? {} : ROS[tid];
 }
-// The passer and the catcher, or the runner, named in the play text
+// The passer and the catcher, or the runner, named in the play text, with their ESPN roster entries once loaded
 function gcWho(F) {
   const t = (F.last || '').replace(/^(\\([^)]*\\)\\s*)+/, ''), tid = F.play?.[2] || F.poss;
   const a = /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1], b = / pass /.test(t) ? / to ([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1] : null;
-  if (!a || !tid) return '';
-  const R = roster(tid), who = n => { const p = R[n]; return '<span>' + (p ? '<img src="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(p.id) + '.png&amp;w=96&amp;h=70" alt="">' : '') + '<b>' + e(p?.shortName ?? n) + '</b></span>'; };
-  return '<div class="gc-who">' + who(a) + (b ? '<i>&rarr;</i>' + who(b) : '') + '</div>';
+  if (!a || !tid) return [];
+  const R = roster(tid);
+  return [a, b].filter(Boolean).map(n => ({ n, p: R[n] }));
 }
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
@@ -2733,7 +2743,6 @@ function drawGc() {
   box.innerHTML = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
     gcField(F, A, H, ball, from, first, x => 10 + Math.max(0, Math.min(100, x))) +
-    gcWho(F) +
     (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +

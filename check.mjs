@@ -231,10 +231,10 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
 // the Watch view names the passer and the catcher, or the runner, from the play text
 {
   const tpl = c => c.replace(/\\\\/g, '\\');
-  const gcWho = new Function('roster', 'e', tpl(cut('function gcWho(F) {', "(b ? '<i>&rarr;</i>' + who(b) : '') + '</div>';\n}")) + '\nreturn gcWho;')(() => ({ 'T.McKee': { id: '1', shortName: 'T. McKee' } }), String);
+  const gcWho = new Function('roster', tpl(cut('function gcWho(F) {', "  return [a, b].filter(Boolean).map(n => ({ n, p: R[n] }));\n}")) + '\nreturn gcWho;')(() => ({ 'T.McKee': { id: '1' } }));
   const w = gcWho({ last: '(No Huddle, Shotgun) T.McKee pass short left to D.Goedert to DAL 13 for 6 yards (J.Barron).', play: [81, 87, '21'] });
-  assert(w.includes('T. McKee') && w.includes('<b>D.Goedert</b>') && w.includes('&rarr;'), w);
-  assert(!gcWho({ last: 'S.Barkley up the middle to DAL 40 for 3 yards.', poss: '21' }).includes('&rarr;'), 'a run has one player');
+  assert.deepEqual(w, [{ n: 'T.McKee', p: { id: '1' } }, { n: 'D.Goedert', p: undefined }], JSON.stringify(w));
+  assert.deepEqual(gcWho({ last: 'S.Barkley up the middle to DAL 40 for 3 yards.', poss: '21' }).map(x => x.n), ['S.Barkley'], 'a run has one player');
 }
 
 // usage: last 3 games vs before, as a share of his team's targets; red zone needs 10+ team chances
