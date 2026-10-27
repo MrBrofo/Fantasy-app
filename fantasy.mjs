@@ -2678,12 +2678,16 @@ function gcField(F, A, H, ball, from, first, fx) {
   if (F.poss) {
     o += line(fx(ball), '#3b82f6');
     const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
-    // the last play: an arc for a pass, a flat line for a run, from where it started to where it ended
+    // the last play: an arrow lying flat on the turf, from where it started to the ball
     if (F.play) {
-      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)) - Math.sign(fx(own(y1)) - fx(own(y0))) * 1.4; // stop short so the ball doesn't hide the arrowhead
-      if (Math.abs(x1 - x0) > 0.5) {
-        const air = /pass|reception|interception/i.test(type), q0 = pt(x0, 26.65, 0.3), q1 = pt(x1, 26.65, 0.3), c = pt((x0 + x1) / 2, 26.65, air ? Math.min(14, 2 + Math.abs(x1 - x0) * 0.5) : 0.3);
-        o += '<circle cx="' + q0[0].toFixed(1) + '" cy="' + q0[1].toFixed(1) + '" r="10" fill="#fff"/><path d="M' + xy(q0) + ' Q' + xy(c) + ' ' + xy(q1) + '" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" marker-end="url(#gcArrow)"/>';
+      const [y0, y1, tid] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)), d = Math.sign(x1 - x0);
+      if (Math.abs(x1 - x0) > 1) {
+        const z = 26.65, head = Math.min(4, Math.abs(x1 - x0) * 0.6), xh = x1 - d * head;
+        const shape = [[x0, z - 1.6], [xh, z - 1.6], [xh, z - 3.6], [x1, z], [xh, z + 3.6], [xh, z + 1.6], [x0, z + 1.6]];
+        const poly = (dy, attrs) => '<polygon points="' + shape.map(([x, zz]) => { const q = pt(x, zz); return q[0].toFixed(1) + ',' + (q[1] + dy).toFixed(1); }).join(' ') + '" ' + attrs + '/>';
+        const g0 = pt(x0, z), g1 = pt(x1, z);
+        o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>' +
+          poly(4, 'fill="#000" fill-opacity=".35"') + poly(0, 'fill="url(#gcPlay)"');
       }
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
@@ -2694,7 +2698,7 @@ function gcField(F, A, H, ball, from, first, fx) {
   }
   // show the 60% of the field around the ball, like a TV camera following the play
   const cx = Math.max(480, Math.min(1120, pt(fx(F.poss ? ball : 50), 26.65)[0]));
-  return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><marker id="gcArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0 0L10 5L0 10z" fill="#fff"/></marker><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
+  return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
