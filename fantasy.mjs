@@ -1667,6 +1667,10 @@ const vari = (ps, v) => ps.reduce((s, p) => s + ((SWING[p.pos] ?? 0.65) * v(p)) 
 const erf = x => { const t = 1 / (1 + 0.3275911 * Math.abs(x)); return Math.sign(x) * (1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x)); };
 const spread = t => vari(weekLine(t), weekValue);
 const isLive = !!opp && (mySide.totalPointsLive > 0 || oppSide.totalPointsLive > 0);
+// The guess from just before the first points, kept all week so the live score can be compared with it
+if (opp && !isLive) memo.pre = { [week]: [+myProj.toFixed(1), +oppProj.toFixed(1)] };
+// (a week that went live before this was added: the expert projections, which don't move during games)
+const pre = memo.pre?.[week] ?? (opp ? [myProj, oppProj] : null);
 const liveWin = isLive && mySide.winProbability != null;
 const winPct = !opp ? 0 : liveWin ? Math.round(mySide.winProbability * 100)
   : Math.round(50 * (1 + erf((myProj - oppProj) / Math.sqrt(2 * (spread(me) + spread(opp) || 1)))));
@@ -2024,6 +2028,7 @@ ${opp ? (() => {
   return `<div class="match"><h2>This week vs ${esc(opp.name)}<span class="live" id="lv-badge"${live ? '' : ' hidden'}>LIVE</span></h2>
   <div class="wp"><b id="lv-wp" style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag" id="lv-wpsrc">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
   <div class="tag" id="lv-score" style="margin-bottom:8px"${live ? '' : ' hidden'}>${done ? 'Final score' : 'Score right now'}: <b>${n(mySide.totalPointsLive ?? 0)}</b> to <b>${n(oppSide.totalPointsLive ?? 0)}</b>.${done ? '' : ' Final guess below.'}</div>
+  ${live && pre ? `<div class="tag" style="margin:-4px 0 8px">Guess before games started: <b>${n(pre[0])}</b> to <b>${n(pre[1])}</b>.</div>` : ''}
   <div class="vs">
   <div class="t">You</div><div class="p" id="lv-a" data-base="${n(a)}">${n(a)}</div><div class="bar"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
   <div class="t">${esc(opp.name)}</div><div class="p" id="lv-b">${n(b)}</div><div class="bar"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
