@@ -2189,7 +2189,7 @@ html.term section:not(.off){animation:boot .35s ease-out}
 @keyframes boot{from{opacity:0;transform:translateY(6px)}}
 @media (prefers-reduced-motion:reduce){html.term .bgring,html.term h1::after,html.term .live{animation:none}html.term section:not(.off){animation:none}}
 /* Glass look: Apple's Liquid Glass (iOS 26), as close as CSS gets on an iPhone. Like iOS, glass is only for the controls that
-   float over the page: the tab bar, buttons, the look switch, the player sheet. The page itself stays solid (iOS dark grouped
+   float over the page: the tab bar and the player sheet. The page itself stays solid (iOS dark grouped
    style: black, #1c1c1e cards), so the glass has real content scrolling under it and never sits on other glass. The glass is a
    light blur that keeps the colours behind it (it bends light more than it frosts), a bright rim that is brightest top-left and
    bottom-right where light catches a curved edge, a faint glow along the inside of the edge, and a soft shadow. Only the main
@@ -2208,25 +2208,30 @@ html.glass .sh-q.yes{border-left:4px solid var(--good)}html.glass .sh-q.no{borde
 html.glass .list .card{border-radius:0}html.glass .list .card+.card{border-top:.5px solid var(--line)}
 html.glass .list .card:first-child{border-radius:26px 26px 0 0}html.glass .list .card:last-child{border-radius:0 0 26px 26px}html.glass .list .card:only-child{border-radius:26px}
 html.glass details.fold .card{background:none;border:0;border-top:.5px solid var(--line);border-radius:0!important;padding:12px 0;margin:0}
-/* the glass */
-html.glass :is(nav,.btn,.seg,#refresh,.sheet-x,.sheet-card){border:0;-webkit-backdrop-filter:blur(10px) saturate(190%) brightness(1.08);backdrop-filter:blur(10px) saturate(190%) brightness(1.08);
-box-shadow:inset 0 1px 1px rgba(255,255,255,.22),inset 0 -1px 1px rgba(255,255,255,.07),inset 0 0 14px rgba(255,255,255,.05),0 8px 28px rgba(0,0,0,.4)}
-html.glass :is(nav,.btn,.seg,#refresh,.sheet-x,.sheet-card)::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
-background:linear-gradient(135deg,rgba(255,255,255,.6),rgba(255,255,255,.12) 30%,rgba(255,255,255,.03) 50%,rgba(255,255,255,.12) 70%,rgba(255,255,255,.4));
+/* the glass: only on what floats over the page (tab bar, player sheet, its close button). Almost no fill, so the page shows
+   through; a sharp rim, brightest top-left and bottom-right; and a band along the inside of the edge where what's behind is
+   brighter and more saturated, like light bunching up in the thick curved edge of real glass. Soft glows and solid fills
+   read as plastic, so there are none. */
+html.glass :is(nav,.sheet-x,.sheet-card){border:0;-webkit-backdrop-filter:blur(4px) saturate(180%) brightness(1.05);backdrop-filter:blur(4px) saturate(180%) brightness(1.05);box-shadow:0 6px 20px rgba(0,0,0,.28)}
+html.glass :is(nav,.sheet-x,.sheet-card)::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:1;
+background:linear-gradient(135deg,rgba(255,255,255,.9),rgba(255,255,255,.18) 20%,rgba(255,255,255,0) 45%,rgba(255,255,255,0) 60%,rgba(255,255,255,.2) 82%,rgba(255,255,255,.6));
 -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
-html.glass .btn,html.glass .seg{position:relative}
-html.glass nav{border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.04))}
-html.glass nav a{border-radius:999px}
-html.glass nav a.on{color:var(--accent);background:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.2),inset 0 0 0 .5px rgba(255,255,255,.08)}
-html.glass .btn{border-radius:999px;color:#fff;background:linear-gradient(180deg,rgba(64,156,255,.95),rgba(10,132,255,.9))}
-html.glass .tools2 .btn{background:rgba(255,255,255,.08);color:var(--fg)}
-html.glass .btn:active,html.glass #refresh:active{transform:scale(1.04);filter:brightness(1.15)}
-html.glass .seg,html.glass .seg button{border-radius:999px}html.glass .seg{background:rgba(118,118,128,.24)}
-html.glass .seg button.on{background:rgba(255,255,255,.16);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
-html.glass #refresh{background:rgba(255,255,255,.08)}html.glass .sheet-x{background:rgba(255,255,255,.1)}
+html.glass :is(nav,.sheet-card)::after{content:'';position:absolute;inset:0;border-radius:inherit;padding:6px;pointer-events:none;
+-webkit-backdrop-filter:blur(6px) brightness(1.35) saturate(220%);backdrop-filter:blur(6px) brightness(1.35) saturate(220%);
+-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+html.glass nav{border-radius:999px;background:rgba(20,20,22,.22)}
+html.glass nav a{border-radius:999px;color:rgba(255,255,255,.75)}
+html.glass nav a.on{color:var(--accent);background:rgba(255,255,255,.1)}
+html.glass .sheet-x{background:rgba(255,255,255,.06)}
+/* buttons and switches inside the page sit on solid cards, so they're flat iOS controls, not glass */
+html.glass .btn{border-radius:999px;color:#fff;background:var(--accent);box-shadow:none}
+html.glass .tools2 .btn,html.glass #refresh{background:rgba(118,118,128,.24);color:var(--fg);border:0}
+html.glass .btn:active,html.glass #refresh:active{transform:scale(.97);filter:brightness(1.1)}
+html.glass .seg,html.glass .seg button{border-radius:999px}html.glass .seg{background:rgba(118,118,128,.24);border:0}
+html.glass .seg button.on{background:#636366;color:#fff}
 /* the player sheet floats in from the edges like an iOS 26 sheet, darker glass so its text stays easy to read */
 html.glass .sheet-bg{background:rgba(0,0,0,.4)}
-html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(30,30,32,.74);-webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%)}
+html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(28,28,30,.55);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}
 /* top edge: the page fades and softens as it scrolls under the status bar, instead of a hard bar */
 html.glass body::before{height:calc(env(safe-area-inset-top) + 28px);background:linear-gradient(rgba(0,0,0,.8),transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
 @media (prefers-reduced-transparency:reduce){html.glass :is(nav,.sheet-card){background:#1c1c1e;-webkit-backdrop-filter:none;backdrop-filter:none}}
