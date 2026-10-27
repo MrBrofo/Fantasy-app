@@ -1757,12 +1757,12 @@ const freeCard = (p, name, team, pos) => (p ? player(p) : `<div class="player"><
 const depthAt = new Map(), dkey = (team, name) => team + '|' + norm(name).replace(/ (jr|sr|ii|iii|iv|v)$/, ''); // Sleeper often drops the Jr.
 for (const [team, chart] of Object.entries(rosSaved.depth ?? {})) for (const [, o, name] of chart) { const k = dkey(team, name); if (!(depthAt.get(k) <= o)) depthAt.set(k, o); }
 const depthWord = p => { if (!['QB', 'RB', 'WR', 'TE', 'K'].includes(p.pos)) return ''; const o = depthAt.get(dkey(TEAM(p.team), p.name));
-  return !o ? '' : o === 1 ? 'starter' : `${ordinal(o)} string`; };
+  return !o ? '' : o === 1 ? 'Starter' : o === 2 ? 'Backup' : ordinal(o); };
 const shown = new Map();
 const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
-  ${p.rank || depthWord(p) ? `<div class="rank">${[p.rank ? `${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season` : '', depthWord(p) ? `${depthWord(p)} on the ${esc(p.team)} depth chart` : ''].filter(Boolean).join(' &middot; ')}</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
+  ${p.rank || depthWord(p) ? `<div class="rank">${[p.rank ? `${ordinal(p.rank)}-best ${POS_NAME[p.pos]?.toLowerCase()} this season` : '', depthWord(p)].filter(Boolean).join(' &middot; ')}</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
 // (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
 const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
