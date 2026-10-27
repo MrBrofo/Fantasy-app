@@ -1184,15 +1184,15 @@ memo.exp = { ...Object.fromEntries(Object.entries(memo.exp ?? {}).filter(([wk]) 
 if (process.env.PUSH_SUB) alerts.push([`hello:${JSON.parse(process.env.PUSH_SUB).endpoint.slice(-16)}`, 'Alerts are on', 'You\'ll get a notification when something on your team needs you.', true]);
 // Auto swap: a starter ruled out in the last 2 hours before his kickoff (teams name inactives 90 minutes before) goes to
 // the bench for the best bench player who can play his spot, done on ESPN right here, since the alert may come when no
-// one is looking. A doubtful one (about 1 in 4 play) too, once it's under an hour and he still isn't cleared, when the
-// bench player is expected to score more. Undo it on ESPN if you want him in anyway.
+// one is looking. A doubtful one too, once it's under an hour: inactives are out by then, so a doubtful tag still up
+// means he's dressed (ESPN often leaves it up), and he's judged at his full projection, not his odds of playing.
 const swapped = new Map(); // starter id -> who went in for him
 for (const p of starters(me)) {
   const doubt = p.status === 'DOUBTFUL' && soon(p, 1);
   if (!(HURT.includes(p.status) && soon(p, 2)) && !doubt) continue;
   const slot = SLOT_ID[p.slot], sub = me.roster.filter(b => b.slot === 'Bench' && notStarted(b) && !HURT.includes(b.status) && b.status !== 'DOUBTFUL' && b.bye !== week &&
     SLOT_POS[slot]?.includes(b.pos) && ![...swapped.values()].includes(b) && weekValue(b) > 0).sort((a, b) => weekValue(b) - weekValue(a))[0];
-  if (!sub || (doubt && weekValue(sub) <= weekValue(p))) continue;
+  if (!sub || (doubt && weekValue(sub) <= (p.proj ?? 0))) continue;
   const r = await fetch(`https://lm-api-writes.fantasy.espn.com/apis/v3/games/ffl/seasons/${SEASON}/segments/0/leagues/${LEAGUE_ID}/transactions/`, {
     method: 'POST', headers: { ...H, 'content-type': 'application/json' },
     body: JSON.stringify({ isLeagueManager: false, teamId: me.id, type: 'ROSTER', scoringPeriodId: league.scoringPeriodId, executionType: 'EXECUTE',
