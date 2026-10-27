@@ -5,7 +5,7 @@ name: Deploy Worker
 on:
   push:
     branches: [main]
-    paths: [worker.js, wrangler.toml, .github/workflows/worker.yml]
+    paths: [worker.js, wrangler.toml, package.json, package-lock.json, .github/workflows/worker.yml]
   workflow_dispatch:
 
 jobs:
@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      # worker.js imports the Anthropic SDK; wrangler bundles it from node_modules
+      - run: npm ci
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

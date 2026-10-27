@@ -2,8 +2,11 @@
 // GitHub puts this file live on every change (.github/workflows/worker.yml); no pasting into the dashboard.
 // Secrets (Cloudflare dashboard > Worker > Settings > Variables and Secrets):
 //   ESPN_S2 and SWID (login cookies), LEAGUE_ID, TEAM_ID, SEASON, KEY (the password the site sends for moves),
-//   SITE_PASSWORD (the site's password; live scores only answer a page that could unlock the site).
+//   SITE_PASSWORD (the site's password; live scores only answer a page that could unlock the site),
+//   ANTHROPIC_API_KEY (Ask Claude; paid per question from the Anthropic Console's credits).
 // It only ever touches TEAM_ID, and only these move types, whatever the request says.
+import Anthropic from '@anthropic-ai/sdk';
+
 const SITE = 'https://mrbrofo.github.io';
 const cors = { 'Access-Control-Allow-Origin': SITE, 'Access-Control-Allow-Headers': 'content-type,x-key,x-live', 'Access-Control-Allow-Methods': 'GET,POST' };
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } });
@@ -111,9 +114,30 @@ async function live(req, env) {
   return reply(200, { at: Date.now(), ...live, taken, tx, news, names: Object.fromEntries(who.filter(id => names[id]).map(id => [id, names[id]])) });
 }
 
+// Ask Claude: the site's question with my team's facts, answered by Claude. Same password as live scores, so only a
+// page that could unlock the site can spend the credits; the question and facts are capped so one ask stays cheap.
+async function ask(req, env) {
+  if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
+  if (!env.ANTHROPIC_API_KEY) return reply(500, { error: 'No ANTHROPIC_API_KEY on the Worker' });
+  let m;
+  try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
+  if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 60000) return reply(400, { error: 'Bad question' });
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  // fallbacks: if Opus declines (a false alarm from its safety checks), the API answers with another model instead
+  const r = await client.beta.messages.create({
+    model: 'claude-opus-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
+    betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; say when something is a guess. Answer in short plain sentences and short lists, no tables. Give a clear pick when asked to choose.',
+    messages: [{ role: 'user', content: m.text }],
+  });
+  if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
+  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens' });
+}
+
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
+    if (req.method === 'POST' && new URL(req.url).pathname === '/ask') return ask(req, env).catch(err => reply(500, { error: err.message }));
     if (req.method === 'GET') return live(req, env).catch(err => reply(500, { error: err.message }));
     if (req.method !== 'POST') return reply(405, { error: 'GET or POST only' });
     if (!env.KEY || req.headers.get('x-key') !== env.KEY) return reply(401, { error: 'Wrong password' });

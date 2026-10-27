@@ -1997,7 +1997,7 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .rank{font-size:12px;color:var(--muted);line-height:1.35}
 .btn{background:var(--accent);color:var(--onaccent);border:0;border-radius:12px;padding:13px 16px;min-height:46px;font:600 15px Geist,system-ui,sans-serif;cursor:pointer;width:100%;margin-top:10px;transition:transform .1s ease-out,filter .1s}
 .btn:active{transform:scale(.97);filter:brightness(.9)}
-.ask{display:grid;gap:2px}
+.ask{display:grid;gap:2px}.askout{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;line-height:1.5}.askout p{margin:0 0 8px}.askout p:last-child{margin:0}.askout ul{margin:0 0 8px;padding-left:20px}.linkbtn{background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;padding:10px 0 0;cursor:pointer;justify-self:center}
 .chg{padding:8px 10px;border-radius:10px;margin-bottom:6px;font-size:14px;font-weight:600;background:var(--chip)}
 .chg.good{background:var(--goodbg);color:var(--good)}.chg.bad{background:var(--badbg);color:var(--bad)}
 .lnk{text-decoration:underline dotted;text-underline-offset:3px;color:var(--fg)}
@@ -2221,9 +2221,10 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
 
-<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Type your question. Claude opens with it and your team's facts filled in, plus any other player or team you name. It's also copied, so if the box comes up empty, paste it.</p></div>
+<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Type your question. Claude gets it with your team's facts, plus any other player or team you name, and the answer shows right here.</p></div>
 <textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="width:100%;min-height:72px;resize:vertical;margin-top:10px"></textarea>
-<button type="button" id="askbtn" class="btn">Copy &amp; open Claude</button></div></section>
+<button type="button" id="askbtn" class="btn">Ask Claude</button><div id="askout" class="askout" hidden></div>
+<button type="button" id="askopen" class="linkbtn">Or open it in the Claude app</button></div></section>
 
 <section id="alerts" hidden><div class="card"><b>Phone alerts</b>
 <p class="tag" style="margin:2px 0 0">Get a notification when a starter won't play, a hurt player's status is decided before kickoff, a trade offer comes in, and more.</p>
@@ -3235,15 +3236,35 @@ function claudeUrl(t) {
   const q = encodeURIComponent(parts.join(P));
   return 'https://claude.ai/new' + (q.length <= 12000 ? '?q=' + q : '');
 }
-document.getElementById('askbtn').onclick = async () => {
+const askFacts = () => {
   const q = document.getElementById('askq').value.trim();
   const base = JSON.parse(document.getElementById('facts').textContent), cut = base.lastIndexOf('Explain things simply');
-  const facts = q && cut > 0 ? base.slice(0, cut).trimEnd() + askExtra(q) + String.fromCharCode(10, 10) + "Explain things simply, I'm new to football. My question: " + q : base;
-  const b = document.getElementById('askbtn');
+  return q && cut > 0 ? base.slice(0, cut).trimEnd() + askExtra(q) + String.fromCharCode(10, 10) + "Explain things simply, I'm new to football. My question: " + q : base;
+};
+// the answer as simple HTML: paragraphs, "- " lines as a list, **bold**
+const askHtml = t => t.split(String.fromCharCode(10)).map(l => l.trim()).reduce((o, l) => {
+  const h = e(l.replace(/^[-*] /, '')).replace(/[*][*](.+?)[*][*]/g, '<b>$1</b>');
+  return !l ? o : /^[-*] /.test(l) ? o + '<li>' + h + '</li>' : o + '<p>' + h + '</p>';
+}, '').replace(/((?:<li>.*?<[/]li>)+)/g, '<ul>$1</ul>');
+// Ask: the Worker asks Claude (paid from the Anthropic credits) and the answer shows here. No Worker: open claude.ai
+document.getElementById('askbtn').onclick = async () => {
+  const b = document.getElementById('askbtn'), out = document.getElementById('askout'), facts = askFacts();
+  if (!LIVE) return document.getElementById('askopen').click();
+  b.disabled = true; b.textContent = 'Claude is thinking...'; out.hidden = false; out.innerHTML = '<p class="tag">This can take up to a minute.</p>';
+  try {
+    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
+    out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '');
+  } catch (err) { out.innerHTML = '<p class="tag">That didn&#39;t work (' + e(err.message) + '). Use Open in Claude below instead.</p>'; }
+  b.disabled = false; b.textContent = 'Ask Claude';
+};
+document.getElementById('askopen').onclick = async () => {
+  const facts = askFacts(), b = document.getElementById('askopen');
   try { await navigator.clipboard.writeText(facts); b.textContent = '✓ Opening Claude. If the box is empty, paste'; }
   catch { prompt('Copy this, then paste it into Claude:', facts); }
   window.open(claudeUrl(facts), '_blank', 'noopener');
-  setTimeout(() => (b.innerHTML = 'Copy &amp; open Claude'), 4000);
+  setTimeout(() => (b.textContent = 'Or open it in the Claude app'), 4000);
 };
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-close]')) return closeSheet();
