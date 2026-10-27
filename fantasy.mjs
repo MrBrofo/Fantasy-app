@@ -2228,6 +2228,7 @@ html.glass nav a.on{color:var(--accent)}html.glass :is(nav a,.seg button):is(.on
 html.glass .blob{display:block;position:absolute;left:0;top:0;border-radius:999px;pointer-events:none;background:rgba(255,255,255,.1);-webkit-backdrop-filter:brightness(1.25) saturate(160%);backdrop-filter:brightness(1.25) saturate(160%);
 transition:transform .55s cubic-bezier(.3,1.4,.5,1),width .55s cubic-bezier(.3,1.4,.5,1),scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}
 html.glass .blob.held{scale:1.12;background:rgba(255,255,255,.16)}
+html.glass .blob{z-index:1}html.glass :is(nav a,.seg button){z-index:2}
 html.glass .sheet-x{background:rgba(255,255,255,.06)}
 /* buttons and switches inside the page sit on solid cards, so they're flat iOS controls, not glass */
 html.glass .btn{border-radius:999px;color:#fff;background:var(--accent);box-shadow:none}
@@ -2604,22 +2605,6 @@ async function swap(html) {
   Object.assign(P, np);
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
-// Glass look: each bar (tab bar, switches) gets one bubble that slides to its picked button, or the tab under your finger.
-// Re-placed whenever a class changes anywhere (picked button, look, held tab, page merges) or the screen resizes.
-const placeBlobs = () => { for (const bar of document.querySelectorAll('nav,.seg')) {
-  const on = bar.querySelector(':scope > .press') || bar.querySelector(':scope > .on');
-  let b = bar.querySelector(':scope > .blob');
-  if (!b) { b = document.createElement('i'); b.className = 'blob'; b.setAttribute('aria-hidden', 'true'); bar.prepend(b); }
-  b.hidden = !on;
-  if (!on) continue;
-  const t = 'translate(' + on.offsetLeft + 'px,' + on.offsetTop + 'px)';
-  if (b.style.transform !== t) b.style.transform = t;
-  b.style.width = on.offsetWidth + 'px'; b.style.height = on.offsetHeight + 'px';
-  b.classList.toggle('held', on.classList.contains('press'));
-} };
-let blobQ = 0;
-new MutationObserver(() => { if (!blobQ) blobQ = requestAnimationFrame(() => { blobQ = 0; placeBlobs(); }); }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['class'] });
-addEventListener('resize', placeBlobs); placeBlobs();
   if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) { body.innerHTML = render(P[sheet.dataset.pid]); drawGc(); }
   else if (!sheet.hidden && sheet.dataset.team && typeof teamPage === 'function') body.innerHTML = teamPage(sheet.dataset.team);
@@ -3975,6 +3960,22 @@ tabBar.addEventListener('pointercancel', () => press(null));
 navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); if (!ev.detail) showTab(a.hash.slice(1), true); }));
 document.getElementById('seg').addEventListener('click', ev => { const b = ev.target.closest('[data-page]'); if (b) showTab(b.dataset.page, true); });
 showTab(location.hash.slice(1), false);
+// Glass look: each bar (tab bar, switches) gets one bubble that slides to its picked button, or the tab under your finger.
+// Re-placed whenever a class changes anywhere (picked button, look, held tab, page merges) or the screen resizes.
+const placeBlobs = () => { for (const bar of document.querySelectorAll('nav,.seg')) {
+  const on = bar.querySelector(':scope > .press') || bar.querySelector(':scope > .on');
+  let b = bar.querySelector(':scope > .blob');
+  if (!b) { b = document.createElement('i'); b.className = 'blob'; b.setAttribute('aria-hidden', 'true'); bar.prepend(b); }
+  b.hidden = !on;
+  if (!on) continue;
+  const t = 'translate(' + on.offsetLeft + 'px,' + on.offsetTop + 'px)';
+  if (b.style.transform !== t) b.style.transform = t;
+  b.style.width = on.offsetWidth + 'px'; b.style.height = on.offsetHeight + 'px';
+  b.classList.toggle('held', on.classList.contains('press'));
+} };
+let blobQ = 0;
+new MutationObserver(() => { if (!blobQ) blobQ = requestAnimationFrame(() => { blobQ = 0; placeBlobs(); }); }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['class'] });
+addEventListener('resize', placeBlobs); placeBlobs();
 
 // Background, like the password screen: a dot grid with rings of light rolling out from the middle.
 // Dimmer than the lock screen so it doesn't fight the text; ~20 frames a second, and nothing while the app is hidden.
