@@ -2092,7 +2092,7 @@ table.cmp tr.bh td{font-size:11px;color:var(--muted);text-transform:uppercase;le
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 .sheet-body{overscroll-behavior:contain}
 /* Watch: live game. The field is 120 yards (two 10-yard end zones), stripes every 10 */
-#gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.btn[data-watch]{margin-bottom:14px}#gc{margin:0 0 14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
 .gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
 .gc-wrap{position:relative}.gc-crowd{opacity:0;animation:gcCrowd .78s step-end infinite}@keyframes gcCrowd{0%{opacity:1}16.67%{opacity:0}}@media (prefers-reduced-motion:reduce){.gc-crowd{animation:none}}@keyframes gcHop{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}.gc-hop{animation:gcHop .55s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.gc-hop{animation:none}}.gc-replay{position:absolute;right:8px;bottom:8px;padding:5px 10px;border:0;border-radius:999px;background:#000a;color:#fff;font:600 11px system-ui,sans-serif;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
@@ -2855,14 +2855,15 @@ function gcField(F, A, H, ball, from, first, fx) {
     }
     // a wide arrow from where the play started to the ball; the tip stops short of the ball so it shows (less on a short play)
     if (F.play) {
-      const x0 = sx, x1 = lx - Math.sign(lx - sx) * Math.min(1.5, dl * 0.1), len = Math.abs(x1 - x0);
+      // laid out on the turf in yards: along the play (dx, dz) and across it (the normal), so it keeps its shape at any angle
+      const D = Math.hypot(lx - sx, z1 - z0) || 1, dx = (lx - sx) / D, dz = (z1 - z0) / D, len = D - Math.min(1.5, D * 0.1);
       if (len > 1) {
         const uh = 1 - Math.min(4, len * 0.4) / len;
-        const at = (u, dz, lift) => { const v = u * (x1 - x0) / ((lx - sx) || 1), q = pt(x0 + (x1 - x0) * u, z0 + (z1 - z0) * v + dz, lift ? up(u * (x1 - x0) / ((lx - sx) || 1)) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
+        const at = (u, w, lift) => { const q = pt(sx + dx * u * len - dz * w, z0 + dz * u * len + dx * w, lift ? up(u * len / D) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
         const us = Array.from({ length: 25 }, (_, i) => uh * i / 24), back = [...us].reverse();
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
-        const g0 = pt(x0, z0), g1 = pt(x1, z1);
-        o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="' + (bad ? '#f87171' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.25' : '.5') + '"/><stop offset="1" stop-color="' + (bad ? '#ef4444' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.6' : '.95') + '"/></linearGradient>' +
+        const g0 = pt(sx, z0), g1 = pt(sx + dx * len, z0 + dz * len);
+        o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="' + g0[1].toFixed(1) + '" x2="' + g1[0].toFixed(1) + '" y2="' + g1[1].toFixed(1) + '"><stop offset="0" stop-color="' + (bad ? '#f87171' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.25' : '.5') + '"/><stop offset="1" stop-color="' + (bad ? '#ef4444' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.6' : '.95') + '"/></linearGradient>' +
           (gcFly ? '<clipPath id="gcReveal"><rect x="0" y="0" width="1600" height="600"/></clipPath>' : '') +
           '<g class="gc-trail"' + (gcFly ? ' clip-path="url(#gcReveal)"' : '') + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
       }
