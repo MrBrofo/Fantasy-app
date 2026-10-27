@@ -2419,10 +2419,12 @@ async function liveTick() {
       const x = d.players[el.dataset.live], pts = Array.isArray(x) ? x[0] : x, g = d.games[el.dataset.pro];
       if (pts == null || !g || (g[0] === 'pre' && !pts)) continue;
       el.hidden = false;
-      // like ESPN: yellow while his team has the ball, red inside the other team's 20
-      const ball = g[0] === 'in' ? g[2] || 0 : 0;
+      // like ESPN: yellow while his team has the ball, red inside the other team's 20;
+      // a defense (D/ST) is yellow while the other team has the ball, since that's when it's on the field
+      const b = g[0] === 'in' ? g[2] || 0 : 0, dst = el.closest('.card')?.querySelector('.pos')?.textContent === 'D/ST';
+      const ball = dst ? (b === 3 ? 1 : 0) : b === 3 ? 0 : b;
       el.dataset.ball = ball;
-      el.innerHTML = '<b>' + f(pts) + ' pts</b> ' + (g[0] === 'post' ? 'final' : 'so far &middot; ' + e(g[1])) + (ball === 2 ? ' &middot; red zone' : ball ? ' &middot; has the ball' : '');
+      el.innerHTML = '<b>' + f(pts) + ' pts</b> ' + (g[0] === 'post' ? 'final' : 'so far &middot; ' + e(g[1])) + (ball === 2 ? ' &middot; red zone' : ball ? (dst ? ' &middot; on the field' : ' &middot; has the ball') : '');
       const p = P[el.dataset.live];
       if (p) p.now = { line: [], why: [], ...p.now, pts: f(pts), game: g[0] === 'post' ? 'Game over' : g[0] === 'in' ? 'Playing now (' + g[1] + ')' : g[1] };
     }
