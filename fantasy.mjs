@@ -2681,16 +2681,20 @@ function gcField(F, A, H, ball, from, first, fx) {
     return 'matrix(' + [(b[0] - a[0]) / u, (b[1] - a[1]) / u, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, o[0], o[1]].map(v => v.toFixed(3)).join(' ') + ')'; };
   const painted = (x1, el) => '<clipPath id="gcP' + x1 + '">' + el.replace(/ stroke="[^"]*"| stroke-width="[^"]*"/g, '') + '</clipPath><g filter="url(#gcSoft)" opacity=".86">' + el + '</g>' +
     '<image href="field.webp" width="1600" height="490" clip-path="url(#gcP' + x1 + ')" style="mix-blend-mode:multiply" opacity=".45"/>';
-  const paint = (x1, str, size = 3.8, spacing = 0.6) => painted(x1, '<text transform="' + flat(x1, 26.65) + '" font-size="' + size + '" font-weight="900" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="' + spacing + '">' + str + '</text>');
   const logo = abbr => 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/' + e(String(abbr).toLowerCase()) + '.png&amp;w=200';
   // the team's nickname in block letters, white with an outline in its second colour (dark when that colour is near white),
   // stretched to a set length, with a small logo past each end
-  const name = (x1, t) => { const n = String(t[5] || t[1]).toUpperCase(), len = Math.min(34, n.length * 4.6), alt = /^[0-9a-f]{6}$/i.test(t[4] || '') ? t[4] : '000000';
-    const light = parseInt(alt.slice(0, 2), 16) * 0.3 + parseInt(alt.slice(2, 4), 16) * 0.59 + parseInt(alt.slice(4), 16) * 0.11 > 200;
-    return painted(x1, '<text transform="' + flat(x1, 26.65, len) + '" font-size="5.6" font-weight="900" fill="#fff" stroke="#' + (light ? '111' : alt) + '" stroke-width=".4" stroke-linejoin="round" style="paint-order:stroke" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs">' + e(n) + '</text>') +
-      [-1, 1].map(sd => '<image href="' + logo(t[1]) + '" x="-3" y="-3" width="6" height="6" transform="' + flat(x1, 26.65 + sd * (len / 2 + 4.2)) + '"/>').join(''); };
+  const ink = t => { const alt = /^[0-9a-f]{6}$/i.test(t[4] || '') ? t[4] : '000000';
+    return '#' + (parseInt(alt.slice(0, 2), 16) * 0.3 + parseInt(alt.slice(2, 4), 16) * 0.59 + parseInt(alt.slice(4), 16) * 0.11 > 200 ? '111' : alt); };
+  const logos = (x1, t, len) => [-1, 1].map(sd => '<image href="' + logo(t[1]) + '" x="-3" y="-3" width="6" height="6" transform="' + flat(x1, 26.65 + sd * (len / 2 + 4.2)) + '"/>').join('');
+  const name = (x1, t) => { const n = String(t[5] || t[1]).toUpperCase(), len = Math.min(34, n.length * 4.6);
+    return painted(x1, '<text transform="' + flat(x1, 26.65, len) + '" font-size="5.6" font-weight="900" fill="#fff" stroke="' + ink(t) + '" stroke-width=".4" stroke-linejoin="round" style="paint-order:stroke" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs">' + e(n) + '</text>') + logos(x1, t, len); };
+  // TOUCHDOWN painted big across the scoring end zone: slanted block letters with a thick outline in the team's second
+  // colour, with a dark step under them so they stand up off the turf, a logo past each end
+  const tdWord = (x1, t) => { const len = 36, c = ink(t), w = at => '<text transform="' + flat(x1, 26.65, len) + '" font-size="6.6" font-weight="900" font-style="italic" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs"' + at + '>TOUCHDOWN</text>';
+    return painted(x1, [0.75, 0.5, 0.25].map(d => w(' x="' + d * 0.6 + '" y="' + d + '" fill="#000" fill-opacity=".55"')).join('') + w(' fill="#fff" stroke="' + c + '" stroke-width="1" stroke-linejoin="round" style="paint-order:stroke"')) + logos(x1, t, len); };
   const zone = (x1, t, scored) => { return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
-    (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + paint(x1, 'TOUCHDOWN') + '</g>' : '') +
+    (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + tdWord(x1, tdTeam) + '</g>' : '') +
     (scored ? '' : name(x1, t)); };
   const mid = (() => { const c = pt(60, 26.65), r = pt(61, 26.65), d = pt(60, 25.65); return 'matrix(' + [r[0] - c[0], r[1] - c[1], d[0] - c[0], d[1] - c[1], c[0], c[1]].map(v => v.toFixed(3)).join(' ') + ')'; })();
   const midLogo = '<image href="' + logo(H[1]) + '" x="-6.5" y="-6.5" width="13" height="13" opacity=".82" transform="' + mid + '"/>';
