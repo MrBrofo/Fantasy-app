@@ -1,0 +1,6 @@
+# The live-scores / roster-moves Worker (worker.js). GitHub deploys it on every change (.github/workflows/worker.yml).
+# Its secrets (ESPN login, passwords) live in Cloudflare and survive deploys; keep_vars keeps any plain dashboard variables too.
+name = "fantasy-workers"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+keep_vars = true
