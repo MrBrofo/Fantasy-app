@@ -1983,6 +1983,15 @@ table.cmp tr.bh td{font-size:11px;color:var(--muted);text-transform:uppercase;le
 #fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}#fab{transition:opacity .5s}#fab.idle{opacity:.35}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 .sheet-body{overscroll-behavior:contain}
+/* Watch: live game. The field is 120 yards (two 10-yard end zones), stripes every 10 */
+#gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
+.gc-field{position:relative;height:46px;margin-top:12px;border-radius:6px;overflow:hidden;background:repeating-linear-gradient(90deg,#2e7a33 0 8.3333%,#36893b 8.3333% 16.6667%)}
+.gc-field i{position:absolute;top:0;bottom:0}.gc-field .ez{width:8.3333%;display:grid;place-items:center;color:#fff;font:700 9px system-ui,sans-serif;font-style:normal;writing-mode:vertical-rl}
+.gc-field .fd{width:3px;margin-left:-1.5px;background:#f5d90a}.gc-field .drv{top:50%;bottom:auto;height:3px;margin-top:-1.5px;background:#ffffffaa}
+.gc-field .bl{top:50%;bottom:auto;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #0008}.gc-field .bl.rz{background:var(--bad)}
+.gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
+html.term .gc-field{border-radius:0}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
 #refresh.spin span{animation:none}.btn,nav a,#refresh{transition:none}}
 @media (prefers-reduced-transparency:reduce){nav,body::before{background:var(--card);-webkit-backdrop-filter:none;backdrop-filter:none}}
@@ -2449,13 +2458,14 @@ async function check(clicked) {
 // the score, win chance, ESPN's final guess and game clocks change in place.
 const LIVE = JSON.parse(document.getElementById('live')?.textContent || 'null');
 // liveNote: shown after "updated ... ago" so you can tell live scores are working
-let liveOn = false, liveNote = '';
+let liveOn = false, liveNote = '', LD = null; // LD: the last live answer, for the Watch view
 async function liveTick() {
   if (!LIVE || document.hidden) return;
   try {
     const fa = faIds(), r = await fetch(LIVE.url + '?week=' + LIVE.week + (fa.length ? '&fa=' + fa.join(',') : ''), { headers: { 'x-live': LIVE.token } });
     if (!r.ok) { liveNote = ' \u00b7 live scores off (' + (r.status === 401 ? 'password mismatch' : 'ESPN login rejected') + ')'; return showAgo(); }
     const d = await r.json(), $ = id => document.getElementById(id), f = v => (Math.round(v * 10) / 10).toFixed(1);
+    LD = d; drawGc();
     liveOn = Object.values(d.games).some(g => g[0] === 'in');
     liveNote = liveOn ? ' \u00b7 live scores on' : ' \u00b7 live scores ready'; showAgo();
     for (const el of document.querySelectorAll('[data-live]')) {
@@ -2627,6 +2637,7 @@ function render(p) {
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
+    (LD?.field?.[LD.games?.[p.pro]?.[3]] ? '<button type="button" class="btn" data-watch>Watch his game live</button><div id="gc" hidden></div>' : '') +
     (p.liveNews?.length ? '<div class="group">Just in</div>' + p.liveNews.map(x => '<p class="why" style="margin:4px 0 0">' + e(x.h) + '</p>').join('') : '') +
     (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
       (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
@@ -2649,6 +2660,38 @@ function render(p) {
     (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
+// Watch: his game right now, like ESPN's gamecast. Score, down, a field with the drive, the last play,
+// the starters from my matchup in that game, and the game's leaders. Redrawn on every live update.
+function drawGc() {
+  const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
+  if (!box || box.hidden || !p) return;
+  const g = LD?.games?.[p.pro], F = LD?.field?.[g?.[3]];
+  if (!F) { box.innerHTML = '<p class="why">The game is over.</p>'; return; }
+  const [A, H] = F.teams, ids = [A[0], H[0]];
+  // yards from the left goal line (the away team's), from "DAL 13" or "50"
+  const at = s => { const m = /([A-Z]+)\\s+(\\d+)/.exec(s); return !m ? 50 : m[1] === A[1] ? +m[2] : 100 - +m[2]; };
+  const x = y => (10 + Math.max(0, Math.min(100, y))) / 120 * 100 + '%', ball = at(F.spot), dir = F.poss === A[0] ? 1 : -1, from = F.from ? at(F.from) : ball;
+  const goal = /goal/i.test(F.down), first = F.dist == null || goal ? null : ball + dir * F.dist;
+  const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
+  box.innerHTML = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
+    (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
+    '<div class="gc-field" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '">' +
+      '<i class="ez" style="left:0;background:#' + e(A[3] || '333') + '">' + e(A[1]) + '</i><i class="ez" style="right:0;background:#' + e(H[3] || '333') + '">' + e(H[1]) + '</i>' +
+      (F.poss ? '<i class="drv" style="left:' + x(Math.min(from, ball)) + ';width:' + Math.abs(ball - from) / 120 * 100 + '%"></i>' : '') +
+      (first != null ? '<i class="fd" style="left:' + x(first) + '"></i>' : '') +
+      (F.poss ? '<i class="bl' + (F.rz ? ' rz' : '') + '" style="left:' + x(ball) + '"></i>' : '') + '</div>' +
+    (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
+    '<div class="group">Your players in this game</div>' + who('me') +
+    '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
+    (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
+}
+const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-watch]'), box = document.getElementById('gc');
+  if (!b || !box) return;
+  box.hidden = !box.hidden; b.textContent = box.hidden ? 'Watch his game live' : 'Hide the game';
+  drawGc();
+});
 let closeTimer;
 function openSheet(id) { const p = P[id]; if (!p) return; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
@@ -3450,6 +3493,7 @@ for (const [id, p] of shown) {
   ].filter(Boolean).join(' ');
   pdata[id] = {
     id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: p.teamName, free: t ? null : { wa: !!p.wa, locked: locked(p) },
+    pro: String(p.proTeamId), side: isStarter(p) ? (mine ? 'me' : t && t === opp ? 'opp' : null) : null, // Watch view: starters in my matchup
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? `${ordinal(p.rank)}` : '-', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',

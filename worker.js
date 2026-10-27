@@ -58,13 +58,20 @@ async function live(req, env) {
     // board[teamId] = [points so far, ESPN's live final guess]
     for (const x of games) for (const s of [x.home, x.away]) if (s) board[s.teamId] = [s.totalPointsLive ?? s.totalPoints ?? 0, s.totalProjectedPointsLive ?? null];
     // clocks[NFL team id] = [pre/in/post, clock text, 1 = has the ball, 2 = has it inside the other team's 20 (red zone),
-    // 3 = the other team has it (its defense is on the field)]
-    const clocks = {};
+    // 3 = the other team has it (its defense is on the field), ESPN game id]
+    // field[game id] = the Watch view of a game that's on: teams [id, abbreviation, score, color] away then home, down,
+    // where the ball is ("DAL 13"), who has it, red zone, where the drive started, the drive so far, the last play, leaders
+    const clocks = {}, field = {};
     for (const ev of sb.events ?? []) {
-      const sit = ev.competitions[0].situation;
-      for (const c of ev.competitions[0].competitors) clocks[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail, !sit?.possession ? 0 : sit.possession === c.team.id ? (sit.isRedZone ? 2 : 1) : 3];
+      const c0 = ev.competitions[0], sit = c0.situation;
+      for (const c of c0.competitors) clocks[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail, !sit?.possession ? 0 : sit.possession === c.team.id ? (sit.isRedZone ? 2 : 1) : 3, ev.id];
+      if (ev.status?.type?.state !== 'in') continue;
+      const tm = ha => { const c = c0.competitors.find(x => x.homeAway === ha); return [c.team.id, c.team.abbreviation, +c.score, c.team.color]; };
+      field[ev.id] = { teams: [tm('away'), tm('home')], down: sit?.shortDownDistanceText ?? '', spot: sit?.possessionText ?? '', poss: sit?.possession ?? '', rz: !!sit?.isRedZone,
+        dist: sit?.distance ?? null, from: sit?.lastPlay?.drive?.start?.text ?? '', drive: sit?.lastPlay?.drive?.description ?? '', last: sit?.lastPlay?.text?.trim() ?? '',
+        leaders: (c0.leaders ?? []).map(l => [(l.displayName ?? l.name).replace(/ Leader$/, ''), l.leaders?.[0]?.athlete?.shortName, l.leaders?.[0]?.displayValue]).filter(x => x[1]) };
     }
-    return { me: side(mine), opp: side(theirs), players, lineup, board, games: clocks, match };
+    return { me: side(mine), opp: side(theirs), players, lineup, board, games: clocks, field, match };
   });
   if (!score) return reply(502, { error: 'ESPN said no' });
 
