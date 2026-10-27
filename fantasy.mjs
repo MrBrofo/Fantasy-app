@@ -419,6 +419,8 @@ const teams = league.teams.map(t => {
 });
 const teamName = Object.fromEntries(teams.map(t => [t.id, t.name]));
 const me = teams.find(t => t.owners?.includes(SWID));
+// the managers' real names (ESPN members), so Ask knows "Rosalie" is a team in this league
+const mgrName = t => (t.owners ?? []).map(id => league.members?.find(m => m.id === id)).filter(Boolean).map(m => [m.firstName, m.lastName].filter(Boolean).join(' ').trim() || m.displayName).filter(Boolean).join(' & ');
 
 // Injury details (type, expected return, out for season) for my hurt players; only the player card view has them
 const hurtIds = me.roster.filter(p => p.status).map(p => p.id);
@@ -1915,7 +1917,8 @@ const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: status
 const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${playOdds(p, p.inj?.type) ? ` (${playOdds(p, p.inj?.type).pct}% chance he plays: ${playOdds(p, p.inj?.type).why})` : ''}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}${notes(p).length ? `. Notes: ${notes(p).join(' ')}` : ''}`;
 const facts = [
   `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's, Rotowire's and CBS Sports' projections. Facts from ESPN, Sleeper (Rotowire), CBS Sports and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
-  `My team: ${me.name}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
+  `My team: ${me.name}${mgrName(me) ? ` (manager ${mgrName(me)}, that's me)` : ''}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
+  `Every team in the league, in standings order (manager's name in brackets), with points a week and the last 3 weeks' scores:\n${standings.map((t, i) => `- ${ordinal(i + 1)}: ${t.name}${mgrName(t) ? ` (${mgrName(t)})` : ''}, ${t.w}-${t.l}, ${Math.round(t.pf / gamesPlayed)} a week (league average ${Math.round(leagueAvg)}), last 3: ${Object.keys(weekly).map(Number).sort((a, b) => b - a).slice(0, 3).map(w => n(weekly[w][t.id] ?? 0)).join(', ')}`).join('\n')}`,
   opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, win chance ${winPct}%${liveWin ? ' (ESPN live estimate)' : ''}.` : '',
   `${week > lastWeek ? '' : `Playoff chance: ${playoffPct}% (top ${playoffTeams} of ${teams.length}, simulated).`}${recap ? ` Last week (wk ${recap.wk}) I scored ${n(recap.got)}${recap.opp != null ? ` vs ${n(recap.opp)}` : ''}; best possible lineup was ${n(recap.best)}.` : ''}`,
   `Starters:\n${starters(me).map(p => `- ${p.slot}: ${line(p)}`).join('\n')}`,
@@ -3314,14 +3317,18 @@ function askExtra(q) {
   const mine = new Set(R.teams.find(t => t.id === R.me)?.ids ?? []), all = Object.keys(R.pl).map(Number).map(plOf).filter(Boolean);
   const lastOf = p => p.name.split(' ').filter(w => !['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'].includes(w)).pop() || '';
   const lastCount = {}; for (const p of all) { const l = lastOf(p).toLowerCase(); lastCount[l] = (lastCount[l] || 0) + 1; }
-  const teams = R.teams.filter(t => t.id !== R.me && has(t.name.replace(/[^A-Za-z0-9' ]+/g, ' ').replace(/ +/g, ' ').trim()));
+  // a team counts as named by its whole name, any word of it with 4+ letters ("Rosalie" in "Rosalie's Rockets"), or its
+  // manager's first or last name. ponytail: common words in team names ("team", "the") are skipped by a short list
+  const SKIP = ['team', 'the', 'fantasy', 'football', 'league', 'squad', 'club', 'best', 'coaches'];
+  const words = t => [...t.name.replace(/'s/gi, '').replace(/[^A-Za-z0-9' ]+/g, ' ').split(' ').filter(w => w.length >= 4), ...(t.mgr || '').split(/ & | /).filter(w => w.length >= 3)].filter(w => !SKIP.includes(w.toLowerCase()));
+  const teams = R.teams.filter(t => t.id !== R.me && (has(t.name.replace(/[^A-Za-z0-9' ]+/g, ' ').replace(/ +/g, ' ').trim()) || words(t).some(w => has(w) || has(w + "'s") || has(w + 's')))).slice(0, 3);
   const named = all.filter(p => !mine.has(p.id) && (has(p.name.replace(/[^A-Za-z0-9' ]+/g, ' ')) || (lastOf(p).length >= 4 && lastCount[lastOf(p).toLowerCase()] === 1 && has(lastOf(p))))).slice(0, 12);
   const owner = p => { const t = R.teams.find(t => t.ids.includes(p.id)); return t ? 'on ' + t.name + "'s team" : 'free agent'; };
   const row = p => '- ' + p.name + ' (' + p.pos + ', ' + p.team + ', bye wk ' + (p.bye || '?') + '), ' + owner(p) + ': expected ' + (p.proj || 0).toFixed(1) + ' this week, ' + (p.avg || 0).toFixed(1) + ' per game so far, ' + (p.rate || 0).toFixed(1) + ' per game rest of season, ' + (p.status || 'healthy');
   // String.fromCharCode(10) is a line break (this script sits inside the page's template string, where backslashes get eaten)
   const NL = String.fromCharCode(10);
   return (named.length ? NL + NL + 'Other players I mentioned:' + NL + named.map(row).join(NL) : '') +
-    teams.map(t => NL + NL + t.name + ' (' + t.rec + ') roster:' + NL + t.ids.map(plOf).filter(Boolean).map(row).join(NL)).join('');
+    teams.map(t => NL + NL + t.name + (t.mgr ? ' (manager ' + t.mgr + ')' : '') + ' (' + t.rec + ') roster:' + NL + t.ids.map(plOf).filter(Boolean).map(row).join(NL)).join('');
 }
 // claude.ai opens a new chat with ?q= already typed in the box. Very long text may not fit in a link, so then it opens
 // empty and the clipboard copy (always made too) is the fallback
@@ -4293,7 +4300,7 @@ html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MO
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
-  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, ids: t.roster.map(p => p.id), short: depth(t).short, rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
+  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     rows: [...t.roster].sort((a, c) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(c.slot)).map(p => { const g = gameNow[TEAM(p.team)]; return [p.id, p.slot, p.now ?? 0, p.proTeamId ?? 0, p.bye === week ? 'bye' : g?.state ?? '', g?.text ?? '', +(p.proj ?? 0).toFixed(1)]; }) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
