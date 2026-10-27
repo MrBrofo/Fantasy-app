@@ -1989,6 +1989,8 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 #gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
 .gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
+.gc-who{display:flex;align-items:center;gap:10px;margin-top:12px}.gc-who span{display:flex;align-items:center;gap:8px;min-width:0}.gc-who b{font-size:14px;white-space:nowrap}.gc-who i{font-style:normal;color:var(--muted)}
+.gc-who img{width:36px;height:36px;border-radius:50%;object-fit:cover;object-position:top;background:var(--line)}html.term .gc-who img{border-radius:0}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
 html.term .gc-fs{border-radius:0}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
@@ -2673,7 +2675,7 @@ function gcField(F, A, H, ball, from, first, fx) {
   const zone = (x1, t, rot) => { const c = pt(x1 + 5, 26.65); return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
     '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '" font-size="48" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="6" transform="rotate(' + rot + ' ' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ')">' + e(t[1]) + '</text>'; };
   let o = '<image href="field.webp" width="1600" height="490"/>' + zone(0, A, -50) + zone(110, H, 50);
-  if (F.poss) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".22"');
+  if (F.poss) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".1"');
   if (first != null) o += line(fx(first), '#f5d90a');
   if (F.poss) {
     o += line(fx(ball), '#3b82f6');
@@ -2701,6 +2703,22 @@ function gcField(F, A, H, ball, from, first, fx) {
   const cx = Math.max(480, Math.min(1120, pt(fx(F.poss ? ball : 50), 26.65)[0]));
   return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
+// A team's roster from ESPN, by the short name plays use ("T.McKee"), loaded once and then drawn again
+const ROS = {};
+function roster(tid) {
+  if (!ROS[tid]) ROS[tid] = fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/' + tid + '/roster').then(r => r.json())
+    .then(d => Object.fromEntries((d.athletes ?? []).flatMap(g => g.items ?? []).map(a => [a.shortName.replace(/ /g, ''), a]))).catch(() => ({}))
+    .then(m => { ROS[tid] = m; drawGc(); });
+  return ROS[tid] instanceof Promise ? {} : ROS[tid];
+}
+// The passer and the catcher, or the runner, named in the play text
+function gcWho(F) {
+  const t = (F.last || '').replace(/^(\\([^)]*\\)\\s*)+/, ''), tid = F.play?.[2] || F.poss;
+  const a = /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1], b = / pass /.test(t) ? / to ([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1] : null;
+  if (!a || !tid) return '';
+  const R = roster(tid), who = n => { const p = R[n]; return '<span>' + (p ? '<img src="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(p.id) + '.png&amp;w=96&amp;h=70" alt="">' : '') + '<b>' + e(p?.shortName ?? n) + '</b></span>'; };
+  return '<div class="gc-who">' + who(a) + (b ? '<i>&rarr;</i>' + who(b) : '') + '</div>';
+}
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
   if (!box || box.hidden || !p) return;
@@ -2715,6 +2733,7 @@ function drawGc() {
   box.innerHTML = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
     gcField(F, A, H, ball, from, first, x => 10 + Math.max(0, Math.min(100, x))) +
+    gcWho(F) +
     (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +

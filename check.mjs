@@ -228,6 +228,14 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert(sp && sp.games === 2 && Math.abs(sp.ratio - (1 - 0.5 * 2 / 6)) < 1e-9, 'half as good without him, 2 games: pulled to ' + sp?.ratio);
   assert.equal(qbSplit('wr', 'qb', { 1: wk(20, true), 2: wk(10, false), 3: wk(10, false) }), null, 'one game with him is too few');
 }
+// the Watch view names the passer and the catcher, or the runner, from the play text
+{
+  const tpl = c => c.replace(/\\\\/g, '\\');
+  const gcWho = new Function('roster', 'e', tpl(cut('function gcWho(F) {', "(b ? '<i>&rarr;</i>' + who(b) : '') + '</div>';\n}")) + '\nreturn gcWho;')(() => ({ 'T.McKee': { id: '1', shortName: 'T. McKee' } }), String);
+  const w = gcWho({ last: '(No Huddle, Shotgun) T.McKee pass short left to D.Goedert to DAL 13 for 6 yards (J.Barron).', play: [81, 87, '21'] });
+  assert(w.includes('T. McKee') && w.includes('<b>D.Goedert</b>') && w.includes('&rarr;'), w);
+  assert(!gcWho({ last: 'S.Barkley up the middle to DAL 40 for 3 yards.', poss: '21' }).includes('&rarr;'), 'a run has one player');
+}
 
 // usage: last 3 games vs before, as a share of his team's targets; red zone needs 10+ team chances
 {
