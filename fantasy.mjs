@@ -2881,7 +2881,9 @@ function gcField(F, A, H, ball, from, first, fx) {
       // one player who isn't a runner (a kicker, a passer with no target) stands where the play started
       const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run' && !F.dt;
       if (who.length === 2 || solo) o += '<g class="gc-qb">' + pin(sx, who[0], 0, solo ? 0 : -push) + '</g>';
-      if (who.length && !solo) o += '<g class="gc-catch"' + (ret ? ' transform="translate(' + ret.toFixed(1) + ' 0)"' : '') + (kind === 'inc' ? ' style="opacity:.45"' : '') + '>' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
+      if (who.length && !solo) o += '<g class="gc-catch"' + (ret ? ' transform="translate(' + ret.toFixed(1) + ' 0)"' : '') + (kind === 'inc' ? ' style="opacity:.45"' : '') + '>' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) +
+        // an interception: a red INTERCEPTED tag under the defender, carried with him on the return
+        (kind === 'pick' ? '<g class="gc-int"><rect x="' + (p[0] - 70).toFixed(1) + '" y="' + (p[1] + 18).toFixed(1) + '" width="140" height="26" rx="13" fill="#dc2626"/><text x="' + X + '" y="' + (p[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">INTERCEPTED</text></g>' : '') + '</g>';
       // an incomplete pass: the target fades, the ball bounces off the turf, and INCOMPLETE shows under the spot
       if (kind === 'inc') o += '<g class="gc-inc"><rect x="' + (p[0] - 62).toFixed(1) + '" y="' + (p[1] + 18).toFixed(1) + '" width="124" height="26" rx="13" fill="#000" fill-opacity=".6"/><text x="' + X + '" y="' + (p[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#cbd5e1" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">INCOMPLETE</text></g>';
     }
@@ -2933,6 +2935,7 @@ function gcAnimate() {
     if (F.run) {
       const rt = Math.min(1, Math.max(0, (el - GC_LEAD - GC_FLY) / GC_RET)), dx = t < 1 ? F.run * (1 - t) : F.ret * rt * rt * (3 - 2 * rt);
       fade('gc-catch')?.setAttribute('transform', 'translate(' + dx.toFixed(1) + ' 0)');
+      if (fade('gc-int')) fade('gc-int').style.opacity = t < 1 ? 0 : Math.min(1, (el - GC_LEAD - GC_FLY) / 250);
       if (t >= 1 && F.ret) { const [ex, ey] = F.b[F.b.length - 1], bx = (ex + dx).toFixed(1); b.setAttribute('transform', 'translate(' + bx + ' ' + ey.toFixed(1) + ')'); sh.setAttribute('transform', 'translate(' + bx + ' ' + ey.toFixed(1) + ')'); sh.setAttribute('opacity', 1); }
     }
     // incomplete: off the turf in two shrinking hops (about a yard and a half, then a third of that), then the label fades in
@@ -2981,7 +2984,7 @@ function gcAnimate() {
       if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; pop?.remove(); pop = null; b.ownerSVGElement.style.transform = ''; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
     }
     if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(F.inc ? 0.45 : 1, Math.max(0, (t - (F.run ? 0.3 : 0.6)) / 0.3));
-    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0) || (F.ret && el < GC_LEAD + GC_FLY + GC_RET) || (F.inc && el < GC_LEAD + GC_FLY + 700)) requestAnimationFrame(step);
+    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0) || (F.run && el < GC_LEAD + GC_FLY + GC_RET) || (F.inc && el < GC_LEAD + GC_FLY + 700)) requestAnimationFrame(step);
   };
   step();
 }
