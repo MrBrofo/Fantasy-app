@@ -1893,6 +1893,8 @@ html:not(.term) #bg-field,html:not(.term) .bgring{display:none}
 .plays{margin-top:10px}.plays summary{cursor:pointer;font-size:14px}.plays p{margin:6px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
 .plays small{font-family:var(--num);color:var(--fg);margin-right:4px}.plays .td{color:var(--accent)}
 .nowpts{font-size:12px;color:var(--muted);margin-top:2px}.card.row:has(.nowpts[data-ball="1"]),.card.row:has(.nowpts[data-ball="2"]){--c:var(--warn);background:color-mix(in srgb,var(--c) 30%,var(--card));border-color:var(--c)}.card.row:has(.nowpts[data-ball="2"]){--c:var(--bad)}
+/* in a stacked list the next card draws the line under him, so paint it in his color */
+.list .card.row:not(:last-child):has(.nowpts[data-ball="1"],.nowpts[data-ball="2"]){z-index:1;box-shadow:0 1px 0 var(--c)}
 #todo h2 .dot{display:inline-block;vertical-align:middle;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:99px;background:var(--bad);color:#fff;font-size:12px;line-height:20px;text-align:center}#todo h2 .dot[hidden]{display:none}.nowpts b{color:var(--accent);font-family:var(--num)}
 .tag{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
@@ -1927,6 +1929,8 @@ body:not(.home) header{padding-bottom:22px}body:not(.home) .match{display:none}
 .tc-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pick{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:8px 0;border-bottom:1px solid var(--line);line-height:1.3}.pick input{margin-top:3px;flex:none}
 table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}table.cmp td.win{color:var(--good);font-weight:800}
+/* whole-league board: small column labels, score so far dimmer than the bold expected final */
+table.cmp tr.bh td{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding-bottom:2px}table.cmp td[data-now]{color:var(--muted)}table.cmp td[data-proj]{font-weight:700}
 .cmp-picks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
 .cmp-slot,.pickrow{display:flex;gap:8px;align-items:center;text-align:left;min-width:0;color:var(--fg);font:14px Geist,system-ui,sans-serif;cursor:pointer}
 .cmp-slot{justify-content:flex-start;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--chip);min-height:64px}
@@ -2041,7 +2045,7 @@ ${opp ? (() => {
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
 <details class="board" style="margin-top:10px"><summary><b>Whole league this week:</b> you're ${ordinal(myBoardRank)} of ${board.length}, ${below.length} team${below.length === 1 ? '' : 's'} below you. <b style="color:${lowestPct >= 15 ? 'var(--bad)' : lowestPct >= 5 ? 'var(--warn)' : 'var(--good)'}">${lowestPct < 1 ? 'Under 1' : lowestPct}% chance</b> you're the lowest score.</summary>
-<table class="cmp" style="margin-top:8px">${board.map((r, i) => `<tr data-team="${r.t.id}"${r.t === me ? ' style="font-weight:700"' : ''}><td class="num" style="text-align:left">${i + 1}</td><td>${esc(r.t === me ? 'You' : r.t.name)}</td>${isLive ? `<td class="num" data-now>${n(r.now)} now</td>` : ''}<td class="num" data-proj>${n(r.proj)}</td></tr>`).reverse().join('')}</table>
+<table class="cmp" style="margin-top:8px"><tr class="bh"><td></td><td></td>${isLive ? '<td class="num">Now</td>' : ''}<td class="num">Expected</td></tr>${board.map((r, i) => `<tr data-team="${r.t.id}"${r.t === me ? ' style="font-weight:700"' : ''}><td class="num" style="text-align:left">${i + 1}</td><td>${esc(r.t === me ? 'You' : r.t.name)}</td>${isLive ? `<td class="num" data-now>${n(r.now)}</td>` : ''}<td class="num" data-proj>${n(r.proj)}</td></tr>`).reverse().join('')}</table>
 <p class="tag" style="margin:6px 0 0">${isLive ? 'Expected final score (ESPN live projection)' : 'Expected score with every lineup as set right now (averaged projections)'}. ${below.length ? `Below you: ${esc(below.map(r => r.t.name).join(', '))}.` : 'Nobody is projected below you.'} Lineups can still change before games start.</p></details></div>`;
 })() : ''}
 <div id="stale" class="card" hidden style="background:var(--badbg);border-color:var(--bad)"><b style="color:var(--bad)">&#9888; This page stopped updating</b><div class="tag" id="staletext"></div></div>
@@ -2545,7 +2549,7 @@ function liveExtras(d, f) {
   if (d.board && Object.values(d.board).some(x => x[0] > 0)) for (const tr of document.querySelectorAll('tr[data-team]')) {
     const x = d.board[tr.dataset.team], now = tr.querySelector('[data-now]'), proj = tr.querySelector('[data-proj]');
     if (!x) continue;
-    if (now) now.textContent = f(x[0]) + ' now';
+    if (now) now.textContent = f(x[0]);
     if (proj && x[1] != null) proj.textContent = f(x[1]);
   }
   // my trades and claims since this build
@@ -2669,7 +2673,7 @@ document.getElementById('askbtn').onclick = async () => {
 };
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-close]')) return closeSheet();
-  const el = !ev.target.closest('.sheet-body') && ev.target.closest('[data-pid]');
+  const el = (!ev.target.closest('.sheet-body') || sheet.dataset.team) && ev.target.closest('[data-pid]');
   if (el) openSheet(el.dataset.pid);
 });
 // Sign out: forget the site password on this phone and go back to the lock screen. The trade password stays,
@@ -2872,6 +2876,9 @@ const plays = new Map();
       .map(x => ({ when: `Q${x.period?.number ?? '?'} ${x.clock?.displayValue ?? ''}`.replace('Q5', 'OT'), text: x.text, td: !!x.scoringPlay })));
   }
 }
+// every rostered player gets a page, so taps on other teams' players work too
+// ponytail: ~200 extra news/card fetches and a bigger page; trim to starters if runs get slow
+for (const t of teams) for (const p of t.roster) if (!shown.has(p.id)) shown.set(p.id, p);
 const ids = [...shown.keys()];
 const card = new Map();
 for (let i = 0; i < ids.length; i += 50) {
