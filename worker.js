@@ -124,13 +124,13 @@ async function ask(req, env) {
   if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 250000) return reply(400, { error: 'Bad question' });
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   // what this question cost, from the tokens each call used ($ per million: input, output, cache write, cache read), so
-  // the page can take it off the credits it shows. ponytail: a fallback model's answer is priced as Opus
-  const PRICE = { opus: [4, 20, 5, 0.2], haiku: [0.1, 0.5, 0.125, 0.01] };
+  // the page can take it off the credits it shows
+  const PRICE = { sonnet: [2, 10, 2.5, 0.2], haiku: [0.1, 0.5, 0.125, 0.01] };
   let cost = 0;
   const bill = (which, u) => { const [i, o, w, rd] = PRICE[which]; cost += ((u?.input_tokens ?? 0) * i + (u?.output_tokens ?? 0) * o + (u?.cache_creation_input_tokens ?? 0) * w + (u?.cache_read_input_tokens ?? 0) * rd) / 1e6; };
-  // Quick = Haiku (a tiny fraction of the price, fast), Smart = Opus. Auto: Haiku reads just the question (a fraction
-  // of a cent, about a second) and sends anything that asks me to decide something to Opus; only plain lookups and
-  // meanings go to Haiku, and anything unclear goes to Opus
+  // Quick = Haiku (a tiny fraction of the price, fast), Smart = Sonnet (half Opus's price, and just as good at weighing
+  // the facts it's handed). Auto: Haiku reads just the question (a fraction of a cent, about a second) and sends anything
+  // that asks me to decide something to Sonnet; only plain lookups and meanings go to Haiku, and anything unclear to Sonnet
   let smart = m.mode !== 'quick';
   if (m.mode === 'auto' && typeof m.q === 'string' && m.q.trim()) {
     const c = await client.messages.create({
@@ -160,8 +160,6 @@ async function ask(req, env) {
     bill('haiku', c?.usage);
     smart = !/EASY/.test(c?.content.filter(b => b.type === 'text').map(b => b.text).join('') ?? '');
   }
-  // Opus gets fallbacks: if it declines by mistake (a false alarm from its safety checks), the API answers with another
-  // model. Haiku has no fallbacks
   // The big parts of the league facts (each other team's roster, every result, league moves, this week's matchups, free
   // agents) are drawers: Claude gets my team and the standings, plus a list of drawers it can open with look_up, so a
   // question only pays for the parts it needs. The players and teams the question names come along up front anyway
@@ -184,13 +182,12 @@ async function ask(req, env) {
   // ponytail: 3 rounds of look_up, then it answers with what it has
   for (let round = 0; ; round++) {
     r = await client.beta.messages.create({
-      model: smart ? 'claude-opus-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
-      ...(smart ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
+      model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
       system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Answer in short plain sentences and short lists, no tables. Give a clear pick when asked to choose.',
       ...(tools ? { tools, tool_choice: round < 3 ? { type: 'auto' } : { type: 'none' } } : {}),
       messages: msgs,
     });
-    bill(smart ? 'opus' : 'haiku', r.usage);
+    bill(smart ? 'sonnet' : 'haiku', r.usage);
     if (r.stop_reason !== 'tool_use') break;
     msgs.push({ role: 'assistant', content: r.content });
     msgs.push({ role: 'user', content: r.content.filter(b => b.type === 'tool_use').map(b => ({
@@ -199,7 +196,7 @@ async function ask(req, env) {
     })) });
   }
   if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.', cost });
-  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Opus' : 'Haiku', cost });
+  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Sonnet' : 'Haiku', cost });
 }
 
 export default {
