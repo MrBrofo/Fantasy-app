@@ -123,9 +123,9 @@ async function ask(req, env) {
   try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
   if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 60000) return reply(400, { error: 'Bad question' });
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  // Quick = Sonnet (half the price, faster), Smart = Opus. Auto: Haiku reads just the question (a fraction of a cent,
-  // about a second) and sends anything that asks me to decide something to Opus; only plain lookups and meanings go to
-  // Sonnet, and anything unclear goes to Opus
+  // Quick = Haiku (a tiny fraction of the price, fast), Smart = Opus. Auto: Haiku reads just the question (a fraction
+  // of a cent, about a second) and sends anything that asks me to decide something to Opus; only plain lookups and
+  // meanings go to Haiku, and anything unclear goes to Opus
   let smart = m.mode !== 'quick';
   if (m.mode === 'auto' && typeof m.q === 'string' && m.q.trim()) {
     const c = await client.messages.create({
@@ -135,15 +135,16 @@ async function ask(req, env) {
     }).catch(() => null);
     smart = !/EASY/.test(c?.content.filter(b => b.type === 'text').map(b => b.text).join('') ?? '');
   }
-  // fallbacks: if the model declines by mistake (a false alarm from its safety checks), the API answers with another one
+  // Opus gets fallbacks: if it declines by mistake (a false alarm from its safety checks), the API answers with another
+  // model. Haiku has no fallbacks
   const r = await client.beta.messages.create({
-    model: smart ? 'claude-opus-5-5' : 'claude-sonnet-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
-    betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    model: smart ? 'claude-opus-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
+    ...(smart ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
     system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; say when something is a guess. Answer in short plain sentences and short lists, no tables. Give a clear pick when asked to choose.',
     messages: [{ role: 'user', content: m.text }],
   });
   if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
-  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Opus' : 'Sonnet' });
+  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Opus' : 'Haiku' });
 }
 
 export default {

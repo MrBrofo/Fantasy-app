@@ -3249,7 +3249,7 @@ const askHtml = t => t.split(String.fromCharCode(10)).map(l => l.trim()).reduce(
   return !l ? o : /^[-*] /.test(l) ? o + '<li>' + h + '</li>' : o + '<p>' + h + '</p>';
 }, '').replace(/((?:<li>.*?<[/]li>)+)/g, '<ul>$1</ul>');
 // which model answers: Auto lets the Worker pick from the question, Quick is Sonnet, Smart is Opus (remembered)
-const ASK_TIP = { auto: 'Picks for you: Smart for decisions, Quick for meanings and lookups.', quick: 'Sonnet: faster, about 1¢ a question.', smart: 'Opus: best for trades and start/sit, about 2¢ a question.' };
+const ASK_TIP = { auto: 'Picks for you: Smart for decisions, Quick for meanings and lookups.', quick: 'Haiku: fast and almost free. Good for meanings and lookups, not decisions.', smart: 'Opus: best for trades and start/sit, about 2¢ a question.' };
 let askMode = 'auto';
 try { askMode = ASK_TIP[localStorage.getItem('askMode')] ? localStorage.getItem('askMode') : 'auto'; } catch {}
 const askModeShow = () => { document.querySelectorAll('#askmode button').forEach(x => x.classList.toggle('on', x.dataset.mode === askMode)); document.getElementById('askmodetip').textContent = ASK_TIP[askMode]; };
@@ -3264,7 +3264,7 @@ document.getElementById('askbtn').onclick = async () => {
     const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, q: document.getElementById('askq').value.trim(), mode: askMode }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
-    out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '') + (d.model ? '<p class="tag">Answered by ' + e(d.model === 'Opus' ? 'Smart (Opus)' : 'Quick (Sonnet)') + '</p>' : '');
+    out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '') + (d.model ? '<p class="tag">Answered by ' + e(d.model === 'Opus' ? 'Smart (Opus)' : 'Quick (Haiku)') + '</p>' : '');
   } catch (err) { out.innerHTML = '<p class="tag">That didn&#39;t work (' + e(err.message) + '). Use Open in Claude below instead.</p>'; }
   b.disabled = false; b.textContent = 'Ask Claude';
 };
