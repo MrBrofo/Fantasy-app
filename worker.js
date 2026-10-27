@@ -21,7 +21,7 @@ async function every(key, ms, fn) {
 const names = {}; // player id -> name, kept while the Worker stays warm
 
 // Live data for the site: my matchup (points so far, ESPN's live final guess, win chance), every rostered player's
-// points, injury status and projection, the whole league's scores, my lineup as set on ESPN, the site's suggested
+// points, injury status and projection (every team's, for the team pages), the whole league's scores, my lineup as set on ESPN, the site's suggested
 // pickups that someone else just took, my trades and claims, news on players in my matchup, and each NFL game's clock.
 async function live(req, env) {
   if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
@@ -44,19 +44,21 @@ async function live(req, env) {
     const games = d.schedule?.filter(x => x.matchupPeriodId === week) ?? [], g = games.find(x => x.home?.teamId === team || x.away?.teamId === team);
     const side = s => s && { pts: s.totalPointsLive ?? s.totalPoints ?? 0, proj: s.totalProjectedPointsLive ?? null, win: s.winProbability ?? null };
     const [mine, theirs] = !g ? [] : g.home.teamId === team ? [g.home, g.away] : [g.away, g.home];
-    // players[id] = [points so far, ESPN injury status, ESPN's projection for this week]; lineup[id] = ESPN lineup slot
-    const players = {}, lineup = {}, board = {};
-    for (const s of [mine, theirs]) for (const e of s?.rosterForCurrentScoringPeriod?.entries ?? []) {
+    // players[id] = [points so far, ESPN injury status, ESPN's projection for this week], for every team (team pages);
+    // lineup[id] = ESPN lineup slot (mine); match = the players in my matchup (for news)
+    const players = {}, lineup = {}, board = {}, match = [];
+    for (const s of games.flatMap(x => [x.home, x.away])) for (const e of s?.rosterForCurrentScoringPeriod?.entries ?? []) {
       const p = e.playerPoolEntry?.player, proj = p?.stats?.find(x => x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === week)?.appliedTotal;
       players[e.playerId] = [e.playerPoolEntry?.appliedStatTotal ?? 0, p?.injuryStatus ?? 'ACTIVE', proj ?? null];
       if (p?.fullName) names[e.playerId] = p.fullName;
       if (s === mine) lineup[e.playerId] = e.lineupSlotId;
+      if (s === mine || s === theirs) match.push(e.playerId);
     }
     // board[teamId] = [points so far, ESPN's live final guess]
     for (const x of games) for (const s of [x.home, x.away]) if (s) board[s.teamId] = [s.totalPointsLive ?? s.totalPoints ?? 0, s.totalProjectedPointsLive ?? null];
     const clocks = {};
     for (const ev of sb.events ?? []) for (const c of ev.competitions[0].competitors) clocks[c.team.id] = [ev.status?.type?.state, ev.status?.type?.shortDetail];
-    return { me: side(mine), opp: side(theirs), players, lineup, board, games: clocks };
+    return { me: side(mine), opp: side(theirs), players, lineup, board, games: clocks, match };
   });
   if (!score) return reply(502, { error: 'ESPN said no' });
 
@@ -82,7 +84,7 @@ async function live(req, env) {
   }) ?? [];
 
   // news (Rotowire) on everyone in my matchup
-  const ids = Object.keys(score.players);
+  const ids = score.match ?? [];
   const news = !ids.length ? [] : await every(`news:${week}`, 120000, async () => {
     const r = await fetch(`https://site.api.espn.com/apis/fantasy/v2/games/ffl/news/players?limit=40&${ids.map(id => `playerId=${id}`).join('&')}`);
     if (!r.ok) throw new Error(`news ${r.status}`);
@@ -90,7 +92,8 @@ async function live(req, env) {
   }) ?? [];
 
   const who = [...new Set([...Object.keys(taken), ...tx.flatMap(t => t.items.map(i => i[0])), ...news.map(x => x.pid)])];
-  return reply(200, { at: Date.now(), ...score, taken, tx, news, names: Object.fromEntries(who.filter(id => names[id]).map(id => [id, names[id]])) });
+  const { match, ...live } = score;
+  return reply(200, { at: Date.now(), ...live, taken, tx, news, names: Object.fromEntries(who.filter(id => names[id]).map(id => [id, names[id]])) });
 }
 
 export default {

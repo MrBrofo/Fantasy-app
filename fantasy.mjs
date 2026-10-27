@@ -1893,6 +1893,7 @@ html:not(.term) #bg-field,html:not(.term) .bgring{display:none}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
 td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted);white-space:nowrap}tr.me td{font-weight:800;color:var(--fg)}
 tr.cut td{border-bottom:2px dashed var(--good)}
+tr[data-team]{cursor:pointer}tr[data-team] td:nth-child(2){text-decoration:underline dotted;text-underline-offset:3px}
 details summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between}
 details summary::-webkit-details-marker{display:none}
 details summary::after{content:"+";color:var(--muted);font-weight:400;font-size:20px;line-height:1}details[open]>summary::after{content:"\\2212"}
@@ -2242,7 +2243,7 @@ ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><
 
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
-${standings.map((t, i) => `<tr class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
+${standings.map((t, i) => `<tr data-team="${t.id}" class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
 ${intel.size || othersPending.size ? `<div class="card"><details open><summary>Behind the scenes: trades in progress, and offers and claims that didn't happen</summary>
 <p class="tag" style="margin-top:0">The ESPN app doesn't show these. A team that offered a player in a trade is shopping him; a team that tried to claim someone needs that position.</p><table>
 ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDate - a.proposedDate)].slice(0, 20).map(tx => {
@@ -2363,6 +2364,7 @@ async function swap(html) {
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
   if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) body.innerHTML = render(P[sheet.dataset.pid]);
+  else if (!sheet.hidden && sheet.dataset.team && typeof teamPage === 'function') body.innerHTML = teamPage(sheet.dataset.team);
   gloss(document.body);
   liveTick();
   return true;
@@ -2526,6 +2528,8 @@ function liveExtras(d, f) {
     const s = el.closest('.row').querySelector('.slot');
     if (s && slot in SLOT_NAME && s.textContent !== SLOT_NAME[slot]) s.textContent = SLOT_NAME[slot];
   }
+  // a team's page that's open: its total so far
+  for (const el of document.querySelectorAll('[data-teamnow]')) { const x = d.board?.[el.dataset.teamnow]; if (x) el.textContent = f(x[0]); }
   // whole league this week
   if (d.board && Object.values(d.board).some(x => x[0] > 0)) for (const tr of document.querySelectorAll('tr[data-team]')) {
     const x = d.board[tr.dataset.team], now = tr.querySelector('[data-now]'), proj = tr.querySelector('[data-proj]');
@@ -2592,7 +2596,7 @@ function render(p) {
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
 let closeTimer;
-function openSheet(id) { const p = P[id]; if (!p) return; sheet.dataset.pid = id; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function openSheet(id) { const p = P[id]; if (!p) return; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
@@ -2925,6 +2929,36 @@ const photo = p => p.id < 0 || p.pos === 'D/ST' ? '<span class="pic logo"><img s
 // Compare / Trade buttons on a player page
 const toolBtns = p => { const x = plOf(p.id); if (!x) return ''; const onTeam = R.teams.some(t => t.ids.includes(x.id)); return '<div class="tools2"><button type="button" class="btn" data-cmp="' + x.id + '">Compare</button>' + (onTeam ? '<button type="button" class="btn" data-trade="' + x.id + '">Trade check</button>' : '') + '</div>'; };
 const rosterOf = teamId => R.teams.find(t => t.id === teamId).ids.map(plOf).filter(Boolean);
+// A team's page (tap a team on the league board or in League): who they start, points so far with the game clock
+// (live every 30s, same as your players), and what each player is expected to score
+function teamPage(tid) {
+  const t = R.teams.find(x => x.id === +tid);
+  if (!t || !t.rows) return '';
+  const row = r => {
+    const [id, slot, now, pro, st, clock, proj] = r, x = plOf(id);
+    if (!x) return '';
+    const game = st === 'bye' ? 'Bye week: no game' : st === 'pre' ? e(clock) : '';
+    const pts = st === 'in' || st === 'post' ? '<b>' + now.toFixed(1) + ' pts</b> ' + (st === 'post' ? 'final' : 'so far &middot; ' + e(clock)) : '';
+    return '<div class="card row"><span class="slot">' + (slot === 'Bench' || slot === 'IR' ? '' : e(slot)) + '</span><div class="player"' + (P[id] ? ' data-pid="' + id + '"' : '') + '>' + photo(x) +
+      '<div class="who"><div class="name">' + e(x.name) + '</div><div class="meta"><span class="pos pos-' + x.pos.replace('/', '') + '">' + x.pos + '</span> ' + e(x.team || '') + '</div>' +
+      (game ? '<div class="nowpts">' + game + '</div>' : '') + (st === 'bye' ? '' : '<div class="nowpts" data-live="' + id + '" data-pro="' + pro + '"' + (pts ? '>' + pts : ' hidden>') + '</div>') +
+      '</div></div><div class="big"><b>' + proj.toFixed(1) + '</b><small>expected</small></div></div>';
+  };
+  const start = t.rows.filter(r => r[1] !== 'Bench' && r[1] !== 'IR'), bench = t.rows.filter(r => r[1] === 'Bench' || r[1] === 'IR');
+  return '<div class="sh-top"><div><div class="sh-name">' + e(t.id === R.me ? 'You' : t.name) + '</div><div class="tag">' + t.rec + ' record</div></div></div>' +
+    '<div class="stat"><div><b data-teamnow="' + t.id + '">' + (t.now == null ? '0.0' : t.now.toFixed(1)) + '</b><small>points so far this week</small></div><div><b>' + (t.proj == null ? '-' : t.proj.toFixed(1)) + '</b><small>expected final score</small></div></div>' +
+    '<div class="group">Starting</div><div class="list">' + start.map(row).join('') + '</div>' +
+    (bench.length ? '<details class="fold" style="margin-top:12px"><summary class="group">Bench (' + bench.length + ')</summary><div class="list">' + bench.map(row).join('') + '</div></details>' : '');
+}
+function openTeam(tid) {
+  const html = teamPage(tid);
+  if (!html) return;
+  sheet.dataset.pid = ''; sheet.dataset.team = tid; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing');
+  body.innerHTML = html; sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden';
+  gloss(body);
+  if (typeof liveTick === 'function') liveTick();
+}
+document.addEventListener('click', ev => { const tr = ev.target.closest('tr[data-team]'); if (tr && !ev.target.closest('a,button')) openTeam(tr.dataset.team); });
 // "Add him" on a free agent's page: one button per player you could drop, best choice first. Best = your lineup
 // loses the least (or gains the most) over the rest of the season with him in and that player out.
 let dropCost = null; // set by the trade tools below: (player to add, player to drop) => change in your best lineup per week
@@ -3365,7 +3399,8 @@ html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MO
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
-  teams: teams.map(t => ({ id: t.id, name: t.name, ids: t.roster.map(p => p.id), short: depth(t).short })), fa: faList.map(p => p.id),
+  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, ids: t.roster.map(p => p.id), short: depth(t).short, rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
+    rows: [...t.roster].sort((a, c) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(c.slot)).map(p => { const g = gameNow[TEAM(p.team)]; return [p.id, p.slot, p.now ?? 0, p.proTeamId ?? 0, p.bye === week ? 'bye' : g?.state ?? '', g?.text ?? '', +(p.proj ?? 0).toFixed(1)]; }) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
