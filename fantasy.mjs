@@ -1768,7 +1768,7 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link rel="manifest" href="manifest.json">
 <title>${esc(me.name)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 /* Stadium Lime: dark only. Graphite surfaces, one lime accent (matches the ESPN Fantasy icon); green/amber/red mean good/so-so/bad. */
 :root{color-scheme:dark;--bg:#0b0d10;--card:#15181d;--fg:#f2f4f7;--muted:#9aa3b2;--line:#232830;--accent:#c6f432;--onaccent:#0b0d10;
@@ -1935,7 +1935,68 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
 #refresh.spin span{animation:none}.btn,nav a,#refresh{transition:none}}
 @media (prefers-reduced-transparency:reduce){nav,body::before{background:var(--card);-webkit-backdrop-filter:none;backdrop-filter:none}}
+/* ===== Terminal theme: the look of the password screen. Black, mono letters, square edges, glow for good/bad. =====
+   Everything above is the base layout; this block only restyles it, so removing it brings back Stadium Lime. */
+:root{--bg:#000;--card:rgba(0,0,0,.78);--fg:#fff;--muted:#ffffff8c;--line:#ffffff2e;--accent:#39ff88;--onaccent:#000;
+--good:#39ff88;--goodbg:#39ff8814;--warn:#ffb020;--warnbg:#ffb02014;--bad:#ff3b3b;--badbg:#ff3b3b14;--chip:#ffffff0d;--glass:rgba(0,0,0,.82);--glassline:#ffffff40;
+--num:'JetBrains Mono',ui-monospace,Menlo,monospace}
+html{background:#000}
+body{background:transparent;font:14px/1.55 'JetBrains Mono',ui-monospace,Menlo,monospace}
+body,button,.btn,.seg button,.sel,#refresh,.cmp-slot,.pickrow{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
+/* moving background: dot grid with rings of light, two slow spinning circles */
+#bg-field{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+.bgring{position:fixed;left:50%;top:38%;width:min(140vw,700px);aspect-ratio:1;translate:-50% -50%;border:1px dashed #ffffff1c;border-radius:50%;animation:spin 140s linear infinite;pointer-events:none;z-index:-1}
+.bgring.r2{width:min(95vw,460px);border:1px solid #ffffff10;animation-duration:50s;animation-direction:reverse}
+.bgring.r2::after{content:'';position:absolute;top:-3px;left:50%;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 14px #fff}
+header{background:none}
+.league{letter-spacing:.12em;text-transform:uppercase;font-size:11px}
+h1{text-transform:uppercase;letter-spacing:.1em;font-size:22px;font-weight:700}
+h1::after{content:'_';animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.record{letter-spacing:.1em;text-transform:uppercase;font-size:11px}
+h2{text-transform:uppercase;letter-spacing:.14em;font-size:15px}
+section>h2::before,details.fold>summary h2::before{content:'// ';color:var(--muted)}
+.group,.match h2,.sh-q small{letter-spacing:.2em;font-size:10px}
+.sub,.why,.tag,.meta{font-size:12.5px}
+/* square edges everywhere */
+.card,.match,details.fold,.seg,.seg button,.btn,.chip,.lvl,.lv,.pos,.gain,.live,.stat div,.sh-q,.bars,a.news,.sel,.cmp-slot,.pitch,.chg,.worder span,[class^=verdict-],#gloss,#refresh,.card.row .slot,.bar,.bar i{border-radius:0!important}
+.list .card:first-child,.list .card:last-child,.list .card:only-child{border-radius:0}
+.card,.match,details.fold,a.news,.sh-q{background:var(--card);border-color:var(--line)}
+.match{border-color:#ffffff59;box-shadow:none;position:relative}
+.wp b{text-shadow:0 0 18px currentColor}
+.bar{height:2px}.bar i{box-shadow:0 0 8px currentColor}
+/* tags: outlined, like the ACCESS GRANTED stamp */
+.chip,.lvl,.lv,.live,[class^=verdict-],.gain{background:transparent!important;border:1px solid currentColor;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
+.live{animation:blink 1.4s steps(1) infinite}
+.pos{border-radius:0}
+/* buttons: white outline, flips to white when pressed */
+.btn{background:transparent;color:#fff;border:1px solid #fff;font-weight:700;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
+.btn:active,.btn:hover{background:#fff;color:#000;filter:none}
+.btn[disabled]{opacity:.5}
+.tools2 .btn{background:transparent;color:#fff}
+#refresh{background:transparent;border-color:#ffffff59;text-transform:uppercase;letter-spacing:.12em;font-size:11px}
+/* bottom bar: black glass strip, glowing tab */
+nav{border-radius:0;background:var(--glass);border-color:var(--glassline)}
+nav a{border-radius:0;letter-spacing:.12em;text-transform:uppercase;font-size:9.5px}
+nav a.on{color:#fff;background:#ffffff12;text-shadow:0 0 10px #fff}
+nav a.on svg{filter:drop-shadow(0 0 5px #fff)}
+nav a.press{background:#ffffff26}
+nav .dot{border-radius:0;background:var(--bad);box-shadow:0 0 10px var(--bad)}
+.seg button{text-transform:uppercase;letter-spacing:.12em;font-size:11px}
+.seg button.on{background:#fff;color:#000}
+.gl{text-decoration-color:var(--good)}
+#gloss{border-color:var(--good);box-shadow:0 0 24px #39ff8826}
+#gloss b{color:var(--good);letter-spacing:.1em;text-transform:uppercase;font-size:12px}
+.sheet-card{border-radius:0;border-top:1px solid #ffffff59;background:#000}
+.sheet-x{border-radius:0}
+.pic{border:1px solid var(--line)}
+footer{letter-spacing:.1em;text-transform:uppercase;font-size:10px}
+/* each page boots in when you open it */
+section:not(.off){animation:boot .35s ease-out}
+@keyframes boot{from{opacity:0;transform:translateY(6px)}}
+@media (prefers-reduced-motion:reduce){.bgring,h1::after,.live{animation:none}section:not(.off){animation:none}}
 </style></head><body>
+<canvas id="bg-field" aria-hidden="true"></canvas><div class="bgring" id="bg-ring1"></div><div class="bgring r2" id="bg-ring2"></div>
 
 <header><div class="wrap">
   <div class="top"><div class="league">${esc(league.settings.name)} &middot; Week ${week} &middot; <span id="ago">just updated</span></div>
@@ -2270,7 +2331,7 @@ function load() {
   location.replace(fresh() + location.hash);
 }
 const verdictText = ${verdictText.toString()};
-const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg|dict)/;
+const KEEP = /^(sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg|dict|bg-)/;
 const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || changedIn.has(n));
 async function swap(html) {
   let page = html;
@@ -3108,6 +3169,31 @@ tabBar.addEventListener('pointercancel', () => press(null));
 navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); if (!ev.detail) showTab(a.hash.slice(1), true); }));
 document.getElementById('seg').addEventListener('click', ev => { const b = ev.target.closest('[data-page]'); if (b) showTab(b.dataset.page, true); });
 showTab(location.hash.slice(1), false);
+
+// Background, like the password screen: a dot grid with rings of light rolling out from the middle.
+// Dimmer than the lock screen so it doesn't fight the text; ~20 frames a second, and nothing while the app is hidden.
+(() => {
+  const cv = document.getElementById('bg-field');
+  if (!cv) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches; // phone set to reduce motion: the dots, standing still
+  const cx = cv.getContext('2d'), dpr = Math.min(2, devicePixelRatio || 1);
+  const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; if (still) { last = -99; draw(0); } };
+  let last = -99;
+  const draw = now => {
+    if (!still) requestAnimationFrame(draw);
+    if (document.hidden || now - last < 50) return;
+    last = now;
+    const w = cv.width, h = cv.height, gap = 26 * dpr, t = now / 1000;
+    cx.clearRect(0, 0, w, h);
+    for (let y = gap / 2; y < h; y += gap) for (let x = gap / 2; x < w; x += gap) {
+      const wave = Math.max(0, Math.sin(Math.hypot(x - w / 2, y - h * 0.38) / dpr / 70 - t * 0.8));
+      cx.fillStyle = 'rgba(255,255,255,' + (0.05 + 0.28 * wave ** 14) + ')';
+      cx.fillRect(x, y, 1.5 * dpr, 1.5 * dpr);
+    }
+  };
+  addEventListener('resize', size); size();
+  if (!still) requestAnimationFrame(draw);
+})();
 
 // "Pick him up": his page, scrolled to the list of who to drop
 document.addEventListener('click', ev => {
