@@ -2704,35 +2704,46 @@ function gcField(F, A, H, ball, from, first, fx) {
   let o = '<image href="field.webp" width="1600" height="490"/>' + [0, 1, 2, 3, 4, 5].map(i => '<image class="gc-crowd" href="crowd' + i + '.webp" width="1600" height="240" style="animation-delay:-' + (i * 0.13).toFixed(2) + 's"/>').join('') + zone(0, A, td && tdLeft) + zone(110, H, td && !tdLeft) + midLogo;
   if (F.poss && !td) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".1"');
   if (first != null) o += line(fx(first), '#f5d90a');
+  let cam = null;
   if (F.poss || td) {
     if (!td) o += line(fx(ball), '#3b82f6');
-    const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
-    const key = F.last + '|' + F.play, fly = F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const key = F.last + '|' + F.play;
     if (key !== gcKey) { gcKey = key; gcAt = Date.now(); }
     gcFly = null;
-    if (fly) {
-      const [y0, , tid, type] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), bx = fx(ball), H = /pass|reception|interception/i.test(type) ? Math.min(7, 1.5 + Math.abs(bx - sx) * 0.22) : 0;
-      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (bx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
-      if (Math.abs(bx - sx) > 1) gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], td: td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
-    }
-    // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run
+    // the last play, by kind: a pass or a kick arcs through the air, a run or a sack lies flat on the turf. ESPN gives no
+    // spot for an incompletion, so it lands 8 yards past the line, 20 if deep; a field goal flies from the hold, 7 yards
+    // back, to the posts on the end line; a touchdown ends with the scorer in the middle of the end zone
+    const [y0 = 0, y1 = 0, tid, type = ''] = F.play || [], own = y => tid === A[0] ? y : 100 - y;
+    const kind = /field goal/i.test(type) ? (/good/i.test(type) ? 'fg' : /block/i.test(type) ? 'block' : 'miss') : /incomplet/i.test(type) ? 'inc' : /punt|kickoff/i.test(type) ? 'kick' : /interception/i.test(type) ? 'pick' : /pass|reception/i.test(type) ? 'pass' : 'run';
+    // an interception lands where it was picked ("INTERCEPTED by D.Overshown at DAL 30"), not where the return ended
+    const pk = kind === 'pick' && / at ([A-Z]+) ([0-9]+)/.exec(F.last.split('INTERCEPTED')[1] ?? ''), pick = pk ? (pk[1] === F.teams.find(t => t[0] === tid)?.[1] ? +pk[2] : 100 - pk[2]) : y1;
+    const hold = /fg|miss|block/.test(kind), sx = fx(own(hold ? y0 - 7 : y0));
+    const lx = td ? fx(ball) : fx(own(kind === 'fg' || kind === 'miss' ? 110 : kind === 'block' ? y0 - 5 : kind === 'inc' ? y0 + (/ deep /.test(F.last) ? 20 : 8) : kind === 'pick' ? pick : y1)), dl = Math.abs(lx - sx);
+    const H = kind === 'run' || kind === 'block' ? 0 : /fg|miss|kick/.test(kind) ? Math.min(12, 3 + dl * 0.25) : dl >= 5 ? Math.min(7, 1.5 + dl * 0.22) : 0;
+    // lost yards, an interception, a missed or blocked kick: red; an incompletion: faint grey
+    const bad = !td && ((y1 < y0 && /run|pass/.test(kind)) || /pick|miss|block/.test(kind)), grey = kind === 'inc';
+    const p = pt(F.play ? lx : fx(ball), 26.65), pb = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
     if (F.play) {
-      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), xe = fx(td ? ball : own(y1)), x1 = xe - Math.sign(xe - x0) * Math.min(1.5, Math.abs(xe - x0) * 0.1), len = Math.abs(x1 - x0), loss = !td && y1 < y0;
-      // the tip stops short of the ball so it shows (less on a short play); a touchdown runs on to the scorer in the middle
-      // of the end zone; lost yards point back and are red; a short pass lies flat so its head reads
+      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
+      cam = (pt(sx, 26.65)[0] + p[0]) / 2;
+      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], td: td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
+    }
+    // a wide arrow from where the play started to the ball; the tip stops short of the ball so it shows (less on a short play)
+    if (F.play) {
+      const x0 = sx, x1 = lx - Math.sign(lx - sx) * Math.min(1.5, dl * 0.1), len = Math.abs(x1 - x0);
       if (len > 1) {
-        const z = 26.65, H = /pass|reception|interception/i.test(type) && len >= 5 ? Math.min(7, 1.5 + len * 0.22) : 0, uh = 1 - Math.min(4, len * 0.4) / len;
+        const z = 26.65, uh = 1 - Math.min(4, len * 0.4) / len;
         const at = (u, dz, lift) => { const q = pt(x0 + (x1 - x0) * u, z + dz, lift ? H * 4 * u * (1 - u) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
         const us = Array.from({ length: 25 }, (_, i) => uh * i / 24), back = [...us].reverse();
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(x0, z), g1 = pt(x1, z);
-        o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="' + (loss ? '#f87171' : '#fff') + '" stop-opacity=".5"/><stop offset="1" stop-color="' + (loss ? '#ef4444' : '#fff') + '" stop-opacity=".95"/></linearGradient>' +
+        o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="' + (bad ? '#f87171' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.25' : '.5') + '"/><stop offset="1" stop-color="' + (bad ? '#ef4444' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.6' : '.95') + '"/></linearGradient>' +
           (gcFly ? '<clipPath id="gcReveal"><rect x="0" y="0" width="1600" height="600"/></clipPath>' : '') +
           '<g class="gc-trail"' + (gcFly ? ' clip-path="url(#gcReveal)"' : '') + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
       }
     }
     if (F.play) {
-      const who = gcWho(F), [y0, , tid] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), r = 31;
+      const who = gcWho(F), r = 31;
       // ESPN's headshots are cut out (transparent), so the player stands on a stem with no frame; no photo: initials in a dot
       const mine = w => td && w.p && Object.values(P).find(q => q.side && q.pro === tid && q.name === w.p.displayName);
       const tag = (w, X, y) => { const q = mine(w); if (!q) return ''; const t = (q.side === 'me' ? 'YOUR TD' : 'THEIR TD') + ' \u00b7 ' + f1(LD?.players?.[q.id]?.[0] ?? 0), wd = t.length * 8.6 + 18;
@@ -2744,18 +2755,19 @@ function gcField(F, A, H, ball, from, first, fx) {
               '<text x="' + X + '" y="' + (cy - r * 1.32 + 10).toFixed(1) + '" font-size="15" font-weight="600" fill="#fff" fill-opacity=".7" text-anchor="middle" letter-spacing=".5">' + e((w.p.shortName ?? w.n).split(' ').pop()) + '</text>'
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>') + '</g>'; };
       // two photos close together are pushed apart, their stems leaning to where each stood
-      const gap = pt(fx(ball), 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1);
-      if (who.length === 2) o += '<g class="gc-qb">' + pin(sx, who[0], 0, -push) + '</g>';
-      if (who.length) o += '<g class="gc-catch">' + pin(fx(ball), who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
+      // one player who isn't a runner (a kicker, a passer with no target) stands where the play started
+      const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run';
+      if (who.length === 2 || solo) o += '<g class="gc-qb">' + pin(sx, who[0], 0, solo ? 0 : -push) + '</g>';
+      if (who.length && !solo) o += '<g class="gc-catch">' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
     const bw = 3.6 * s / 109;
-    if (F.rz && !td) o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
+    if (F.rz && !td) o += '<ellipse cx="' + pb[0].toFixed(1) + '" cy="' + pb[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
     o += '<g id="gcShad" transform="translate(' + xy(p).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
       '<g id="gcBall" transform="translate(' + xy(p).replace(',', ' ') + ')"><image href="ball.webp" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/></g>';
   }
-  // show the 60% of the field around the ball, like a TV camera following the play
-  const cx = Math.max(480, Math.min(1120, pt(fx(F.poss || F.play?.[4] ? ball : 50), 26.65)[0]));
+  // show the 60% of the field around the play (or the ball), like a TV camera following it
+  const cx = Math.max(480, Math.min(1120, cam ?? pt(fx(F.poss ? ball : 50), 26.65)[0]));
   return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 0 960 470" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><filter id="gcSoft"><feGaussianBlur stdDeviation=".45"/></filter><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
 // A new play plays out: the passer fades in over GC_LEAD ms, then over GC_FLY ms the ball moves along gcFly (its path in the air, and its shadow's on the turf)
@@ -2872,7 +2884,7 @@ function gcPlays(d, short) {
     // after a turnover the end is counted toward the other team's end zone
     const end = pl.end.team?.id == null || String(pl.end.team.id) === t ? 100 - pl.end.yardsToEndzone : pl.end.yardsToEndzone;
     teams[0][2] = +pl.awayScore || 0; teams[1][2] = +pl.homeScore || 0;
-    return { teams, down: '', spot: pl.end.possessionText ?? '', poss: t, rz: false, dist: null, from: '', drive: '', leaders: [], last: pl.text.trim(), qb: q,
+    return { teams, down: '', spot: pl.end.possessionText ?? pl.start.possessionText ?? '', poss: t, rz: false, dist: null, from: '', drive: '', leaders: [], last: pl.text.trim(), qb: q,
       when: 'Q' + (pl.period?.number ?? '') + ' ' + (pl.clock?.displayValue ?? ''), play: [100 - pl.start.yardsToEndzone, end, t, type, /touchdown/i.test(type)] };
   });
 }
@@ -2909,8 +2921,8 @@ function drawGc() {
   const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
   const html = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
-    '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(-5, Math.min(105, x))) +
-      (F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') +
+    '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(-10, Math.min(110, x))) +
+      (F.play ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') +
       (past ? '<div class="gc-replay gc-pager"><button type="button" data-gcstep="-1" aria-label="Earlier play"' + (past[0] ? '' : ' disabled') + '>&lsaquo;</button><span>' + (past[0] + 1) + ' / ' + past[1] + '</span><button type="button" data-gcstep="1" aria-label="Later play"' + (past[0] < past[1] - 1 ? '' : ' disabled') + '>&rsaquo;</button></div>' : '') + '</div>' +
     (F.last ? '<p class="why" style="margin:10px 0 0"><b>' + (past ? e(F.when) : 'Last play') + ':</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
@@ -2918,16 +2930,20 @@ function drawGc() {
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
   if (html === box.gcHtml) return;
   box.innerHTML = box.gcHtml = html;
-  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD) gcAnimate();
+  // a new play animates, unless the phone is set to reduce motion and it came in on its own rather than from a tap
+  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD && (gcTap || !matchMedia('(prefers-reduced-motion: reduce)').matches)) gcAnimate();
+  gcTap = false;
 }
+let gcTap = false;
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-replay]')) { gcAt = Date.now(); return gcAnimate(); }
   const st = ev.target.closest('[data-gcstep]');
-  if (st) { const p = P[sheet.dataset.pid], k = LD.games[p.pro][3] + '|' + p.id; gcIdx[k] += +st.dataset.gcstep; return drawGc(); }
+  if (st) { const p = P[sheet.dataset.pid], k = LD.games[p.pro][3] + '|' + p.id; gcIdx[k] += +st.dataset.gcstep; gcTap = true; return drawGc(); }
   const b = ev.target.closest('[data-watch]'), box = document.getElementById('gc');
   if (!b || !box) return;
   box.hidden = !box.hidden; b.textContent = box.hidden ? b.dataset.label : 'Hide the game';
+  gcTap = !box.hidden;
   drawGc();
 });
 let closeTimer;
