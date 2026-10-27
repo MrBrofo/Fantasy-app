@@ -123,10 +123,11 @@ async function ask(req, env) {
   try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
   if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 60000) return reply(400, { error: 'Bad question' });
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  // fallbacks: if Opus declines (a false alarm from its safety checks), the API answers with another model instead
-  const r = await client.beta.messages.create({
-    model: 'claude-opus-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
-    betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+  // Haiku for cheap testing; for real use switch back to Opus with fallbacks (if Opus declines by mistake, the API
+  // answers with another model): client.beta.messages.create, model 'claude-opus-5-5',
+  // betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default'
+  const r = await client.messages.create({
+    model: 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
     system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; say when something is a guess. Answer in short plain sentences and short lists, no tables. Give a clear pick when asked to choose.',
     messages: [{ role: 'user', content: m.text }],
   });
