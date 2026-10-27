@@ -1767,8 +1767,9 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="manifest" href="manifest.json">
 <title>${esc(me.name)}</title>
+<script>try { if (localStorage.getItem('look') !== 'classic') document.documentElement.classList.add('term'); } catch { document.documentElement.classList.add('term'); }</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 /* Stadium Lime: dark only. Graphite surfaces, one lime accent (matches the ESPN Fantasy icon); green/amber/red mean good/so-so/bad. */
 :root{color-scheme:dark;--bg:#0b0d10;--card:#15181d;--fg:#f2f4f7;--muted:#9aa3b2;--line:#232830;--accent:#c6f432;--onaccent:#0b0d10;
@@ -1880,6 +1881,7 @@ a.news b{display:block;font-size:14px;font-weight:600}a.news small{color:var(--m
 .gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
 .why{color:var(--muted);font-size:14px;margin:10px 0 0}
 [hidden]{display:none!important}
+html:not(.term) #bg-field,html:not(.term) .bgring{display:none}
 .gl{text-decoration:underline dotted var(--accent);text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:help}
 #gloss{position:fixed;z-index:30;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;max-width:min(320px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(0,0,0,.5)}
 #gloss b{color:var(--accent);display:block;margin-bottom:2px}
@@ -1936,68 +1938,68 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 #refresh.spin span{animation:none}.btn,nav a,#refresh{transition:none}}
 @media (prefers-reduced-transparency:reduce){nav,body::before{background:var(--card);-webkit-backdrop-filter:none;backdrop-filter:none}}
 /* ===== Terminal theme: the look of the password screen. Black, mono letters, square edges, glow for good/bad. =====
-   Everything above is the base layout; this block only restyles it, so removing it brings back Stadium Lime. */
-:root{--bg:#000;--card:rgba(0,0,0,.78);--fg:#fff;--muted:#ffffff8c;--line:#ffffff45;--accent:#39ff88;--onaccent:#000;
+   Everything above is the base layout; this block only restyles it, every rule starts with html.term, so it only applies when the Terminal look is picked (Classic = the base styles above). */
+html.term{--bg:#000;--card:rgba(0,0,0,.78);--fg:#fff;--muted:#ffffff8c;--line:#ffffff45;--accent:#39ff88;--onaccent:#000;
 --good:#39ff88;--goodbg:#39ff8814;--warn:#ffb020;--warnbg:#ffb02014;--bad:#ff3b3b;--badbg:#ff3b3b14;--chip:#ffffff12;--glass:rgba(0,0,0,.82);--glassline:#ffffff40;
 --num:'JetBrains Mono',ui-monospace,Menlo,monospace}
-html{background:#000}
-body{background:transparent;font:14px/1.55 'JetBrains Mono',ui-monospace,Menlo,monospace}
-body,button,.btn,.seg button,.sel,#refresh,.cmp-slot,.pickrow{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
+html.term{background:#000}
+html.term body{background:transparent;font:14px/1.55 'JetBrains Mono',ui-monospace,Menlo,monospace}
+html.term body,html.term button,html.term .btn,html.term .seg button,html.term .sel,html.term #refresh,html.term .cmp-slot,html.term .pickrow{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
 /* moving background: dot grid with rings of light, two slow spinning circles */
-#bg-field{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
-.bgring{position:fixed;left:50%;top:38%;width:min(140vw,700px);aspect-ratio:1;translate:-50% -50%;border:1px dashed #ffffff1c;border-radius:50%;animation:spin 140s linear infinite;pointer-events:none;z-index:-1}
-.bgring.r2{width:min(95vw,460px);border:1px solid #ffffff10;animation-duration:50s;animation-direction:reverse}
-.bgring.r2::after{content:'';position:absolute;top:-3px;left:50%;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 14px #fff}
-header{background:none}
-.league{letter-spacing:.12em;text-transform:uppercase;font-size:11px}
-h1{text-transform:uppercase;letter-spacing:.1em;font-size:22px;font-weight:700}
-h1::after{content:'_';animation:blink 1s steps(1) infinite}
+html.term #bg-field{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+html.term .bgring{position:fixed;left:50%;top:38%;width:min(140vw,700px);aspect-ratio:1;translate:-50% -50%;border:1px dashed #ffffff1c;border-radius:50%;animation:spin 140s linear infinite;pointer-events:none;z-index:-1}
+html.term .bgring.r2{width:min(95vw,460px);border:1px solid #ffffff10;animation-duration:50s;animation-direction:reverse}
+html.term .bgring.r2::after{content:'';position:absolute;top:-3px;left:50%;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 14px #fff}
+html.term header{background:none}
+html.term .league{letter-spacing:.12em;text-transform:uppercase;font-size:11px}
+html.term h1{text-transform:uppercase;letter-spacing:.1em;font-size:22px;font-weight:700}
+html.term h1::after{content:'_';animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
-.record{letter-spacing:.1em;text-transform:uppercase;font-size:11px}
-h2{text-transform:uppercase;letter-spacing:.14em;font-size:15px}
-section>h2::before,details.fold>summary h2::before{content:'// ';color:var(--muted)}
-.group,.match h2,.sh-q small{letter-spacing:.2em;font-size:10px}
-.sub,.why,.tag,.meta{font-size:12.5px}
+html.term .record{letter-spacing:.1em;text-transform:uppercase;font-size:11px}
+html.term h2{text-transform:uppercase;letter-spacing:.14em;font-size:15px}
+html.term section>h2::before,html.term details.fold>summary h2::before{content:'// ';color:var(--muted)}
+html.term .group,html.term .match h2,html.term .sh-q small{letter-spacing:.2em;font-size:10px}
+html.term .sub,html.term .why,html.term .tag,html.term .meta{font-size:12.5px}
 /* square edges everywhere */
-.card,.match,details.fold,.seg,.seg button,.btn,.chip,.lvl,.lv,.pos,.gain,.live,.stat div,.sh-q,.bars,a.news,.sel,.cmp-slot,.pitch,.chg,.worder span,[class^=verdict-],#gloss,#refresh,.card.row .slot,.bar,.bar i{border-radius:0!important}
-.list .card:first-child,.list .card:last-child,.list .card:only-child{border-radius:0}
-.card,.match,details.fold,a.news,.sh-q{background:var(--card);border-color:var(--line)}
-.match{border-color:#ffffff59;box-shadow:none;position:relative}
-.wp b{text-shadow:0 0 18px currentColor}
-.bar{height:2px}.bar i{box-shadow:0 0 8px currentColor}
+html.term .card,html.term .match,html.term details.fold,html.term .seg,html.term .seg button,html.term .btn,html.term .chip,html.term .lvl,html.term .lv,html.term .pos,html.term .gain,html.term .live,html.term .stat div,html.term .sh-q,html.term .bars,html.term a.news,html.term .sel,html.term .cmp-slot,html.term .pitch,html.term .chg,html.term .worder span,html.term [class^=verdict-],html.term #gloss,html.term #refresh,html.term .card.row .slot,html.term .bar,html.term .bar i{border-radius:0!important}
+html.term .list .card:first-child,html.term .list .card:last-child,html.term .list .card:only-child{border-radius:0}
+html.term .card,html.term .match,html.term details.fold,html.term a.news,html.term .sh-q{background:var(--card);border-color:var(--line)}
+html.term .match{border-color:#ffffff59;box-shadow:none;position:relative}
+html.term .wp b{text-shadow:0 0 18px currentColor}
+html.term .bar{height:2px}html.term .bar i{box-shadow:0 0 8px currentColor}
 /* tags: outlined, like the ACCESS GRANTED stamp */
-.chip,.lvl,.lv,.live,[class^=verdict-],.gain{background:transparent!important;border:1px solid currentColor;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
-.live{animation:blink 1.4s steps(1) infinite}
-.pos{border-radius:0}
+html.term .chip,html.term .lvl,html.term .lv,html.term .live,html.term [class^=verdict-],html.term .gain{background:transparent!important;border:1px solid currentColor;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
+html.term .live{animation:blink 1.4s steps(1) infinite}
+html.term .pos{border-radius:0}
 /* things that were boxes by their gray fill get an outline, so they still read as boxes on black */
-.stat div,.worder span,.pitch,.chg,.card.row .slot,.sh-q,.bars,.tools2 .btn,#cmp-out table,.sel{border:1px solid var(--line)}
-.worder span.me{border-color:var(--accent)}.chg.good{border-color:var(--good)}.chg.bad{border-color:var(--bad)}
+html.term .stat div,html.term .worder span,html.term .pitch,html.term .chg,html.term .card.row .slot,html.term .sh-q,html.term .bars,html.term .tools2 .btn,html.term #cmp-out table,html.term .sel{border:1px solid var(--line)}
+html.term .worder span.me{border-color:var(--accent)}html.term .chg.good{border-color:var(--good)}html.term .chg.bad{border-color:var(--bad)}
 /* buttons: white outline, flips to white when pressed */
-.btn{background:transparent;color:#fff;border:1px solid #fff;font-weight:700;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
-.btn:active,.btn:hover{background:#fff;color:#000;filter:none}
-.btn[disabled]{opacity:.5}
-.tools2 .btn{background:transparent;color:#fff}
-#refresh{background:transparent;border-color:#ffffff59;text-transform:uppercase;letter-spacing:.12em;font-size:11px}
+html.term .btn{background:transparent;color:#fff;border:1px solid #fff;font-weight:700;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
+html.term .btn:active,html.term .btn:hover{background:#fff;color:#000;filter:none}
+html.term .btn[disabled]{opacity:.5}
+html.term .tools2 .btn{background:transparent;color:#fff}
+html.term #refresh{background:transparent;border-color:#ffffff59;text-transform:uppercase;letter-spacing:.12em;font-size:11px}
 /* bottom bar: black glass strip, glowing tab */
-nav{border-radius:0;background:var(--glass);border-color:var(--glassline)}
-nav a{border-radius:0;letter-spacing:.12em;text-transform:uppercase;font-size:9.5px}
-nav a.on{color:#fff;background:#ffffff12;text-shadow:0 0 10px #fff}
-nav a.on svg{filter:drop-shadow(0 0 5px #fff)}
-nav a.press{background:#ffffff26}
-nav .dot{border-radius:0;background:var(--bad);box-shadow:0 0 10px var(--bad)}
-.seg button{text-transform:uppercase;letter-spacing:.12em;font-size:11px}
-.seg button.on{background:#fff;color:#000}
-.gl{text-decoration-color:var(--good)}
-#gloss{border-color:var(--good);box-shadow:0 0 24px #39ff8826}
-#gloss b{color:var(--good);letter-spacing:.1em;text-transform:uppercase;font-size:12px}
-.sheet-card{border-radius:0;border-top:1px solid #ffffff59;background:#000}
-.sheet-x{border-radius:0}
-.pic{border:1px solid var(--line)}
-footer{letter-spacing:.1em;text-transform:uppercase;font-size:10px}
+html.term nav{border-radius:0;background:var(--glass);border-color:var(--glassline)}
+html.term nav a{border-radius:0;letter-spacing:.12em;text-transform:uppercase;font-size:9.5px}
+html.term nav a.on{color:#fff;background:#ffffff12;text-shadow:0 0 10px #fff}
+html.term nav a.on svg{filter:drop-shadow(0 0 5px #fff)}
+html.term nav a.press{background:#ffffff26}
+html.term nav .dot{border-radius:0;background:var(--bad);box-shadow:0 0 10px var(--bad)}
+html.term .seg button{text-transform:uppercase;letter-spacing:.12em;font-size:11px}
+html.term .seg button.on{background:#fff;color:#000}
+html.term .gl{text-decoration-color:var(--good)}
+html.term #gloss{border-color:var(--good);box-shadow:0 0 24px #39ff8826}
+html.term #gloss b{color:var(--good);letter-spacing:.1em;text-transform:uppercase;font-size:12px}
+html.term .sheet-card{border-radius:0;border-top:1px solid #ffffff59;background:#000}
+html.term .sheet-x{border-radius:0}
+html.term .pic{border:1px solid var(--line)}
+html.term footer{letter-spacing:.1em;text-transform:uppercase;font-size:10px}
 /* each page boots in when you open it */
-section:not(.off){animation:boot .35s ease-out}
+html.term section:not(.off){animation:boot .35s ease-out}
 @keyframes boot{from{opacity:0;transform:translateY(6px)}}
-@media (prefers-reduced-motion:reduce){.bgring,h1::after,.live{animation:none}section:not(.off){animation:none}}
+@media (prefers-reduced-motion:reduce){html.term .bgring,html.term h1::after,html.term .live{animation:none}html.term section:not(.off){animation:none}}
 </style></head><body>
 <canvas id="bg-field" aria-hidden="true"></canvas><div class="bgring" id="bg-ring1"></div><div class="bgring r2" id="bg-ring2"></div>
 
@@ -2284,6 +2286,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><p class="tag" style="margin:0">Every underlined word on this site, A to Z.</p><dl id="dict"></dl></div>
 <details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
 
+<section id="look"><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button></div><p class="tag" style="margin:8px 0 0">Saved on this phone. Everything else works the same in both.</p></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
@@ -2358,6 +2361,7 @@ async function swap(html) {
   Object.assign(P, np);
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
+  if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) body.innerHTML = render(P[sheet.dataset.pid]);
   gloss(document.body);
   liveTick();
@@ -3184,7 +3188,7 @@ showTab(location.hash.slice(1), false);
   let last = -99;
   const draw = now => {
     if (!still) requestAnimationFrame(draw);
-    if (document.hidden || now - last < 50) return;
+    if (document.hidden || now - last < 50 || !document.documentElement.classList.contains('term')) return;
     last = now;
     const w = cv.width, h = cv.height, gap = 26 * dpr, t = now / 1000;
     cx.clearRect(0, 0, w, h);
@@ -3197,6 +3201,17 @@ showTab(location.hash.slice(1), false);
   addEventListener('resize', size); size();
   if (!still) requestAnimationFrame(draw);
 })();
+
+// Look switch (More tab): Terminal or Classic, saved on this phone
+const showLook = () => document.querySelectorAll('[data-look]').forEach(b => b.classList.toggle('on', (b.dataset.look === 'term') === document.documentElement.classList.contains('term')));
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-look]');
+  if (!b) return;
+  document.documentElement.classList.toggle('term', b.dataset.look === 'term');
+  try { localStorage.setItem('look', b.dataset.look === 'term' ? 'term' : 'classic'); } catch {}
+  showLook(); dispatchEvent(new Event('resize'));
+});
+showLook();
 
 // "Pick him up": his page, scrolled to the list of who to drop
 document.addEventListener('click', ev => {
@@ -3336,7 +3351,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { account: 'more', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { look: 'more', account: 'more', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
