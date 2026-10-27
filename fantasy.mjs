@@ -2031,7 +2031,7 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .rank{font-size:12px;color:var(--muted);line-height:1.35}
 .btn{background:var(--accent);color:var(--onaccent);border:0;border-radius:12px;padding:13px 16px;min-height:46px;font:600 15px Geist,system-ui,sans-serif;cursor:pointer;width:100%;margin-top:10px;transition:transform .1s ease-out,filter .1s}
 .btn:active{transform:scale(.97);filter:brightness(.9)}
-.ask{display:grid;gap:2px}.askmic{position:absolute;right:8px;bottom:10px;width:38px;height:38px;border-radius:999px;border:0;display:grid;place-items:center;background:var(--chip);color:var(--fg);cursor:pointer}.askmic.on{background:#ff3b30;color:#fff;animation:askmic 1.2s ease-in-out infinite}@keyframes askmic{50%{box-shadow:0 0 0 6px rgba(255,59,48,.25)}}.askout{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;line-height:1.5}.askout p{margin:0 0 8px}.askout p:last-child{margin:0}.askout ul{margin:0 0 8px;padding-left:20px}.linkbtn{background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;padding:10px 0 0;cursor:pointer;justify-self:center}
+.ask{display:grid;gap:2px}#askbtn:disabled{opacity:.45}.askmic{position:absolute;right:8px;bottom:10px;width:38px;height:38px;border-radius:999px;border:0;display:grid;place-items:center;background:var(--chip);color:var(--fg);cursor:pointer}.askmic.on{background:#ff3b30;color:#fff;animation:askmic 1.2s ease-in-out infinite}@keyframes askmic{50%{box-shadow:0 0 0 6px rgba(255,59,48,.25)}}.askout{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;line-height:1.5}.askout p{margin:0 0 8px}.askout p:last-child{margin:0}.askout ul{margin:0 0 8px;padding-left:20px}.linkbtn{background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;padding:10px 0 0;cursor:pointer;justify-self:center}
 .chg{padding:8px 10px;border-radius:10px;margin-bottom:6px;font-size:14px;font-weight:600;background:var(--chip)}
 .chg.good{background:var(--goodbg);color:var(--good)}.chg.bad{background:var(--badbg);color:var(--bad)}
 .lnk{text-decoration:underline dotted;text-underline-offset:3px;color:var(--fg)}
@@ -3385,24 +3385,30 @@ balShow();
 // Ask: the Worker asks Claude (paid from the Anthropic credits) and the answer shows here. No Worker: open claude.ai
 // answers come short; Tell me more asks again for the full version (the league facts are cached by then, so it's mostly
 // the longer writing you pay for), with the short answer so it builds on it
-let askLast = '';
+let askLast = '', askCtl = null;
 const askRun = async more => {
   const b = document.getElementById('askbtn'), out = document.getElementById('askout'), NL = String.fromCharCode(10);
   const facts = askFacts() + (more ? NL + NL + 'You answered: ' + askLast + NL + NL + 'Tell me more: explain that in full detail.' : '');
   if (!LIVE) return document.getElementById('askopen').click();
-  b.disabled = true; b.textContent = 'Claude is thinking...'; out.hidden = false;
+  askCtl = new AbortController(); b.textContent = 'Cancel'; out.hidden = false;
   if (more) document.getElementById('askmore')?.replaceWith(Object.assign(document.createElement('p'), { className: 'tag', textContent: 'Getting the full answer...' })); else out.innerHTML = '';
   try {
-    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode }) });
+    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode }), signal: askCtl.signal });
     const d = await r.json().catch(() => ({}));
     if (typeof d.cost === 'number') { const b = balGet(); if (b != null) try { localStorage.setItem('askBal', String(b - d.cost)); } catch {} balShow(d.cost); }
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
     if (!more) askLast = d.answer || '';
     out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '') + (more || !d.answer ? '' : '<button type="button" id="askmore" class="linkbtn">Tell me more</button>');
-  } catch (err) { out.innerHTML = '<p class="tag">That didn&#39;t work (' + e(err.message) + '). Use Open in Claude below instead.</p>'; }
-  b.disabled = false; b.textContent = 'Ask Claude';
+  } catch (err) {
+    if (err.name === 'AbortError') { if (more) out.innerHTML = askHtml(askLast); else out.hidden = true; }
+    else out.innerHTML = '<p class="tag">That didn&#39;t work (' + e(err.message) + '). Use Open in Claude below instead.</p>';
+  }
+  askCtl = null; b.textContent = 'Ask Claude'; askReady();
 };
-document.getElementById('askbtn').onclick = () => askRun(false);
+// tap again while it's thinking to cancel; with an empty box there's nothing to ask
+const askReady = () => { document.getElementById('askbtn').disabled = !askCtl && !document.getElementById('askq').value.trim(); };
+document.getElementById('askq').addEventListener('input', askReady); askReady();
+document.getElementById('askbtn').onclick = () => askCtl ? askCtl.abort() : askRun(false);
 document.getElementById('askout').addEventListener('click', ev => { if (ev.target.id === 'askmore') askRun(true); });
 // Talk to type: the phone's own speech-to-text fills the box as you talk; tap again to stop. Hidden where the browser
 // has none (then the keyboard's mic key does the same)
@@ -3414,7 +3420,7 @@ document.getElementById('askout').addEventListener('click', ev => { if (ev.targe
     if (rec) return rec.stop();
     const q = document.getElementById('askq'), before = q.value.trim();
     rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
-    rec.onresult = ev => { q.value = (before ? before + ' ' : '') + [...ev.results].map(x => x[0].transcript).join('').trim(); };
+    rec.onresult = ev => { q.value = (before ? before + ' ' : '') + [...ev.results].map(x => x[0].transcript).join('').trim(); askReady(); };
     rec.onend = () => { rec = null; mic.classList.remove('on'); };
     rec.onerror = () => rec?.stop();
     mic.classList.add('on');
