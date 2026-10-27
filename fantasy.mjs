@@ -2692,11 +2692,12 @@ function gcField(F, A, H, ball, from, first, fx) {
       }
     }
     if (F.play) {
-      const who = gcWho(F), [y0, , tid] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), r = 36;
+      const who = gcWho(F), [y0, , tid] = F.play, sx = fx(tid === A[0] ? y0 : 100 - y0), r = 31;
       // ESPN's headshots are cut out (transparent), so the player stands on a stem with no frame; no photo: initials in a dot
       const pin = (x, w, i, dx = 0) => { const q = pt(x, 26.65), cy = q[1] - 78, X = (q[0] + dx).toFixed(1), Y = cy.toFixed(1);
         return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/>' +
-          (w.p ? '<image href="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(w.p.id) + '.png&amp;w=200" x="' + (q[0] + dx - r * 1.6).toFixed(1) + '" y="' + (cy + r - r * 2.32).toFixed(1) + '" width="' + (r * 3.2).toFixed(1) + '" height="' + (r * 2.32).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>'
+          (w.p ? '<image href="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(w.p.id) + '.png&amp;w=200" x="' + (q[0] + dx - r * 1.6).toFixed(1) + '" y="' + (cy + r - r * 2.32).toFixed(1) + '" width="' + (r * 3.2).toFixed(1) + '" height="' + (r * 2.32).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
+              '<text x="' + X + '" y="' + (cy + r + 20).toFixed(1) + '" font-size="22" fill="#fff" text-anchor="middle" stroke="#000" stroke-opacity=".6" stroke-width="5" style="paint-order:stroke">' + e((w.p.shortName ?? w.n).split(' ').pop()) + '</text>'
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>'); };
       // two photos close together are pushed apart, their stems leaning to where each stood
       const gap = pt(fx(ball), 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1);
