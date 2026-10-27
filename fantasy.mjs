@@ -2188,15 +2188,16 @@ html.term footer{letter-spacing:.1em;text-transform:uppercase;font-size:10px}
 html.term section:not(.off){animation:boot .35s ease-out}
 @keyframes boot{from{opacity:0;transform:translateY(6px)}}
 @media (prefers-reduced-motion:reduce){html.term .bgring,html.term h1::after,html.term .live{animation:none}html.term section:not(.off){animation:none}}
-/* Glass look: Apple's Liquid Glass on Classic's layout. A soft colour wash behind everything, see-through frosted panels
-   that blur it, a bright top edge like light catching glass, rounder corners and pill buttons. Every rule starts with html.glass. */
+/* Glass look: Apple's Liquid Glass on Classic's layout. Near-black with one faint grey light at the top (no colour glow),
+   see-through frosted panels, a bright top edge like light catching glass, rounder corners and pill buttons. Cards inside
+   a folded section are flat rows, not glass on glass. Every rule starts with html.glass. */
 html.glass{--bg:#07080d;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.14);--chip:rgba(255,255,255,.09);--accent:#0a84ff;--onaccent:#fff;
 --glass:rgba(36,38,48,.42);--glassline:rgba(255,255,255,.2);
-background:radial-gradient(60% 40% at 10% 5%,#2b5cff70,transparent 70%),radial-gradient(55% 40% at 95% 40%,#b03cff5c,transparent 70%),radial-gradient(60% 45% at 25% 95%,#00c2a85c,transparent 70%),#07080d}
+background:radial-gradient(120% 50% at 50% 0%,#24262c,transparent 70%),#07080d}
 html.glass body{background:transparent;font-family:-apple-system,'SF Pro Text',Geist,system-ui,sans-serif}
 html.glass header{background:none}
 html.glass .card,html.glass .match,html.glass details.fold,html.glass a.news,html.glass .sh-q,html.glass .seg{background:var(--card);border-color:var(--line);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 8px 24px rgba(0,0,0,.25)}
-html.glass details.fold .card{background:rgba(255,255,255,.05);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.1)}
+html.glass details.fold .card{background:none;border:0;border-top:1px solid var(--line);border-radius:0!important;padding:12px 0;margin:0;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
 html.glass .card,html.glass details.fold{border-radius:22px}html.glass .match{border-radius:28px}html.glass .sh-q,html.glass a.news{border-radius:18px}
 html.glass .list .card{border-radius:0}html.glass .list .card:first-child{border-radius:22px 22px 0 0}html.glass .list .card:last-child{border-radius:0 0 22px 22px}html.glass .list .card:only-child{border-radius:22px}
 html.glass .btn{border-radius:999px;background:linear-gradient(180deg,#3d9dff,#0a84ff);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px rgba(10,132,255,.3)}
