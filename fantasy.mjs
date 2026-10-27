@@ -2827,6 +2827,10 @@ function gcField(F, A, H, ball, from, first, fx) {
     // where the play started: a dashed line, next to the blue one where the ball is now
     if (F.play && Math.abs(fx(own(y0)) - fx(ball)) > 0.5) o += line(fx(own(y0)), '#fff').replace('/>', ' stroke-dasharray="14 10" stroke-opacity=".7"/>');
     const post = fx(own(110)), lx = td ? fx(ball) : kind === 'fg' ? post + Math.sign(post - sx) * Math.min(8, 3 + Math.abs(post - sx) * 0.2) : fx(own(kind === 'miss' ? 110 : kind === 'block' ? y0 - 5 : kind === 'inc' ? y0 + (/ deep /.test(F.last) ? 20 : 8) : kind === 'pick' ? pick : y1)), dl = Math.abs(lx - sx);
+    // across the field: a play starts in the middle and ends on the side the play text names ("pass short left",
+    // "right end", "up the middle"), from the offense's view; facing right on screen its left is the far sideline (z up)
+    const sd = /(?:short|deep) (left|right)|(left|right) (end|tackle|guard)/.exec(F.last || ''), z0 = 26.65,
+      z1 = !sd || !/run|pass|inc|pick/.test(kind) || td ? z0 : z0 + (sd[1] ? 13 : { end: 15, tackle: 9, guard: 5 }[sd[3]]) * ((sd[1] || sd[2]) === 'left' ? 1 : -1) * Math.sign(fx(own(100)) - fx(own(0)));
     // every play throws its own ball, picked from the play itself so a replay flies the same: how high, how much the air
     // slows it (fast off the foot or hand, slower at the end, so it comes down steeper than it went up), how fast it turns
     const rnd = (() => { let h = 2166136261; for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return () => (h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909), (h >>> 0) / 4294967296); })();
@@ -2838,12 +2842,12 @@ function gcField(F, A, H, ball, from, first, fx) {
     if (kind === 'fg') { const tp = tau(Math.abs(post - sx) / dl); H = Math.min(22, (8 + rnd() * 3) / (4 * tp * (1 - tp))); }
     // lost yards, an interception, a missed or blocked kick: red; an incompletion: faint grey
     const bad = !td && ((y1 < y0 && /run|pass/.test(kind)) || /pick|miss|block/.test(kind)), grey = kind === 'inc';
-    const p = pt(F.play ? lx : fx(ball), 26.65), pb = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
+    const p = pt(F.play ? lx : fx(ball), z1), pb = pt(fx(ball), z1), s = k(z1), X = p[0].toFixed(1);
     // an interception: the defender runs in from a few yards downfield, catches it where it was picked, and carries it back
     // to where the return ended (px: the same sideline distance, so only x moves)
-    const run = kind === 'pick' && F.play ? pt(lx + 4 * Math.sign(lx - sx || 1), 26.65)[0] - p[0] : 0, ret = run && Math.abs(fx(ball) - lx) > 0.5 ? pb[0] - p[0] : 0, pe = ret ? pb : p;
+    const run = kind === 'pick' && F.play ? pt(lx + 4 * Math.sign(lx - sx || 1), z1)[0] - p[0] : 0, ret = run && Math.abs(fx(ball) - lx) > 0.5 ? pb[0] - p[0] : 0, pe = ret ? pb : p;
     if (F.play) {
-      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, 26.65, lift ? up(u) : 0); });
+      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, z0 + (z1 - z0) * u, lift ? up(u) : 0); });
       cam = (pt(sx, 26.65)[0] + p[0]) / 2;
       // a thrown ball spirals, a kicked one tumbles end over end
       gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: !H ? '' : /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H ? drag : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
@@ -2853,11 +2857,11 @@ function gcField(F, A, H, ball, from, first, fx) {
     if (F.play) {
       const x0 = sx, x1 = lx - Math.sign(lx - sx) * Math.min(1.5, dl * 0.1), len = Math.abs(x1 - x0);
       if (len > 1) {
-        const z = 26.65, uh = 1 - Math.min(4, len * 0.4) / len;
-        const at = (u, dz, lift) => { const q = pt(x0 + (x1 - x0) * u, z + dz, lift ? up(u * (x1 - x0) / ((lx - sx) || 1)) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
+        const uh = 1 - Math.min(4, len * 0.4) / len;
+        const at = (u, dz, lift) => { const v = u * (x1 - x0) / ((lx - sx) || 1), q = pt(x0 + (x1 - x0) * u, z0 + (z1 - z0) * v + dz, lift ? up(u * (x1 - x0) / ((lx - sx) || 1)) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
         const us = Array.from({ length: 25 }, (_, i) => uh * i / 24), back = [...us].reverse();
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
-        const g0 = pt(x0, z), g1 = pt(x1, z);
+        const g0 = pt(x0, z0), g1 = pt(x1, z1);
         o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="' + (bad ? '#f87171' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.25' : '.5') + '"/><stop offset="1" stop-color="' + (bad ? '#ef4444' : grey ? '#cbd5e1' : '#fff') + '" stop-opacity="' + (grey ? '.6' : '.95') + '"/></linearGradient>' +
           (gcFly ? '<clipPath id="gcReveal"><rect x="0" y="0" width="1600" height="600"/></clipPath>' : '') +
           '<g class="gc-trail"' + (gcFly ? ' clip-path="url(#gcReveal)"' : '') + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
@@ -2869,7 +2873,7 @@ function gcField(F, A, H, ball, from, first, fx) {
       const mine = w => td && w.p && Object.values(P).find(q => q.side && q.pro === tid && q.name === w.p.displayName);
       const tag = (w, X, y) => { const q = mine(w); if (!q) return ''; const t = (q.side === 'me' ? 'YOUR TD' : 'THEIR TD') + ' \u00b7 ' + f1(LD?.players?.[q.id]?.[0] ?? 0), wd = t.length * 8.6 + 18;
         return '<rect x="' + (+X - wd / 2).toFixed(1) + '" y="' + (y - 15).toFixed(1) + '" width="' + wd.toFixed(1) + '" height="22" rx="11" fill="' + (q.side === 'me' ? '#16a34a' : '#dc2626') + '"/><text x="' + X + '" y="' + (y - 4).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing=".4">' + t + '</text>'; };
-      const pin = (x, w, i, dx = 0) => { const q = pt(x, 26.65), cy = q[1] - 78, X = (q[0] + dx).toFixed(1), Y = cy.toFixed(1);
+      const pin = (x, w, i, dx = 0, z = z0) => { const q = pt(x, z), cy = q[1] - 78, X = (q[0] + dx).toFixed(1), Y = cy.toFixed(1);
         // on a touchdown everyone shown hops up and down, each on their own beat
         return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : w.logo ? r * 1.1 : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/><g' + (td ? ' class="gc-hop"' + (i ? '' : ' style="animation-delay:-.27s"') : '') + '>' + tag(w, X, cy - r * 1.32 - 10) +
           (!w.p && w.logo ? '<image href="' + logo(w.logo) + '" x="' + (q[0] + dx - r * 1.1).toFixed(1) + '" y="' + (cy - r * 1.1).toFixed(1) + '" width="' + (r * 2.2).toFixed(1) + '" height="' + (r * 2.2).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
@@ -2879,9 +2883,9 @@ function gcField(F, A, H, ball, from, first, fx) {
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>') + '</g>'; };
       // two photos close together are pushed apart, their stems leaning to where each stood
       // one player who isn't a runner (a kicker, a passer with no target) stands where the play started
-      const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run' && !F.dt;
+      const gap = pt(lx, z1)[0] - pt(sx, z0)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run' && !F.dt;
       if (who.length === 2 || solo) o += '<g class="gc-qb">' + pin(sx, who[0], 0, solo ? 0 : -push) + '</g>';
-      if (who.length && !solo) o += '<g class="gc-catch"' + (ret ? ' transform="translate(' + ret.toFixed(1) + ' 0)"' : '') + (kind === 'inc' ? ' style="opacity:.45"' : '') + '>' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) +
+      if (who.length && !solo) o += '<g class="gc-catch"' + (ret ? ' transform="translate(' + ret.toFixed(1) + ' 0)"' : '') + (kind === 'inc' ? ' style="opacity:.45"' : '') + '>' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0, z1) +
         // an interception: a red INTERCEPTED tag under the defender, carried with him on the return
         (kind === 'pick' ? '<g class="gc-int"><rect x="' + (p[0] - 70).toFixed(1) + '" y="' + (p[1] + 18).toFixed(1) + '" width="140" height="26" rx="13" fill="#dc2626"/><text x="' + X + '" y="' + (p[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">INTERCEPTED</text></g>' : '') + '</g>';
       // an incomplete pass: the target fades, the ball bounces off the turf, and INCOMPLETE shows under the spot
