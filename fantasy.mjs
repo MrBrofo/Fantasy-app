@@ -1914,7 +1914,11 @@ const statusWords = p => p.inj?.season ? 'out for the season' : p.bye === week ?
 const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: statusWords(p), slot: p.slot === 'Bench' ? 'bench' : p.slot === 'IR' ? 'IR' : 'starting', pr: Math.round((p.proj ?? 0) * 10) / 10 }]));
 
 // Everything Claude needs to answer questions about this team, as plain text to paste
-const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${playOdds(p, p.inj?.type) ? ` (${playOdds(p, p.inj?.type).pct}% chance he plays: ${playOdds(p, p.inj?.type).why})` : ''}${p.rank ? `, ${ordinal(p.rank)} at ${p.pos}` : ''}${notes(p).length ? `. Notes: ${notes(p).join(' ')}` : ''}`;
+const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${playOdds(p, p.inj?.type) ? ` (${playOdds(p, p.inj?.type).pct}% chance he plays: ${playOdds(p, p.inj?.type).why})` : ''}${p.rank ? `, ${rankText(p)}` : ''}${depthWord(p) ? `, ${depthWord(p)} on his NFL team's depth chart` : ''}${recentPts(pkey(p.name, p.pos, p.team)).length ? `, last games ${recentPts(pkey(p.name, p.pos, p.team)).map(n).join(', ')} (newest first)` : ''}${hitLine(p) ? `. ${hitLine(p)[1]}` : ''}${notes(p).length ? `. Notes: ${notes(p).join(' ')}` : ''}`;
+// the same, shorter, for every other player in the league (other rosters, free agents)
+const cline = p => `${p.name} (${p.pos}, ${p.teamName}${p.slot ? `, ${p.slot === 'Bench' ? 'bench' : p.slot}` : ''}): ${n(weekValue(p))} expected this week, ${n(p.avg)}/g so far, ${n(p.ros)}/g rest of season${p.rank ? `, ${rankText(p)}` : ''}${recentPts(pkey(p.name, p.pos, p.team)).length ? `, last games ${recentPts(pkey(p.name, p.pos, p.team)).map(n).join(', ')}` : ''}${hitLine(p) ? `, ${hitLine(p)[0]}` : ''}, ${statusWords(p)}${p.bye ? `, bye wk ${p.bye}` : ''}`;
+const teamOf = id => teams.find(t => t.id === id)?.name ?? 'free agency';
+const nameOf = id => byId.get(id)?.name ?? `player #${id}`;
 const facts = [
   `My ESPN fantasy football league "${league.settings.name}": ${teams.length} teams, half-point PPR, lineup = ${Object.entries(slotCounts).filter(([id, k]) => k > 0 && SLOT_POS[id]).map(([id, k]) => `${k} ${SLOT[id]}`).join(', ')}, ${slotCounts[20]} bench, ${slotCounts[21] ?? 0} IR. Top ${playoffTeams} make the playoffs. It's week ${week}. "Expected" points average ESPN's, Rotowire's and CBS Sports' projections. Facts from ESPN, Sleeper (Rotowire), CBS Sports and DraftKings betting lines as of ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET.`,
   `My team: ${me.name}${mgrName(me) ? ` (manager ${mgrName(me)}, that's me)` : ''}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
@@ -1926,7 +1930,11 @@ const facts = [
   me.roster.some(p => p.slot === 'IR') ? `IR:\n${me.roster.filter(p => p.slot === 'IR').map(p => `- ${line(p)}`).join('\n')}` : '',
   pending.length ? `Pending moves:\n${pending.map(m => m.kind === 'waiver' ? `- Waiver claim: add ${m.add.map(p => p.name).join(', ')}, drop ${m.drop.map(p => p.name).join(', ')}`
     : `- Trade ${m.mineOffer ? 'I offered' : 'offered to me by'} ${m.them.name}: I give ${m.give.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}; I get ${m.take.map(p => `${p.name} (${p.pos}, ${n(rate(p))}/g ahead)`).join(', ')}`).join('\n')}` : '',
-  `Best free agents (points per game expected rest of season, expected this week):\n${Object.entries(fa).map(([pos, list]) => `- ${pos}: ${[...list].filter(p => !HURT.includes(p.status)).sort((a, b) => rate(b) - rate(a)).slice(0, 4).map(p => `${p.name} ${n(rate(p))}/g ahead, ${n(p.proj)} exp`).join('; ')}`).join('\n')}`,
+  `Best free agents (points per game expected rest of season, expected this week):\n${Object.entries(fa).map(([pos, list]) => `- ${pos}: ${[...list].filter(p => !HURT.includes(p.status)).sort((a, b) => rate(b) - rate(a)).slice(0, 8).map(p => `${p.name} ${n(rate(p))}/g ahead, ${n(p.proj)} exp`).join('; ')}`).join('\n')}`,
+  `This week's matchups (projected${isLive ? ', and live score' : ''}):\n${(league.schedule ?? []).filter(g => g.matchupPeriodId === week && g.away).map(g => [g.home.teamId, g.away.teamId].map(id => { const b = board.find(r => r.t.id === id); return `${teamOf(id)} ${b ? n(b.proj) : '?'}${b?.now != null ? ` (now ${n(b.now)})` : ''}`; }).join(' vs ')).map(x => `- ${x}`).join('\n')}`,
+  `Every result so far:\n${Object.keys(weekly).map(Number).sort((a, b) => a - b).map(wk => `- Wk ${wk}: ${(league.schedule ?? []).filter(g => g.matchupPeriodId === wk && g.away).map(g => `${teamOf(g.home.teamId)} ${n(g.home.totalPoints)}-${n(g.away.totalPoints)} ${teamOf(g.away.teamId)}`).join('; ')}`).join('\n')}`,
+  moves.length ? `Recent league moves (last 3 weeks):\n${[...moves].sort((a, b) => b.date - a.date).slice(0, 60).map(m => `- ${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${m.type === 'ADD' ? `${teamOf(m.team)} added ${nameOf(m.playerId)}` : m.type === 'DROP' ? `${teamOf(m.team)} dropped ${nameOf(m.playerId)}` : `${teamOf(m.team)} got ${nameOf(m.playerId)} from ${teamOf(m.from)} in a trade`}`).join('\n')}` : '',
+  `Every other team's roster:\n${standings.filter(t => t !== me).map(t => `${t.name}${mgrName(t) ? ` (${mgrName(t)})` : ''}, ${t.w}-${t.l}:\n${[...t.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot)).map(p => `- ${cline(p)}`).join('\n')}`).join('\n\n')}`,
   ahead.length ? `My remaining schedule: ${ahead.map(g => `wk ${g.week} ${g.t.name} (${g.t.w}-${g.t.l}, projected ${n(g.proj)} that week${g.off.length ? `, without ${g.off.map(p => p.name).join(', ')}` : ''})`).join('; ')}.` : '',
   '__NEWSFACTS__',
   'Explain things simply, I\'m new to football. My question:',
@@ -3335,7 +3343,7 @@ function askExtra(q) {
 // The full facts are often too long for a link, so the link drops the least needed parts until it fits (news, then
 // free agents, schedule, IR, bench), never the question at the end. The clipboard keeps the full text.
 function claudeUrl(t) {
-  const P = String.fromCharCode(10, 10), drop = ['Recent news', 'No news', 'Best free agents', 'My remaining schedule', 'IR:', 'Bench:', 'Pending moves'];
+  const P = String.fromCharCode(10, 10), drop = ['Every other team', 'Recent league moves', 'Every result so far', "This week's matchups", 'Recent news', 'No news', 'Best free agents', 'My remaining schedule', 'IR:', 'Bench:', 'Pending moves'];
   let parts = t.split(P);
   for (const d of drop) { if (encodeURIComponent(parts.join(P)).length <= 12000) break; parts = parts.filter((x, i) => i === parts.length - 1 || !x.startsWith(d)); }
   const q = encodeURIComponent(parts.join(P));
@@ -3346,6 +3354,9 @@ const askFacts = () => {
   const base = JSON.parse(document.getElementById('facts').textContent), cut = base.lastIndexOf('Explain things simply');
   return q && cut > 0 ? base.slice(0, cut).trimEnd() + askExtra(q) + String.fromCharCode(10, 10) + "Explain things simply, I'm new to football. My question: " + q : base;
 };
+// how much of the text is the same for every question (everything before the players named and the question), so the
+// Worker can have Claude keep it cached between questions
+const askFixed = () => { const base = JSON.parse(document.getElementById('facts').textContent), cut = base.lastIndexOf('Explain things simply'); return cut > 0 ? base.slice(0, cut).trimEnd().length : 0; };
 // the answer as simple HTML: paragraphs, "- " lines as a list, **bold**
 const askHtml = t => t.split(String.fromCharCode(10)).map(l => l.trim()).reduce((o, l) => {
   const h = e(l.replace(/^[-*] /, '')).replace(/[*][*](.+?)[*][*]/g, '<b>$1</b>');
@@ -3364,7 +3375,7 @@ document.getElementById('askbtn').onclick = async () => {
   if (!LIVE) return document.getElementById('askopen').click();
   b.disabled = true; b.textContent = 'Claude is thinking...'; out.hidden = false; out.innerHTML = '<p class="tag">This can take up to a minute.</p>';
   try {
-    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, q: document.getElementById('askq').value.trim(), mode: askMode }) });
+    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
     out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '') + (d.model ? '<p class="tag">Answered by ' + e(d.model === 'Opus' ? 'Smart (Opus)' : 'Quick (Haiku)') + '</p>' : '');
