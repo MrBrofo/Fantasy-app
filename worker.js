@@ -183,7 +183,7 @@ async function ask(req, env) {
   for (let round = 0; ; round++) {
     r = await client.beta.messages.create({
       model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
-      system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Answer in short plain sentences and short lists, no tables. Give a clear pick when asked to choose.',
+      system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Keep it short: the answer first, then the main reasons, 6 short lines or bullets at most, plain words, no tables or headings. Give a clear pick when asked to choose. Only when I ask you to tell me more, explain in full detail.',
       ...(tools ? { tools, tool_choice: round < 3 ? { type: 'auto' } : { type: 'none' } } : {}),
       messages: msgs,
     });
