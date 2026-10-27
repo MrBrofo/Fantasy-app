@@ -2467,7 +2467,7 @@ async function liveTick() {
     const fa = faIds(), r = await fetch(LIVE.url + '?week=' + LIVE.week + (fa.length ? '&fa=' + fa.join(',') : ''), { headers: { 'x-live': LIVE.token } });
     if (!r.ok) { liveNote = ' \u00b7 live scores off (' + (r.status === 401 ? 'password mismatch' : 'ESPN login rejected') + ')'; return showAgo(); }
     const d = await r.json(), $ = id => document.getElementById(id), f = v => (Math.round(v * 10) / 10).toFixed(1);
-    LD = d; drawGc();
+    LD = d; drawGc(); for (const p of Object.values(P)) if (p.pro) { gcG(p); break; } // starts loading last week's games
     liveOn = Object.values(d.games).some(g => g[0] === 'in');
     liveNote = liveOn ? ' \u00b7 live scores on' : ' \u00b7 live scores ready'; showAgo();
     for (const el of document.querySelectorAll('[data-live]')) {
@@ -2640,7 +2640,7 @@ function render(p) {
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
-    (LD?.field?.[LD.games?.[p.pro]?.[3]] || LD?.games?.[p.pro]?.[0] === 'post' ? (l => '<button type="button" class="btn" data-watch data-label="' + l + '">' + (gcOpen ? 'Hide the game' : l) + '</button><div id="gc"' + (gcOpen ? '' : ' hidden') + '></div>')(LD.field?.[LD.games[p.pro][3]] ? 'Watch his game live' : 'Watch his plays') : '') +
+    (g => LD?.field?.[g?.[3]] || g?.[0] === 'post' ? (l => '<button type="button" class="btn" data-watch data-label="' + l + '">' + (gcOpen ? 'Hide the game' : l) + '</button><div id="gc"' + (gcOpen ? '' : ' hidden') + '></div>')(LD.field?.[g[3]] ? 'Watch his game live' : g.last ? 'Watch his plays last week' : 'Watch his plays') : '')(gcG(p)) +
     (p.liveNews?.length ? '<div class="group">Just in</div>' + p.liveNews.map(x => '<p class="why" style="margin:4px 0 0">' + e(x.h) + '</p>').join('') : '') +
     (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
       (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
@@ -2933,10 +2933,21 @@ function gcPlays(d, short, pos = '', team = '') {
     return hit(t) ? [view(pl, q)] : [];
   });
 }
+// His game this week, or last week's (from ESPN's scoreboard) while this week's hasn't started or he's on bye,
+// so his plays stay watchable after the week turns over
+let LASTWK = null;
+function gcG(p) {
+  const g = LD?.games?.[p.pro];
+  if (g && g[0] !== 'pre') return g;
+  if (!LASTWK && LIVE?.week > 1) LASTWK = fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=' + (LIVE.week - 1)).then(r => r.json())
+    .then(d => { LASTWK = {}; for (const ev of d.events ?? []) if (ev.status?.type?.completed) for (const c of ev.competitions?.[0]?.competitors ?? []) LASTWK[c.team.id] = Object.assign(['post', 'Final · last week', 0, ev.id], { last: true }); })
+    .catch(() => (LASTWK = {}));
+  return (LASTWK instanceof Promise ? null : LASTWK?.[p.pro]) ?? g;
+}
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
   if (!box || box.hidden || !p) return;
-  const g = LD?.games?.[p.pro];
+  const g = gcG(p);
   let F = LD?.field?.[g?.[3]], past = null;
   // the game is over: step through his plays, starting at his last
   if (!F && g?.[0] === 'post') {
@@ -2984,7 +2995,7 @@ const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-replay]')) { gcAt = Date.now(); return gcAnimate(); }
   const st = ev.target.closest('[data-gcstep]');
-  if (st) { const p = P[sheet.dataset.pid], k = LD.games[p.pro][3] + '|' + p.id; gcIdx[k] += +st.dataset.gcstep; gcTap = true; return drawGc(); }
+  if (st) { const p = P[sheet.dataset.pid], k = gcG(p)[3] + '|' + p.id; gcIdx[k] += +st.dataset.gcstep; gcTap = true; return drawGc(); }
   const b = ev.target.closest('[data-watch]'), box = document.getElementById('gc');
   if (!b || !box) return;
   box.hidden = !box.hidden; b.textContent = box.hidden ? b.dataset.label : 'Hide the game';
