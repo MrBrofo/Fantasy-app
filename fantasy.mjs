@@ -2054,7 +2054,7 @@ a.news b{display:block;font-size:14px;font-weight:600}a.news .nsnip{display:bloc
 .gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
 .why{color:var(--muted);font-size:14px;margin:10px 0 0}
 [hidden]{display:none!important}
-html:not(.term) #bg-field,html:not(.term) .bgring{display:none}
+html:not(.term):not(.glass) #bg-field,html:not(.term) .bgring{display:none}
 .gl{text-decoration:underline dotted var(--accent);text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:help}
 #gloss{position:fixed;z-index:30;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;max-width:min(320px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(0,0,0,.5)}
 #gloss b{color:var(--accent);display:block;margin-bottom:2px}
@@ -2134,7 +2134,7 @@ html.term{background:#000}
 html.term body{background:transparent;font:14px/1.55 'JetBrains Mono',ui-monospace,Menlo,monospace}
 html.term body,html.term button,html.term .btn,html.term .seg button,html.term .sel,html.term #refresh,html.term .cmp-slot,html.term .pickrow{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
 /* moving background: dot grid with rings of light, two slow spinning circles */
-html.term #bg-field{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+html.term #bg-field,html.glass #bg-field{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
 html.term .bgring{position:fixed;left:50%;top:38%;width:min(140vw,700px);aspect-ratio:1;translate:-50% -50%;border:1px dashed #ffffff1c;border-radius:50%;animation:spin 140s linear infinite;pointer-events:none;z-index:-1}
 html.term .bgring.r2{width:min(95vw,460px);border:1px solid #ffffff10;animation-duration:50s;animation-direction:reverse}
 html.term .bgring.r2::after{content:'';position:absolute;top:-3px;left:50%;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 14px #fff}
@@ -2195,7 +2195,7 @@ html.term section:not(.off){animation:boot .35s ease-out}
    bottom-right where light catches a curved edge, a faint glow along the inside of the edge, and a soft shadow. Only the main
    action is tinted (blue). ponytail: no real refraction; that needs SVG filters in backdrop-filter, which Safari doesn't do.
    Every rule starts with html.glass. */
-html.glass{--bg:#000;--card:#1c1c1e;--fg:#fff;--muted:rgba(235,235,245,.6);--line:rgba(84,84,88,.65);--chip:#2c2c2e;--accent:#0a84ff;--onaccent:#fff;
+html.glass{--bg:#000;--card:rgba(30,30,33,.85);--fg:#fff;--muted:rgba(235,235,245,.6);--line:rgba(84,84,88,.65);--chip:#2c2c2e;--accent:#0a84ff;--onaccent:#fff;
 --good:#30d158;--goodbg:rgba(48,209,88,.16);--warn:#ff9f0a;--warnbg:rgba(255,159,10,.16);--bad:#ff453a;--badbg:rgba(255,69,58,.16);
 --glass:rgba(255,255,255,.07);--glassline:transparent;--num:-apple-system,'SF Pro Display',Geist,system-ui,sans-serif;background:#000}
 html.glass body{background:transparent;font-family:-apple-system,'SF Pro Text',Geist,system-ui,sans-serif;font-variant-numeric:tabular-nums}
@@ -2246,15 +2246,13 @@ html.glass .sheet-bg{background:rgba(0,0,0,.4)}
 html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(28,28,30,.55);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}
 /* top edge: the page fades and softens as it scrolls under the status bar, instead of a hard bar */
 html.glass body::before{height:calc(env(safe-area-inset-top) + 28px);background:linear-gradient(rgba(0,0,0,.8),transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
-/* behind the page: a football field seen from above, faint yard lines and hash marks drifting slowly down the screen under a
-   soft stadium light, so the glass has something to bend and the page isn't flat black */
+/* behind the page: a football field seen from above, faint yard lines and hash marks under a soft stadium light, with plays
+   drawing themselves on top (the chalkboard canvas), so the glass has something moving to bend */
 html.glass::before{content:'';position:fixed;left:0;right:0;top:-80px;bottom:0;z-index:-1;pointer-events:none;
 background:radial-gradient(90% 55% at 50% 0%,rgba(255,255,255,.09),transparent 70%),
 repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 30% 0/10px 100% repeat-y,repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 70% 0/10px 100% repeat-y,
 repeating-linear-gradient(180deg,transparent 0 79px,rgba(255,255,255,.1) 79px 80px);
--webkit-mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);animation:field 24s linear infinite}
-@keyframes field{to{transform:translateY(80px)}}
-@media (prefers-reduced-motion:reduce){html.glass::before{animation:none}}
+-webkit-mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent)}
 @media (prefers-reduced-transparency:reduce){html.glass :is(nav,.sheet-card){background:#1c1c1e;-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style></head><body>
 <canvas id="bg-field" aria-hidden="true"></canvas><div class="bgring" id="bg-ring1"></div><div class="bgring r2" id="bg-ring2"></div>
@@ -4042,6 +4040,77 @@ document.addEventListener('pointerdown', ev => {
       cx.fillStyle = 'rgba(255,255,255,' + (0.05 + 0.28 * wave ** 14) + ')';
       cx.fillRect(x, y, 1.5 * dpr, 1.5 * dpr);
     }
+  };
+  addEventListener('resize', size); size();
+  if (!still) requestAnimationFrame(draw);
+})();
+
+// Glass background: a coach's chalkboard on the field. Every few seconds a new play draws itself: the offense lines up,
+// each receiver's route grows out with a glowing runner on its tip, the defenders follow, the QB's pass arcs to one of
+// them (in blue), and it all fades for the next play. ~30 frames a second, nothing while the app is hidden; with reduce
+// motion on, one play stands still.
+(() => {
+  const cv = document.getElementById('bg-field');
+  if (!cv) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches, cx = cv.getContext('2d'), dpr = Math.min(2, devicePixelRatio || 1);
+  // routes for a receiver on the left, in yards from where he lines up (up the screen is upfield); the right side is mirrored
+  const ROUTES = [[[0, -16]], [[0, -3], [6, -9]], [[0, -8], [5, -15]], [[0, -7], [-5, -7]], [[0, -9], [1, -7]], [[0, -8], [-5, -14]], [[0, -8], [7, -8]]];
+  const WHEEL = [[-3, -1], [-5, -4], [-5, -14]], FLAT = [[-4, -1], [-7, -2]];
+  const PLAY = 5.5, ease = x => 1 - (1 - Math.min(1, Math.max(0, x))) ** 3, pick = a => a[Math.floor(Math.random() * a.length)];
+  let play = null, start = 0, last = -99;
+  const newPlay = () => {
+    const w = innerWidth, h = innerHeight, u = Math.min(w, 520) / 30, c = w / 2, y0 = h * (0.45 + Math.random() * 0.3);
+    const path = (x, y, steps, flip) => [[x, y], ...steps.map(([dx, dy]) => [x + dx * u * flip, y + dy * u])];
+    const runners = [[c - 12 * u, y0, 1], [c + 12 * u, y0, -1], [c + 8 * u, y0 + u, -1], [c - 5 * u, y0, 1]].map(([x, y, f]) => path(x, y, pick(ROUTES), f));
+    runners.push(path(c + 1.5 * u, y0 + 5 * u, pick([WHEEL, FLAT]), Math.random() < 0.5 ? 1 : -1));
+    const line = [-2, -1, 0, 1, 2].map(i => [c + i * 2 * u, y0]), qb = [c, y0 + 3.5 * u];
+    const d = runners.slice(0, 4).map(r => [r[0][0] + (Math.random() - 0.5) * 3 * u, y0 - (6 + Math.random() * 5) * u]);
+    return { u, runners, line, qb, d, to: Math.floor(Math.random() * runners.length) };
+  };
+  // the point a fraction f along a path, and the path drawn up to there
+  const along = (p, f) => {
+    const seg = p.slice(1).map((q, i) => Math.hypot(q[0] - p[i][0], q[1] - p[i][1])), total = seg.reduce((a, b) => a + b, 0);
+    let left = f * total;
+    for (let i = 0; i < seg.length; i++) { if (left <= seg[i]) { const k = seg[i] ? left / seg[i] : 0; return [p.slice(0, i + 1), [p[i][0] + (p[i + 1][0] - p[i][0]) * k, p[i][1] + (p[i + 1][1] - p[i][1]) * k]]; } left -= seg[i]; }
+    return [p.slice(0, -1), p.at(-1)];
+  };
+  const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; play = null; if (still) { last = -99; draw(PLAY * 0.55 * 1000); } };
+  const draw = now => {
+    if (!still) requestAnimationFrame(draw);
+    if (document.hidden || now - last < 33 || !document.documentElement.classList.contains('glass')) return;
+    last = now;
+    const t = now / 1000;
+    if (!play || t - start > PLAY) { play = newPlay(); start = still ? t - PLAY * 0.55 : t; }
+    const s = t - start, { u, runners, line, qb, d, to } = play, fade = Math.min(1, s / 0.4, (PLAY - s) / 0.9), f = ease((s - 0.5) / 2.2);
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, innerWidth, innerHeight);
+    cx.globalAlpha = Math.max(0, fade); cx.lineCap = cx.lineJoin = 'round'; cx.lineWidth = 2;
+    const ring = ([x, y], a) => { cx.strokeStyle = 'rgba(255,255,255,' + a + ')'; cx.beginPath(); cx.arc(x, y, u * 0.6, 0, 7); cx.stroke(); };
+    for (const p of line) ring(p, 0.3);
+    ring(qb, 0.3);
+    runners.forEach((p, i) => {
+      const [done, head] = along(p, f), mine = i === to;
+      cx.strokeStyle = mine ? 'rgba(10,132,255,.75)' : 'rgba(255,255,255,.26)'; cx.shadowColor = mine ? '#0a84ff' : 'rgba(255,255,255,.6)'; cx.shadowBlur = 10;
+      cx.beginPath(); cx.moveTo(...done[0]); for (const q of done.slice(1)) cx.lineTo(...q); cx.lineTo(...head); cx.stroke();
+      cx.shadowBlur = 0; ring(p[0], 0.3);
+      cx.fillStyle = mine ? '#0a84ff' : '#fff'; cx.shadowColor = cx.fillStyle; cx.shadowBlur = 14;
+      cx.beginPath(); cx.arc(head[0], head[1], u * 0.28, 0, 7); cx.fill(); cx.shadowBlur = 0;
+    });
+    // defenders: X's that drift toward the receiver they cover
+    cx.strokeStyle = 'rgba(255,255,255,.22)';
+    d.forEach(([x, y], i) => { const h = along(runners[i], f)[1], X = x + (h[0] - x) * 0.45 * f, Y = y + (h[1] - y) * 0.3 * f, r = u * 0.45;
+      cx.beginPath(); cx.moveTo(X - r, Y - r); cx.lineTo(X + r, Y + r); cx.moveTo(X + r, Y - r); cx.lineTo(X - r, Y + r); cx.stroke(); });
+    // the pass: a dashed arc from the QB to the target's spot, with the ball riding it
+    const b = ease((s - 1.7) / 1.1);
+    if (b > 0) {
+      const end = along(runners[to], Math.min(1, ease((1.7 + 1.1 - 0.5) / 2.2)))[1], ctl = [(qb[0] + end[0]) / 2, Math.min(qb[1], end[1]) - 5 * u];
+      const at = k => [(1 - k) ** 2 * qb[0] + 2 * (1 - k) * k * ctl[0] + k * k * end[0], (1 - k) ** 2 * qb[1] + 2 * (1 - k) * k * ctl[1] + k * k * end[1]];
+      cx.setLineDash([3, 6]); cx.strokeStyle = 'rgba(10,132,255,.5)'; cx.beginPath(); cx.moveTo(...qb);
+      for (let k = 0.05; k <= b; k += 0.05) cx.lineTo(...at(k));
+      cx.stroke(); cx.setLineDash([]);
+      const [bx, by] = at(b); cx.fillStyle = '#fff'; cx.shadowColor = '#0a84ff'; cx.shadowBlur = 16;
+      cx.beginPath(); cx.ellipse(bx, by, u * 0.32, u * 0.2, -0.6, 0, 7); cx.fill(); cx.shadowBlur = 0;
+    }
+    cx.globalAlpha = 1;
   };
   addEventListener('resize', size); size();
   if (!still) requestAnimationFrame(draw);
