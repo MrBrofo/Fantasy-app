@@ -1636,19 +1636,22 @@ const roomFor = () => (rosterSpots - me.roster.filter(p => p.slot !== 'IR').leng
   : me.roster.filter(p => p.slot === 'Bench' && !locked(p) && !isKeeper(p) && !(HURT.includes(p.status) && !p.inj?.season)).sort((a, b) => weakness(a) - weakness(b))[0] ?? null);
 const addMove = (p, drop) => p && !locked(p) && (!drop || !locked(drop)) ? { label: `${p.wa ? 'Claim' : 'Add'} ${p.name}${drop ? `, drop ${drop.name}` : ''} on ESPN`, type: p.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: p.id }, ...(drop ? [{ type: 'DROP', playerId: drop.id }] : [])] } : null;
 
-// 1. Injury fill-ins: a team's #1 QB/RB/TE (depth chart) is out and his #2 is free in this league. The experts and
+// 1. Injury fill-ins: a team's #1 QB/RB/TE/WR (depth chart) is out and his #2 is free in this league. Receivers are listed at
+// three spots (left, right, slot): the #2 at the out starter's own spot takes his place. The experts and
 // most managers react hours later. Only starters someone here rosters count (in 16 teams, that's every one who matters).
-// ponytail: the backup's worth is guessed as 75% of the starter's (backups rarely get all the work); a real split needs snap data.
+// ponytail: the backup's worth is guessed as 75% of the starter's (60% for a receiver: his targets spread to the other
+// receivers and the tight end); a real split needs snap data.
 const fillIns = [];
 for (const [team, chart] of Object.entries(rosSaved.depth ?? {})) for (const [d, o, name] of chart) {
-  if (o !== 1 || !['QB', 'RB', 'TE'].includes(d)) continue;
+  const wr = ['LWR', 'RWR', 'SWR'].includes(d);
+  if (o !== 1 || !(wr || ['QB', 'RB', 'TE'].includes(d))) continue;
   const k1 = pkey(name, d, team), st = statusOf(k1), held = rosteredBy.get(k1);
   if (!st.out || !held) continue;
   const b = chart.find(([d2, o2]) => d2 === d && o2 === 2);
   const k2 = b && pkey(b[2], d, team);
   if (!b || rosteredBy.has(k2) || statusOf(k2).out) continue;
   const long = ['INJURY_RESERVE', 'SUSPENSION'].includes(held.p.status) || held.p.inj?.season || slpBy.get(k1)?.inj === 'IR';
-  fillIns.push({ k: k2, name: b[2], pos: d, team, starter: held.p, owner: held.t, word: st.word, long, worth: rate(held.p) * 0.75 });
+  fillIns.push({ k: k2, name: b[2], pos: wr ? 'WR' : d, team, starter: held.p, owner: held.t, word: st.word, long, worth: rate(held.p) * (wr ? 0.6 : 0.75) });
 }
 const fillRows = await freeRows(fillIns.map(f => f.k));
 for (const f of fillIns) {
