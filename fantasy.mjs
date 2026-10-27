@@ -1025,6 +1025,15 @@ const srcLine = p => {
     `${nextProj.has(p.id) ? `; next week ESPN ${n(nextProj.get(p.id))}` : ''}; rest of season per game ${esc(ros || 'none')}` +
     `${p.status ? `; status: ${esc(statusWords(p))} (ESPN)${odds ? `, ${odds.pct}% chance to play (${esc(odds.why)})` : ''}` : ''}.`;
 };
+// Compare / Trade check buttons on any card that swaps players: out = who you'd lose (drop or give), inn = who you'd get.
+// The page opens Compare or the trade checker with those players already filled in.
+const exShown = new Map();
+const exBtn = (label, attr, ps) => { ps.forEach(p => p && p.pos !== '?' && exShown.set(p.id, p)); return `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" ${attr}>${label}</button>`; };
+const cmpBtn = (a, b, label = 'Compare') => (a && b ? exBtn(label, `data-cmp2="${a.id},${b.id}"`, [a, b]) : '');
+const tcBtn = (out, inn, label = 'Trade check') => (out.length && inn.length ? exBtn(label, `data-tc="${out.map(p => p.id).join(',')};${inn.map(p => p.id).join(',')}"`, [...out, ...inn]) : '');
+// a small one inside a line of text (League's lists)
+const cmpChip = (a, b) => cmpBtn(a, b).replace('class="btn" style="', 'class="btn" style="width:auto;min-height:0;padding:3px 10px;margin:0 4px;font-size:12px;');
+const exBtns = (out, inn, trade) => `<div class="tools2">${cmpBtn(out[0], inn[0])}${trade ? tcBtn(out, inn) : ''}</div>`;
 const info = ps => (ps.length ? `<details class="info"><summary aria-label="Where this comes from" title="Where this comes from">i</summary><div>${ps.map(p => `<p>${srcLine(p)}</p>`).join('')}<p>${SOURCES_NOTE}</p></div></details>` : '');
 // --- Roster moves the site can send to ESPN (through worker.js). Slot ids are ESPN's lineupSlotId.
 const SLOT_ID = Object.fromEntries(Object.entries(SLOT).map(([id, name]) => [name, +id]));
@@ -2155,7 +2164,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 
 <section id="todo"><h2>Do this now <span class="dot" hidden></span></h2><p class="sub">Your to-do list, most important first. Tap a button to do it on ESPN.</p>
 ${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
-${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
+${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${/^Pickup step/.test(title) && who.length === 2 ? exBtns([who[1]], [who[0]]) : ''}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
   return todo.slice(0, 3).map(card).join('') + (todo.length > 3 ? `<details class="all"><summary>${todo.length - 3} more to do</summary>${todo.slice(3).map(card).join('')}</details>` : ''); })() : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
@@ -2194,7 +2203,7 @@ ${benchCheck.length ? `<div class="list">${benchCheck.map(b => `<div class="card
     b.trade ? `<b>Trade:</b> him for ${lnk(b.trade.take)} with ${esc(b.trade.team.name)}, +${n(b.trade.mine)} a week for you${b.trade.strict ? '' : ' (a closer call)'}.` : '',
     b.steal ? `<b>Trade:</b> ${b.steal.give.map(lnk).join(' + ')} for ${lnk(b.steal.take)} with ${esc(b.steal.d.t.name)}, +${n(b.steal.mine)} a week for you (they lose about ${n(-b.steal.theirs)}, so it may be a hard sell).` : '',
     !b.swap && !b.trade && !b.steal ? 'Nothing better on waivers or in trades right now. Keep him as depth until you need the spot.' : '',
-  ].filter(Boolean).join(' ')}</p></div>`).join('')}</div>` : '<div class="card empty">Nobody on your bench.</div>'}
+  ].filter(Boolean).join(' ')}</p>${b.keep || !(b.swap || b.trade || b.steal) ? '' : `<div class="tools2">${b.swap ? cmpBtn(b.p, b.swap.add, `Compare with ${esc(b.swap.add.name)}`) : ''}${b.trade ? tcBtn([b.p], [b.trade.take], `Trade check: ${esc(b.trade.take.name)}`) : ''}${b.steal ? tcBtn(b.steal.give, [b.steal.take], `Trade check: ${esc(b.steal.take.name)}`) : ''}</div>`}</div>`).join('')}</div>` : '<div class="card empty">Nobody on your bench.</div>'}
 </section>
 
 <section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. Two kinds: <b>this week only</b> (a better start this week, using a spare bench spot, never costing you a long-term player or a bye-week fill-in) and <b>long-term upgrade</b> (better for the rest of the season). Tap the button on a step to make that move on ESPN.</p>
@@ -2218,6 +2227,7 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
   : `<div class="card empty">Nobody out there would make your starting lineup better${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
 ${benchUps.length ? `<details class="fold"><summary class="group">Better backups available (${benchUps.length})</summary><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
   <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}${esc(alsoText(x.alts, rate))}</p>${info([x.add, x.drop, ...x.alts])}
+  ${exBtns([x.drop], [x.add])}
   ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div></details>` : ''}
 ${trending.length ? `<details class="fold"><summary class="group">Trending in other leagues (${Math.min(5, trending.length)})</summary><div class="list">${trending.slice(0, 5).map(p => `<div class="card"><div class="row">${player(p)}${rate(p) ? big(rate(p), 'per game, rest of season', null, p, 'season') : '<span class="tag">No projections for him yet</span>'}</div>${pickBtn(p)}</div>`).join('')}</div>
 <p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p></details>` : ''}
@@ -2252,6 +2262,7 @@ ${pending.length ? pending.map(m => {
     ${m.backupFill ? `<p class="why"><b>Don't just cancel it. Do this, in order:</b><br>1. Add ${esc(m.backupFill.name)} now (free agent, see your to-do list).<br>2. Put in a new claim for ${esc(m.add[0].name)} that drops ${esc(m.backupFill.name)} (button below).<br>3. Cancel this claim: it has no drop, so once your roster is full ESPN would turn it down.<br>Win the new claim and ${esc(m.add[0].name)} replaces ${esc(m.backupFill.name)}. Lose it and you still have ${esc(m.backupFill.name)}.</p>
     ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Claim ${m.add[0].name}, drop ${m.backupFill.name}`, type: 'WAIVER', items: [{ type: 'ADD', playerId: m.add[0].id }, { type: 'DROP', playerId: m.backupFill.id }], week: league.scoringPeriodId }))}">Claim ${esc(m.add[0].name)}, drop ${esc(m.backupFill.name)} (after step 1)</button>` : ''}` : ''}
     ${info([...m.add, ...m.drop])}
+    ${exBtns(m.drop, m.add)}
     ${m.better ? `<p class="why" style="color:var(--warn)"><b>Better option:</b> ${lnk(m.better.c)} (${m.better.c.wa ? 'on waivers' : 'free agent, no waiting'}) would add about ${n(m.better.season)} a week instead of ${n(m.season)}, dropping the same player. To switch: cancel this claim, then tap him and use Add him.</p>` : ''}
     ${MOVE_URL ? `<button type="button" class="btn do" style="background:var(--chip);color:var(--fg)" data-move="${esc(JSON.stringify({ label: 'Cancel this claim on ESPN', type: 'WAIVER', cancel: true, related: m.id, items: [], week: league.scoringPeriodId }))}">Cancel this claim on ESPN</button>` : ''}</div>`;
   }
@@ -2265,6 +2276,7 @@ ${pending.length ? pending.map(m => {
   ${m.mineWeek > 2 && m.mine < -1 ? '<br><b>Trap:</b> it only helps this week (your players are on bye or hurt). After that you\'re worse off.' : ''}
   ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
   ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p>
+  ${exBtns(m.give, m.take, true)}
   ${MOVE_URL && !m.mineOffer ? `<div class="tools2"><button type="button" class="btn do" style="background:var(--good);color:var(--onaccent)" data-move="${esc(JSON.stringify({ label: 'Accept this trade on ESPN (it can\'t be undone)', type: 'TRADE_ACCEPT', related: m.id, items: [], week: league.scoringPeriodId }))}">Accept</button><button type="button" class="btn do" style="background:var(--bad);color:#fff" data-move="${esc(JSON.stringify({ label: 'Decline this trade on ESPN', type: 'TRADE_DECLINE', related: m.id, items: [], week: league.scoringPeriodId }))}">Decline</button></div>` : ''}</div>`;
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
@@ -2277,7 +2289,7 @@ ${pending.length ? pending.map(m => {
   <div class="arrow">for</div>
   <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
   <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
-  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p></div>`; }).join('')}${poolEmpty}</div>
+  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p>${exBtns([t.give], [t.take], true)}</div>`; }).join('')}${poolEmpty}</div>
 ${poolMore}
 </section>
 
@@ -2288,6 +2300,7 @@ ${poolMore}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="tag" style="margin:6px 0 0">Their situation: ${esc(situation(f.d.t))}. ${esc(profiles.get(f.d.t)?.say[0] ?? '')}</p>
   <p class="why">${f.alt ? 'No clear fleece for this player, so this is your best offer for him. ' : ''}Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, ${f.theirs < -0.2 ? `they lose about ${n(-f.theirs)} a week` : f.theirs > 0.2 ? `it helps them too, about ${n(f.theirs)} a week` : 'it comes out about even for them'}.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
+  ${exBtns(f.give, [f.take], true)}
   <div class="group">Text to send</div><p class="pitch">${esc(f.texts[0])}</p>
   <div class="tools2"><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-copy="${esc(f.texts[0])}">Copy text</button>${f.texts.length > 1 ? `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-versions="${esc(JSON.stringify(f.texts))}">Another version</button>` : ''}</div>
   <button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it (copies the facts, opens Claude)</button>
@@ -2362,11 +2375,11 @@ ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDa
   const date = new Date(tx.proposedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   if (tx.type === 'WAIVER') {
     const add = tx.items.filter(i => i.type === 'ADD').map(i => nm(i.playerId)).join(', '), drop = tx.items.filter(i => i.type === 'DROP').map(i => nm(i.playerId)).join(', ');
-    return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> tried to claim ${add}${drop ? ` (dropping ${drop})` : ''} <span class="tag">(${tx.status === 'CANCELED' ? 'they canceled it' : 'didn\'t go through'})</span></td></tr>`;
+    return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> tried to claim ${add}${drop ? ` (dropping ${drop})` : ''} ${cmpChip(byId.get(tx.items.find(i => i.type === 'DROP')?.playerId), byId.get(tx.items.find(i => i.type === 'ADD')?.playerId))} <span class="tag">(${tx.status === 'CANCELED' ? 'they canceled it' : 'didn\'t go through'})</span></td></tr>`;
   }
   const other = tx.items.map(i => (i.fromTeamId === tx.teamId ? i.toTeamId : i.fromTeamId)).find(id => id !== tx.teamId);
   const gave = tx.items.filter(i => i.fromTeamId === tx.teamId).map(i => nm(i.playerId)).join(', '), got = tx.items.filter(i => i.toTeamId === tx.teamId).map(i => nm(i.playerId)).join(', ');
-  return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> offered ${gave} to ${esc(teamName[other] ?? '')} for ${got} <span class="tag">(${tx.type === 'TRADE_ACCEPT' && tx.status === 'PENDING' ? `accepted, in league review until ${new Date(tx.processDate).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' })} Pacific; the league can still veto it` : tx.status === 'PENDING' ? 'waiting for an answer' : tx.status.toLowerCase().replace(/_/g, ' ')})</span></td></tr>`;
+  return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> offered ${gave} to ${esc(teamName[other] ?? '')} for ${got} ${cmpChip(byId.get(tx.items.find(i => i.fromTeamId === tx.teamId)?.playerId), byId.get(tx.items.find(i => i.toTeamId === tx.teamId)?.playerId))} <span class="tag">(${tx.type === 'TRADE_ACCEPT' && tx.status === 'PENDING' ? `accepted, in league review until ${new Date(tx.processDate).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' })} Pacific; the league can still veto it` : tx.status === 'PENDING' ? 'waiting for an answer' : tx.status.toLowerCase().replace(/_/g, ' ')})</span></td></tr>`;
 }).join('')}</table></details></div>` : ''}
 <div class="card"><details><summary>Recent moves around the league</summary><table>
 ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>${esc(teamName[m.team] ?? '')}</td><td>${m.type === 'ADD' ? '<b style="color:var(--good)">added</b>' : m.type === 'DROP' ? '<span style="color:var(--bad)">dropped</span>' : `traded with ${esc(teamName[m.from])}`} ${esc(names[m.playerId] ?? '')}</td></tr>`).join('')}</table></details></div>
@@ -3622,6 +3635,25 @@ function addHim(p) {
     tcCheck();
     closeSheet(); history.replaceState(null, '', '#compare'); showTab('compare', true); $('check').scrollIntoView({ behavior: 'smooth' });
   }
+  // a swap card's Compare / Trade check: fill both sides, then open the page
+  function cmpBoth(a, b) {
+    if (!plOf(a) || !plOf(b)) return;
+    setPick('a', a); setPick('b', b);
+    closeSheet(); history.replaceState(null, '', '#compare'); showTab('compare', true);
+  }
+  function tcFill(give, get) {
+    const t = R.teams.find(t => t.id !== R.me && get.some(id => t.ids.includes(id)));
+    if (!t) return;
+    tcTeam.value = t.id; tcLists();
+    document.querySelectorAll('#check input[data-side]').forEach(i => { i.checked = (i.dataset.side === 'give' ? give : get).includes(+i.value); });
+    tcCheck();
+    closeSheet(); history.replaceState(null, '', '#compare'); showTab('compare', true); $('check').scrollIntoView({ behavior: 'smooth' });
+  }
+  document.addEventListener('click', ev => {
+    const c2 = ev.target.closest('[data-cmp2]'), tc = ev.target.closest('[data-tc]');
+    if (c2) { const [a, b] = c2.dataset.cmp2.split(',').map(Number); cmpBoth(a, b); }
+    if (tc) { const [g, t] = tc.dataset.tc.split(';').map(x => x.split(',').map(Number)); tcFill(g, t); }
+  });
   document.addEventListener('click', ev => {
     const c = ev.target.closest('[data-cmp]'), t = ev.target.closest('[data-trade]');
     if (c) compareWith(+c.dataset.cmp);
@@ -3903,7 +3935,7 @@ const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) =
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, ids: t.roster.map(p => p.id), short: depth(t).short, rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     rows: [...t.roster].sort((a, c) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(c.slot)).map(p => { const g = gameNow[TEAM(p.team)]; return [p.id, p.slot, p.now ?? 0, p.proTeamId ?? 0, p.bye === week ? 'bye' : g?.state ?? '', g?.text ?? '', +(p.proj ?? 0).toFixed(1)]; }) }; }), fa: faList.map(p => p.id),
-  pl: Object.fromEntries([...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
+  pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
 
