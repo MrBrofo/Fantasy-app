@@ -2423,7 +2423,7 @@ async function swap(html) {
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
   if (typeof showLook === 'function') showLook();
-  if (!sheet.hidden && P[sheet.dataset.pid]) body.innerHTML = render(P[sheet.dataset.pid]);
+  if (!sheet.hidden && P[sheet.dataset.pid]) { body.innerHTML = render(P[sheet.dataset.pid]); drawGc(); }
   else if (!sheet.hidden && sheet.dataset.team && typeof teamPage === 'function') body.innerHTML = teamPage(sheet.dataset.team);
   gloss(document.body);
   liveTick();
@@ -2617,7 +2617,7 @@ function liveExtras(d, f) {
     if (!(x.t > built) || seenLive.has('n' + x.id)) continue;
     seenLive.add('n' + x.id);
     const p = P[x.pid];
-    if (p) { p.liveNews = [x, ...(p.liveNews || [])]; if (!sheet.hidden && sheet.dataset.pid == x.pid) body.innerHTML = render(p); }
+    if (p) { p.liveNews = [x, ...(p.liveNews || [])]; if (!sheet.hidden && sheet.dataset.pid == x.pid) { body.innerHTML = render(p); drawGc(); } }
     list?.insertAdjacentHTML('afterbegin', '<div class="card"><div class="vhead"><span data-pid="' + x.pid + '" class="lnk">' + e(name(x.pid)) + '</span><span class="chip warn" style="margin:0">Just in</span></div><p class="why" style="margin:6px 0 0">' + e(x.h) + '</p></div>');
   }
 }
@@ -2633,13 +2633,14 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { to
 const P = JSON.parse(document.getElementById('pdata').textContent);
 const sheet = document.getElementById('sheet'), body = sheet.querySelector('.sheet-body');
 const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let gcOpen = false; // the Watch view is open on this sheet
 function render(p) {
   const max = Math.max(1, ...p.games.map(g => g.pts ?? 0));
   return '<div class="sh-top">' + (document.querySelector('[data-pid="' + p.id + '"] .pic')?.outerHTML ?? '') +
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
-    (LD?.field?.[LD.games?.[p.pro]?.[3]] || LD?.games?.[p.pro]?.[0] === 'post' ? (l => '<button type="button" class="btn" data-watch data-label="' + l + '">' + l + '</button><div id="gc" hidden></div>')(LD.field?.[LD.games[p.pro][3]] ? 'Watch his game live' : 'Watch his plays') : '') +
+    (LD?.field?.[LD.games?.[p.pro]?.[3]] || LD?.games?.[p.pro]?.[0] === 'post' ? (l => '<button type="button" class="btn" data-watch data-label="' + l + '">' + (gcOpen ? 'Hide the game' : l) + '</button><div id="gc"' + (gcOpen ? '' : ' hidden') + '></div>')(LD.field?.[LD.games[p.pro][3]] ? 'Watch his game live' : 'Watch his plays') : '') +
     (p.liveNews?.length ? '<div class="group">Just in</div>' + p.liveNews.map(x => '<p class="why" style="margin:4px 0 0">' + e(x.h) + '</p>').join('') : '') +
     (p.now ? '<div class="group">This week so far</div><p class="why" style="margin:0"><b>' + e(p.now.pts) + ' points</b> &middot; ' + e(p.now.game) + '</p>' +
       (p.now.line.length ? '<ul class="pline">' + p.now.line.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
@@ -2943,11 +2944,11 @@ document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-watch]'), box = document.getElementById('gc');
   if (!b || !box) return;
   box.hidden = !box.hidden; b.textContent = box.hidden ? b.dataset.label : 'Hide the game';
-  gcTap = !box.hidden;
+  gcTap = gcOpen = !box.hidden;
   drawGc();
 });
 let closeTimer;
-function openSheet(id) { const p = P[id]; if (!p) return; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
