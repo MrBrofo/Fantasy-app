@@ -2755,6 +2755,8 @@ function gcField(F, A, H, ball, from, first, fx) {
     // an interception lands where it was picked ("INTERCEPTED by D.Overshown at DAL 30"), not where the return ended
     const pk = kind === 'pick' && / at ([A-Z]+) ([0-9]+)/.exec(F.last.split('INTERCEPTED')[1] ?? ''), pick = pk ? (pk[1] === F.teams.find(t => t[0] === tid)?.[1] ? +pk[2] : 100 - pk[2]) : y1;
     const hold = /fg|miss|block/.test(kind), sx = fx(own(hold ? y0 - 7 : y0));
+    // where the play started: a dashed line, next to the blue one where the ball is now
+    if (F.play && Math.abs(fx(own(y0)) - fx(ball)) > 0.5) o += line(fx(own(y0)), '#fff').replace('/>', ' stroke-dasharray="14 10" stroke-opacity=".7"/>');
     const post = fx(own(110)), lx = td ? fx(ball) : kind === 'fg' ? post + Math.sign(post - sx) * Math.min(8, 3 + Math.abs(post - sx) * 0.2) : fx(own(kind === 'miss' ? 110 : kind === 'block' ? y0 - 5 : kind === 'inc' ? y0 + (/ deep /.test(F.last) ? 20 : 8) : kind === 'pick' ? pick : y1)), dl = Math.abs(lx - sx);
     // every play throws its own ball, picked from the play itself so a replay flies the same: how high, how much the air
     // slows it (fast off the foot or hand, slower at the end, so it comes down steeper than it went up), how fast it turns
@@ -2796,8 +2798,8 @@ function gcField(F, A, H, ball, from, first, fx) {
       const tag = (w, X, y) => { const q = mine(w); if (!q) return ''; const t = (q.side === 'me' ? 'YOUR TD' : 'THEIR TD') + ' \u00b7 ' + f1(LD?.players?.[q.id]?.[0] ?? 0), wd = t.length * 8.6 + 18;
         return '<rect x="' + (+X - wd / 2).toFixed(1) + '" y="' + (y - 15).toFixed(1) + '" width="' + wd.toFixed(1) + '" height="22" rx="11" fill="' + (q.side === 'me' ? '#16a34a' : '#dc2626') + '"/><text x="' + X + '" y="' + (y - 4).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing=".4">' + t + '</text>'; };
       const pin = (x, w, i, dx = 0) => { const q = pt(x, 26.65), cy = q[1] - 78, X = (q[0] + dx).toFixed(1), Y = cy.toFixed(1);
-        // the touchdown scorer hops up and down
-        return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : w.logo ? r * 1.1 : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/><g' + (td && i ? ' class="gc-hop"' : '') + '>' + tag(w, X, cy - r * 1.32 - 10) +
+        // on a touchdown everyone shown hops up and down, each on their own beat
+        return '<line x1="' + q[0].toFixed(1) + '" y1="' + q[1].toFixed(1) + '" x2="' + X + '" y2="' + (cy + (w.p ? r : w.logo ? r * 1.1 : 0)).toFixed(1) + '" stroke="#fff" stroke-width="3" stroke-opacity=".8"/><g' + (td ? ' class="gc-hop"' + (i ? '' : ' style="animation-delay:-.27s"') : '') + '>' + tag(w, X, cy - r * 1.32 - 10) +
           (!w.p && w.logo ? '<image href="' + logo(w.logo) + '" x="' + (q[0] + dx - r * 1.1).toFixed(1) + '" y="' + (cy - r * 1.1).toFixed(1) + '" width="' + (r * 2.2).toFixed(1) + '" height="' + (r * 2.2).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
               '<text x="' + X + '" y="' + (cy - r * 1.1 - 6).toFixed(1) + '" font-size="15" font-weight="600" fill="#fff" fill-opacity=".7" text-anchor="middle" letter-spacing=".5">' + e(w.label) + '</text>'
           : w.p ?'<image href="https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + e(w.p.id) + '.png&amp;w=200" x="' + (q[0] + dx - r * 1.6).toFixed(1) + '" y="' + (cy + r - r * 2.32).toFixed(1) + '" width="' + (r * 3.2).toFixed(1) + '" height="' + (r * 2.32).toFixed(1) + '" style="filter:drop-shadow(0 3px 4px #000a)"/>' +
