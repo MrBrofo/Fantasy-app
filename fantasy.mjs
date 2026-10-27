@@ -2678,13 +2678,15 @@ function gcField(F, A, H, ball, from, first, fx) {
   // the end zone with its top toward the end line (an affine stand-in for the perspective, close enough over a few yards)
   const flat = (x1, z) => { const c = pt(x1 + 5, z), q = pt(x1 + 5, z + 1), r = pt(x1 + 6, z), sg = x1 ? -1 : 1;
     return 'matrix(' + [(q[0] - c[0]) * sg, (q[1] - c[1]) * sg, (r[0] - c[0]) * sg, (r[1] - c[1]) * sg, c[0], c[1]].map(v => v.toFixed(3)).join(' ') + ')'; };
-  const paint = (x1, str, size = 3.8, spacing = 0.6) => '<text transform="' + flat(x1, 26.65) + '" font-size="' + size + '" font-weight="900" fill="#fff" fill-opacity=".92" text-anchor="middle" dominant-baseline="central" letter-spacing="' + spacing + '">' + str + '</text>';
+  const painted = (x1, el) => '<clipPath id="gcP' + x1 + '">' + el.replace(/ stroke="[^"]*"| stroke-width="[^"]*"/g, '') + '</clipPath><g filter="url(#gcSoft)" opacity=".86">' + el + '</g>' +
+    '<image href="field.webp" width="1600" height="490" clip-path="url(#gcP' + x1 + ')" style="mix-blend-mode:multiply" opacity=".45"/>';
+  const paint = (x1, str, size = 3.8, spacing = 0.6) => painted(x1, '<text transform="' + flat(x1, 26.65) + '" font-size="' + size + '" font-weight="900" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="' + spacing + '">' + str + '</text>');
   const logo = abbr => 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/' + e(String(abbr).toLowerCase()) + '.png&amp;w=200';
   // the team's nickname in block letters, white with an outline in its second colour (dark when that colour is near white),
   // stretched to a set length, with a small logo past each end
   const name = (x1, t) => { const n = String(t[5] || t[1]).toUpperCase(), len = Math.min(34, n.length * 4.6), alt = /^[0-9a-f]{6}$/i.test(t[4] || '') ? t[4] : '000000';
     const light = parseInt(alt.slice(0, 2), 16) * 0.3 + parseInt(alt.slice(2, 4), 16) * 0.59 + parseInt(alt.slice(4), 16) * 0.11 > 200;
-    return '<text transform="' + flat(x1, 26.65) + '" font-size="5.6" font-weight="900" fill="#fff" stroke="#' + (light ? '111' : alt) + '" stroke-width=".7" stroke-linejoin="round" style="paint-order:stroke" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs">' + e(n) + '</text>' +
+    return painted(x1, '<text transform="' + flat(x1, 26.65) + '" font-size="5.6" font-weight="900" fill="#fff" stroke="#' + (light ? '111' : alt) + '" stroke-width=".4" stroke-linejoin="round" style="paint-order:stroke" text-anchor="middle" dominant-baseline="central" textLength="' + len + '" lengthAdjust="spacingAndGlyphs">' + e(n) + '</text>') +
       [-1, 1].map(sd => '<image href="' + logo(t[1]) + '" x="-3" y="-3" width="6" height="6" transform="' + flat(x1, 26.65 + sd * (len / 2 + 4.2)) + '"/>').join(''); };
   const zone = (x1, t, scored) => { return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
     (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + paint(x1, 'TOUCHDOWN') + '</g>' : '') +
@@ -2746,18 +2748,18 @@ function gcField(F, A, H, ball, from, first, fx) {
   }
   // show the 60% of the field around the ball, like a TV camera following the play
   const cx = Math.max(480, Math.min(1120, pt(fx(F.poss || F.play?.[4] ? ball : 50), 26.65)[0]));
-  return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 0 960 470" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
+  return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 0 960 470" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><filter id="gcSoft"><feGaussianBlur stdDeviation=".45"/></filter><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
 // A new play plays out: the passer fades in over GC_LEAD ms, then over GC_FLY ms the ball moves along gcFly (its path in the air, and its shadow's on the turf)
-const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 1800;
+const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 2300;
 let gcKey = '', gcAt = 0, gcFly = null, gcRun = null;
 function gcAnimate() {
   const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly, run = gcRun = {};
   const fade = c => document.querySelector('#gc .' + c);
   if (!F || !b) return;
-  let conf = null, bits = [];
+  let conf = null, bits = [], pop = null;
   const step = () => {
-    if (!b.isConnected || gcRun !== run) { conf?.remove(); return; }
+    if (!b.isConnected || gcRun !== run) { conf?.remove(); pop?.remove(); b.ownerSVGElement.style.transform = ''; return; }
     const el = Date.now() - gcAt, t = Math.min(1, Math.max(0, (el - GC_LEAD) / GC_FLY)), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
     const along = L => { const i = Math.min(L.length - 2, Math.floor(k * (L.length - 1))), r = k * (L.length - 1) - i; return [L[i][0] + (L[i + 1][0] - L[i][0]) * r, L[i][1] + (L[i + 1][1] - L[i][1]) * r]; };
     const [x, y] = along(F.b), [gx, gy] = along(F.g), clip = document.querySelector('#gcReveal rect'), trail = fade('gc-trail');
@@ -2769,7 +2771,29 @@ function gcAnimate() {
     const tl = (el - GC_LEAD - GC_FLY) / 1000;
     if (F.td) {
       if (fade('gc-tdz')) fade('gc-tdz').style.opacity = tl < 0 ? 0 : tl < 0.15 ? tl / 0.15 : 0.7 + 0.3 * Math.exp(-(tl - 0.15) * 2.5) * Math.abs(Math.cos((tl - 0.15) * 9));
-      if (fade('gc-tdt')) fade('gc-tdt').style.opacity = Math.min(1, Math.max(0, tl / 0.3));
+      if (fade('gc-tdt')) fade('gc-tdt').style.opacity = Math.min(1, Math.max(0, (tl - 1.75) / 0.3));
+      const svg = b.ownerSVGElement, NS = 'http://www.w3.org/2000/svg', vb = svg.viewBox.baseVal, mk = (tag, at) => { const n = document.createElementNS(NS, tag); for (const k in at) n.setAttribute(k, at[k]); return n; };
+      if (tl >= 0 && !pop) {
+        pop = mk('g', {}); svg.appendChild(pop);
+        pop.flash = mk('rect', { x: vb.x, y: vb.y, width: vb.width, height: vb.height, fill: '#fff' });
+        pop.ring = mk('ellipse', { fill: 'none', stroke: '#fff', 'stroke-width': 6 });
+        pop.word = mk('g', {});
+        // the word stacked from its colour to white, each layer a little up and left, so it stands out of the screen
+        for (let i = 7; i >= 0; i--) { const t = mk('text', { x: -i * 1.6, y: -i * 2.2, 'font-size': 92, 'font-weight': 900, 'font-style': 'italic', 'text-anchor': 'middle', 'dominant-baseline': 'central', 'letter-spacing': 2,
+          fill: i ? F.td.cols[0] : '#fff', stroke: i ? F.td.cols[0] : F.td.cols[1] === '#fff' ? F.td.cols[0] : F.td.cols[1], 'stroke-width': i ? 6 : 4, 'stroke-linejoin': 'round', 'paint-order': 'stroke' });
+          t.textContent = 'TOUCHDOWN!'; if (!i) t.style.filter = 'drop-shadow(0 0 14px ' + F.td.cols[0] + ')'; pop.word.appendChild(t); }
+        pop.append(pop.ring, pop.word, pop.flash);
+      }
+      if (pop) {
+        const cx = vb.x + vb.width / 2, cy = vb.y + vb.height * 0.42, [ex, ey] = F.td.c;
+        pop.flash.setAttribute('opacity', Math.max(0, 0.7 - tl * 3).toFixed(2));
+        const rr = Math.min(1, tl / 0.9); pop.ring.setAttribute('cx', ex); pop.ring.setAttribute('cy', ey); pop.ring.setAttribute('rx', (40 + rr * 420).toFixed(0)); pop.ring.setAttribute('ry', (12 + rr * 120).toFixed(0)); pop.ring.setAttribute('opacity', (1 - rr).toFixed(2));
+        const back = u => 1 + 2.7 * (u - 1) ** 3 + 1.7 * (u - 1) ** 2, fl = Math.min(1, Math.max(0, (tl - 1.35) / 0.45)), ease = fl * fl;
+        const sc = tl < 0.4 ? back(tl / 0.4) * 1.05 : 1.05 - 0.05 * Math.min(1, (tl - 0.4) / 0.2), wob = Math.sin(tl * 7) * 2 * (1 - fl);
+        pop.word.setAttribute('transform', 'translate(' + (cx + (ex - cx) * ease).toFixed(1) + ' ' + (cy + (ey - cy) * ease).toFixed(1) + ') rotate(' + (-6 + wob).toFixed(1) + ') scale(' + (sc * (1 - 0.7 * ease)).toFixed(3) + ')');
+        pop.word.setAttribute('opacity', (1 - fl).toFixed(2));
+        const sh = tl < 0.45 ? (1 - tl / 0.45) * 9 : 0; svg.style.transform = sh ? 'translate(' + ((Math.random() - 0.5) * sh).toFixed(1) + 'px,' + ((Math.random() - 0.5) * sh).toFixed(1) + 'px)' : '';
+      }
       if (tl >= 0 && !conf) {
         conf = document.createElementNS('http://www.w3.org/2000/svg', 'g'); b.ownerSVGElement.appendChild(conf);
         bits = Array.from({ length: 70 }, (_, i) => { const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); r.setAttribute('width', 10); r.setAttribute('height', 18); r.setAttribute('fill', F.td.cols[i % 3]); conf.appendChild(r);
@@ -2777,7 +2801,7 @@ function gcAnimate() {
       }
       if (conf) for (const p of bits) { const x = F.td.c[0] + p.vx * tl, y = F.td.c[1] + p.vy * tl + 450 * tl * tl;
         p.r.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + (p.spin * tl).toFixed(0) + ')'); p.r.setAttribute('opacity', Math.max(0, 1 - tl / 1.8).toFixed(2)); }
-      if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
+      if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; pop?.remove(); pop = null; b.ownerSVGElement.style.transform = ''; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
     }
     if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - 0.6) / 0.3));
     if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0)) requestAnimationFrame(step);
