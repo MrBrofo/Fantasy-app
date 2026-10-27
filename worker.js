@@ -130,9 +130,26 @@ async function ask(req, env) {
   if (m.mode === 'auto' && typeof m.q === 'string' && m.q.trim()) {
     const c = await client.messages.create({
       model: 'claude-haiku-5-5', max_tokens: 1000, output_config: { effort: 'low' },
-      system: 'Sort a fantasy football question. Reply with one word. EASY: a meaning, a rule, or looking up a fact. HARD: anything that asks for advice, a choice, a comparison or an opinion (start, sit, trade, add, drop, keep, worth it, better, what should I do). If unsure, HARD.\n' +
-        'Examples. HARD: Is Kelce worth keeping? / Who is better this week, Bijan or Saquon? / Thoughts on my team? / Should I pick up Johnson? / Will I make the playoffs? ' +
-        'EASY: What does start/sit mean? / What is a bye week? / How do waivers work? / Who is on bye this week? / Is Kelce hurt? / Who am I playing?',
+      // the examples are the questions a beginner actually asks; add any that Auto sorts wrong
+      system: [
+        'Sort a fantasy football question. Reply with one word: EASY or HARD.',
+        'HARD: it asks for advice, a choice, a comparison, a prediction, an opinion or a reason why, or it needs several facts weighed together. If unsure, HARD.',
+        'EASY: it asks what a word means, how a rule or the app works, or for one fact that can be read off (a score, a date, a status, a name, a number).',
+        'HARD examples:',
+        '- Lineup: Who should I start at flex? / Should I start him if he is questionable? / Is my lineup set right?',
+        '- Comparisons: Who is better this week, Bijan or Saquon? / Which kicker should I keep?',
+        '- Pickups and drops: Should I pick up Johnson? / Who should I drop for him? / Is he worth a waiver claim? / Should I cancel my claim?',
+        '- Trades: Is this trade fair? / Should I accept this offer? / Who should I trade for? / What should I offer for Bijan?',
+        '- Keep or cut: Is Kelce worth keeping? / Should I hold him through his bye? / Is he a sell-high?',
+        '- Outlook: Will I make the playoffs? / Will I win this week? / How does my team look for the rest of the season?',
+        '- Reasons: Why is he projected so low? / Why did I lose? / Why does the app say to drop him?',
+        '- Broad: Thoughts on my team? / What should I do this week? / What is my biggest weakness?',
+        'EASY examples:',
+        '- Meanings: What does start/sit mean? / What is a bye week? / What is PPR? / What is a handcuff?',
+        '- Rules: How do waivers work? / When does my lineup lock? / How many points is a touchdown? / How does IR work?',
+        '- Facts: Who is on bye this week? / Is Kelce hurt? / Who am I playing? / What is my record? / How many points did Kelce score? / When does his game start? / Who is the best free agent RB?',
+        '- The app: How do I make a trade on here? / What does the red tag mean?',
+      ].join('\n'),
       messages: [{ role: 'user', content: m.q.slice(0, 2000) }],
     }).catch(() => null);
     smart = !/EASY/.test(c?.content.filter(b => b.type === 'text').map(b => b.text).join('') ?? '');
