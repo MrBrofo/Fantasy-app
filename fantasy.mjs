@@ -2252,7 +2252,7 @@ html.glass .sheet-x{background:rgba(255,255,255,.06)}
 html.glass .btn{border-radius:999px;color:#fff;background:var(--accent);box-shadow:none}
 html.glass .tools2 .btn,html.glass #refresh{background:rgba(118,118,128,.24);color:var(--fg);border:0}
 html.glass .btn:active,html.glass #refresh:active{transform:scale(.97);filter:brightness(1.1)}
-html.glass .seg{position:relative;border-radius:999px;background:rgba(20,20,22,.22);touch-action:pan-y}html.glass .seg button{position:relative;border-radius:999px}html.glass .seg button.on{color:#fff}
+html.glass .seg{position:relative;border-radius:999px;background:rgba(20,20,22,.22);touch-action:none}html.glass .seg button{position:relative;border-radius:999px}html.glass .seg button.on{color:#fff}
 /* the player sheet floats in from the edges like an iOS 26 sheet, darker glass so its text stays easy to read */
 html.glass .sheet-bg{background:rgba(0,0,0,.4)}
 html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(28,28,30,.55);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}
@@ -4000,8 +4000,10 @@ document.getElementById('seg').addEventListener('click', ev => { const b = ev.ta
 showTab(location.hash.slice(1), false);
 // Glass look: each bar (tab bar, switches) gets one bubble that slides to its picked button, or the tab under your finger.
 // Re-placed whenever a class changes anywhere (picked button, look, held tab, page merges) or the screen resizes.
+// bars being dragged right now (kept here, not on the element, so a live page update can't drop it mid-drag)
+const dragging = new Set();
 const placeBlobs = () => { for (const bar of document.querySelectorAll('nav,.seg')) {
-  if (bar.dataset.drag) continue; // your finger has it
+  if (dragging.has(bar)) continue; // your finger has it
   const on = bar.querySelector(':scope > .press') || bar.querySelector(':scope > .on');
   let b = bar.querySelector(':scope > .blob');
   if (!b) { b = document.createElement('i'); b.className = 'blob'; b.setAttribute('aria-hidden', 'true'); bar.prepend(b); }
@@ -4024,23 +4026,26 @@ document.addEventListener('pointerdown', ev => {
   if (!blob || blob.hidden || !document.documentElement.classList.contains('glass')) return;
   const btns = [...bar.children].filter(x => x !== blob && x.matches('a,button'));
   if (!btns.length) return;
-  const x0 = ev.clientX, left = bar.getBoundingClientRect().left, w = blob.offsetWidth, y = btns[0].offsetTop;
+  const x0 = ev.clientX, left = bar.getBoundingClientRect().left, w = (bar.querySelector(':scope > .on') ?? btns[0]).offsetWidth, y = btns[0].offsetTop; // the tab's width: the bubble's own may be mid-animation
   const lo = btns[0].offsetLeft, hi = btns.at(-1).offsetLeft + btns.at(-1).offsetWidth - w;
   const at = x => Math.min(hi, Math.max(lo, x - left - w / 2));
-  let moved = false;
+  let moved = false, lastX = x0;
   const move = e => {
+    lastX = e.clientX;
     if (!moved && Math.abs(e.clientX - x0) < 4) return;
-    moved = true; bar.dataset.drag = '1'; blob.classList.add('held', 'drag');
+    moved = true; dragging.add(bar); blob.classList.add('held', 'drag');
     blob.style.transform = 'translate(' + at(e.clientX) + 'px,' + y + 'px)';
     blob.style.setProperty('--spin', Math.round((at(e.clientX) + w / 2) / bar.clientWidth * 270 - 135) + 'deg');
   };
   const end = e => {
     removeEventListener('pointermove', move); removeEventListener('pointerup', end); removeEventListener('pointercancel', end);
-    if (moved && e.type === 'pointerup' && bar.tagName !== 'NAV') {
-      const c = at(e.clientX) + w / 2, pick = btns.find(b => c >= b.offsetLeft && c < b.offsetLeft + b.offsetWidth);
-      if (pick && !pick.classList.contains('on')) pick.click();
+    // pick whatever the bubble is over, on the tab bar too (the drag may have started on its edge, not on a tab), and
+    // also when the phone cancels the touch partway: it lands where you were instead of snapping back
+    if (moved) {
+      const c = at(e.type === 'pointerup' ? e.clientX : lastX) + w / 2, pick = btns.find(b => c >= b.offsetLeft && c < b.offsetLeft + b.offsetWidth) ?? btns.reduce((a, b) => Math.abs(b.offsetLeft + b.offsetWidth / 2 - c) < Math.abs(a.offsetLeft + a.offsetWidth / 2 - c) ? b : a);
+      if (bar.tagName === 'NAV') showTab(pick.hash.slice(1), true); else if (!pick.classList.contains('on')) pick.click();
     }
-    delete bar.dataset.drag; blob.classList.remove('held', 'drag'); placeBlobs();
+    dragging.delete(bar); blob.classList.remove('held', 'drag'); placeBlobs();
   };
   addEventListener('pointermove', move); addEventListener('pointerup', end); addEventListener('pointercancel', end);
 });
