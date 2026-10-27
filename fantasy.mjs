@@ -2715,7 +2715,7 @@ function gcField(F, A, H, ball, from, first, fx) {
     // spot for an incompletion, so it lands 8 yards past the line, 20 if deep; a field goal flies from the hold, 7 yards
     // back, to the posts on the end line; a touchdown ends with the scorer in the middle of the end zone
     const [y0 = 0, y1 = 0, tid, type = ''] = F.play || [], own = y => tid === A[0] ? y : 100 - y;
-    const kind = /field goal/i.test(type) ? (/good/i.test(type) ? 'fg' : /block/i.test(type) ? 'block' : 'miss') : /incomplet/i.test(type) ? 'inc' : /punt|kickoff/i.test(type) ? 'kick' : /interception/i.test(type) ? 'pick' : /pass|reception/i.test(type) ? 'pass' : 'run';
+    const kind = /field goal|extra point/i.test(type) ? (/good/i.test(type) ? 'fg' : /block/i.test(type) ? 'block' : 'miss') : /incomplet/i.test(type) ? 'inc' : /punt|kickoff/i.test(type) ? 'kick' : /interception/i.test(type) ? 'pick' : /pass|reception/i.test(type) ? 'pass' : 'run';
     // an interception lands where it was picked ("INTERCEPTED by D.Overshown at DAL 30"), not where the return ended
     const pk = kind === 'pick' && / at ([A-Z]+) ([0-9]+)/.exec(F.last.split('INTERCEPTED')[1] ?? ''), pick = pk ? (pk[1] === F.teams.find(t => t[0] === tid)?.[1] ? +pk[2] : 100 - pk[2]) : y1;
     const hold = /fg|miss|block/.test(kind), sx = fx(own(hold ? y0 - 7 : y0));
@@ -2757,7 +2757,7 @@ function gcField(F, A, H, ball, from, first, fx) {
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>') + '</g>'; };
       // two photos close together are pushed apart, their stems leaning to where each stood
       // one player who isn't a runner (a kicker, a passer with no target) stands where the play started
-      const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run';
+      const gap = pt(lx, 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1), solo = who.length === 1 && kind !== 'run' && !F.def;
       if (who.length === 2 || solo) o += '<g class="gc-qb">' + pin(sx, who[0], 0, solo ? 0 : -push) + '</g>';
       if (who.length && !solo) o += '<g class="gc-catch">' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
     }
@@ -2841,13 +2841,14 @@ function roster(tid) {
 // on a run, the team's quarterback stands where it started: F.qb from the game summary, or the last passer seen live
 const gcQb = {};
 function gcWho(F) {
+  if (F.def) return [{ n: F.def, p: roster(F.dt)[F.def] }];
   const t = (F.last || '').trim().replace(/^(\\([^)]*\\)\\s*)+/, ''), tid = F.play?.[2] || F.poss;
   const a = /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1], b = / pass /.test(t) ? / to ([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1] : null;
   if (!a || !tid) return [];
   if (b) gcQb[tid] = a;
-  const q = !b && /rush/i.test(F.play?.[3] ?? '') ? F.qb || gcQb[tid] : null;
+  const q = !b && /rush/i.test(F.play?.[3] ?? '') ? F.qb || gcQb[tid] : null, kr = /punt|kickoff/i.test(F.play?.[3] ?? '') && /[.] +([A-Z][.][A-Z][A-Za-z'-]+) (?:to|for|pushed|ran) /.exec(t)?.[1];
   const R = roster(tid);
-  return [q !== a && q, a, b].filter(Boolean).map(n => ({ n, p: R[n] }));
+  return [q !== a && q, a, b, kr].filter(Boolean).map(n => ({ n, p: kr === n ? roster(F.teams.find(x => x[0] !== tid)?.[0])[n] : R[n] }));
 }
 // The newest touchdown in ESPN's game summary, as [start, end, team, type, true] with yards from the team's own goal line
 function gcTdPlay(d) {
@@ -2868,25 +2869,49 @@ function gcGame(gid) {
   if (!GCP[gid]) GCP[gid] = fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=' + gid).then(r => r.json()).catch(() => ({})).then(d => { GCP[gid] = d; drawGc(); });
   return GCP[gid] instanceof Promise ? null : GCP[gid];
 }
-// Every play in a game summary that names this player (his short name as the roster spells it, "S.Barkley" or "A.St.Brown"), oldest first, leaving out plays called back by a penalty, each
-// as a Watch view: the score after it, where it started and ended in yards from the playing team's own goal line
-function gcPlays(d, short) {
-  const c = d.header?.competitions?.[0];
-  if (!c || !short) return [];
+// A player's plays in a game summary, oldest first, leaving out plays called back by a penalty, each as a Watch view:
+// the score after it, where it started and ended in yards from the playing team's own goal line.
+// A player's are the plays that name him (his short name as the roster spells it, "S.Barkley" or "A.St.Brown") other
+// than as the one a penalty was on, a tackler, the snapper or holder, or for a fair catch. A kicker's are his field goals
+// and extra points (an extra point is told inside the touchdown play). A defense's are the other team's plays it sacked,
+// picked off, got a fumble back, blocked a kick, scored on or ran a kick back for a touchdown, with the defender (F.def)
+function gcPlays(d, short, pos = '', team = '') {
+  const c = d.header?.competitions?.[0], def = pos === 'Defense';
+  if (!c || (!short && !def)) return [];
   const tm = ha => { const x = c.competitors.find(y => y.homeAway === ha); return [x.team.id, x.team.abbreviation, 0, x.team.color, x.team.alternateColor, x.team.name]; };
-  const hit = s => { const t = String(s ?? '').replace(/[.] (?=[A-Z])/g, '.').replace(/ (Jr[.]|Sr[.]|III|II|IV)(?![a-z])/g, '$1');
+  const his = s => String(s ?? '').replace(/PENALTY on [A-Z]+-[^,]*,/gi, '').replace(/(Center|Holder)-[^,.]*/g, '').replace(/[(][^)]*[)]/g, '').replace(/fair catch by [^.,]*/g, '');
+  const hit = s => { const t = his(s).replace(/[.] (?=[A-Z])/g, '.').replace(/ (Jr[.]|Sr[.]|III|II|IV)(?![a-z])/g, '$1');
     for (let i = t.indexOf(short); i >= 0; i = t.indexOf(short, i + 1)) if (!/[A-Za-z]/.test(t[i - 1] || '') && !/[a-z]/.test(t[i + short.length] || '')) return true;
     return false; };
+  const N = "([A-Z][.][A-Z][A-Za-z'-]+)", by = t => [new RegExp('INTERCEPTED by ' + N), new RegExp('RECOVERED by [A-Z]+-' + N), new RegExp('BLOCKED [(]?(?:by )?' + N), new RegExp('sacked[^(]*[(](?:sack split by )?' + N), new RegExp('[.] +' + N + ' (?:to|for|pushed|ran) ')].map(r => r.exec(t)?.[1]).find(Boolean);
   // the team's passer so far, for the quarterback on a run
   const qb = {}, passer = pl => { const t = String(pl.text ?? '').trim().replace(/^(\\([^)]*\\)\\s*)+/, ''), m = / pass /.test(t) && /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t);
     if (m) qb[pl.start?.team?.id] = m[1]; return qb[pl.start?.team?.id]; };
-  return (d.drives?.previous ?? []).flatMap(x => x.plays ?? []).map(pl => [pl, passer(pl)]).filter(([pl]) => pl.start?.yardsToEndzone != null && pl.end?.yardsToEndzone != null && !/No Play/i.test(pl.text) && hit(pl.text)).map(([pl, q]) => {
+  const view = (pl, q, x = {}) => {
     const t = String(pl.start.team?.id ?? ''), teams = [tm('away'), tm('home')], type = pl.type?.text ?? '';
-    // after a turnover the end is counted toward the other team's end zone
-    const end = pl.end.team?.id == null || String(pl.end.team.id) === t ? 100 - pl.end.yardsToEndzone : pl.end.yardsToEndzone;
+    // after a turnover the end is counted toward the other team's end zone. The spot as written ("NYJ 27") wins over
+    // the yards to the end zone, which ESPN sometimes counts from the wrong end (on punts)
+    const ab = teams.find(x => x[0] === t)?.[1], yd = (sp, or) => { const m = /^([A-Z]+) ([0-9]+)$/.exec(sp ?? ''); return m ? (m[1] === ab ? +m[2] : 100 - m[2]) : sp === '50' ? 50 : or; };
+    const end = yd(pl.end.possessionText, pl.end.team?.id == null || String(pl.end.team.id) === t ? 100 - pl.end.yardsToEndzone : pl.end.yardsToEndzone);
     teams[0][2] = +pl.awayScore || 0; teams[1][2] = +pl.homeScore || 0;
     return { teams, down: '', spot: pl.end.possessionText ?? pl.start.possessionText ?? '', poss: t, rz: false, dist: null, from: '', drive: '', leaders: [], last: pl.text.trim(), qb: q,
-      when: 'Q' + (pl.period?.number ?? '') + ' ' + (pl.clock?.displayValue ?? ''), play: [100 - pl.start.yardsToEndzone, end, t, type, /touchdown/i.test(type)] };
+      when: 'Q' + (pl.period?.number ?? '') + ' ' + (pl.clock?.displayValue ?? ''), play: [yd(pl.start.possessionText, 100 - pl.start.yardsToEndzone), end, t, type, /touchdown/i.test(type)], ...x };
+  };
+  return (d.drives?.previous ?? []).flatMap(x => x.plays ?? []).map(pl => [pl, passer(pl)]).filter(([pl]) => pl.start?.yardsToEndzone != null && pl.end?.yardsToEndzone != null && !/No Play/i.test(pl.text)).flatMap(([pl, q]) => {
+    const t = String(pl.text ?? '').trim(), type = pl.type?.text ?? '';
+    if (def) {
+      if (String(pl.start.team?.id) === String(team) || !/sack|intercept|fumble recovery [(]opponent|safety|blocked|defensive|muff|return touchdown/i.test(type)) return [];
+      // a touchdown it scored runs toward the other end zone, so it is drawn from the defense's side
+      const v = view(pl, null, { def: by(t), dt: String(team) });
+      if (v.play[4]) v.play = [pl.start.yardsToEndzone, 100, String(team), type, true];
+      return [v];
+    }
+    if (pos === 'Kicker') {
+      const i = t.indexOf(short + ' extra point'), xp = i >= 0 && t.slice(i).split(',')[0];
+      if (/field goal/i.test(type) && t.startsWith(short)) return [view(pl, q)];
+      return xp ? [view(pl, q, { last: xp, play: [85, 85, String(pl.start.team?.id ?? ''), /GOOD/i.test(xp) ? 'Extra Point Good' : 'Extra Point No Good', false] })] : [];
+    }
+    return hit(t) ? [view(pl, q)] : [];
   });
 }
 function drawGc() {
@@ -2898,7 +2923,7 @@ function drawGc() {
   if (!F && g?.[0] === 'post') {
     const d = gcGame(g[3]);
     if (!d) { if (box.gcHtml !== 'load') box.innerHTML = '<p class="why">Loading his plays&hellip;</p>'; box.gcHtml = 'load'; return; }
-    const R = roster(p.pro), short = Object.keys(R).find(k => R[k].displayName === p.name) ?? (p.name[0] + '.' + p.name.split(' ').slice(1).join('')), list = gcPlays(d, short), k = g[3] + '|' + p.id;
+    const R = roster(p.pro), short = Object.keys(R).find(k => R[k].displayName === p.name) ?? (p.name[0] + '.' + p.name.split(' ').slice(1).join('')), list = gcPlays(d, short, p.posName, p.pro), k = g[3] + '|' + p.id;
     if (!list.length) { box.innerHTML = box.gcHtml = '<p class="why">No plays with him in this game.</p>'; return; }
     gcIdx[k] = Math.max(0, Math.min(list.length - 1, gcIdx[k] ?? list.length - 1));
     F = list[gcIdx[k]]; past = [gcIdx[k], list.length];

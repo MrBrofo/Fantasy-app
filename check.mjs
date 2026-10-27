@@ -231,7 +231,7 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
 // the Watch view names the passer and the catcher, or the runner, from the play text
 {
   const tpl = c => c.replace(/\\\\/g, '\\');
-  const gcWho = new Function('roster', 'gcQb', tpl(cut('function gcWho(F) {', "  return [q !== a && q, a, b].filter(Boolean).map(n => ({ n, p: R[n] }));\n}")) + '\nreturn gcWho;')(() => ({ 'T.McKee': { id: '1' } }), {});
+  const gcWho = new Function('roster', 'gcQb', tpl(cut('function gcWho(F) {', "  return [q !== a && q, a, b, kr].filter(Boolean).map(n => ({ n, p: kr === n ? roster(F.teams.find(x => x[0] !== tid)?.[0])[n] : R[n] }));\n}")) + '\nreturn gcWho;')(() => ({ 'T.McKee': { id: '1' } }), {});
   const w = gcWho({ last: '(No Huddle, Shotgun) T.McKee pass short left to D.Goedert to DAL 13 for 6 yards (J.Barron).', play: [81, 87, '21'] });
   assert.deepEqual(w, [{ n: 'T.McKee', p: { id: '1' } }, { n: 'D.Goedert', p: undefined }], JSON.stringify(w));
   assert.deepEqual(gcWho({ last: 'S.Barkley up the middle to DAL 40 for 3 yards.', poss: '21' }).map(x => x.n), ['S.Barkley'], 'no play type: just the runner');
@@ -250,7 +250,7 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
 // a finished game: every play naming him, by short name with spaces ignored, not a longer name that starts the same
 {
   const tpl = c => c.replace(/\\\\/g, '\\');
-  const gcPlays = new Function(tpl(cut('function gcPlays(d, short) {', "/touchdown/i.test(type)] };\n  });\n}")) + '\nreturn gcPlays;')();
+  const gcPlays = new Function(tpl(cut("function gcPlays(d, short, pos = '', team = '') {", "    return hit(t) ? [view(pl, q)] : [];\n  });\n}")) + '\nreturn gcPlays;')();
   const pl = (text, s, e, et = '21', type = 'Rush') => ({ text, type: { text: type }, awayScore: 3, homeScore: 7, period: { number: 2 }, clock: { displayValue: '4:10' },
     start: { yardsToEndzone: s, team: { id: '21' } }, end: { yardsToEndzone: e, possessionText: 'X', team: { id: et } } });
   const d = { header: { competitions: [{ competitors: [{ homeAway: 'home', team: { id: '21', abbreviation: 'PHI' } }, { homeAway: 'away', team: { id: '6', abbreviation: 'DAL' } }] }] },
@@ -263,6 +263,23 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert.deepEqual(r.map(x => x.qb), [undefined, 'J.Hurts'], 'the passer so far, for the quarterback on a run');
   assert.equal(gcPlays(d, 'M.HarrisonJr.').length, 1, 'suffix joined like the roster spells it');
   assert.deepEqual(gcPlays(d, 'A.St.Brown').map(x => x.play[1]), [30], 'after a pick the end counts toward the other end zone');
+  // only his own plays: not a penalty on him, a tackle, holding for a kick or a fair catch
+  const d2 = { header: d.header, drives: { previous: [{ plays: [
+    pl('J.Wright right end for -3 yards (D.Bailey).Penalty on MIA-M.Washington, Offensive Holding, declined.', 70, 73),
+    pl('J.Wright left end for 4 yards (M.Washington).', 70, 66),
+    pl('A.McNamara punts 48 yards to MIA 9, Center-T.Hennessy, fair catch by M.Washington.', 50, 91, '21', 'Punt'),
+    pl('A.McNamara punts 62 yards to MIA 11, Center-T.Hennessy. M.Washington to MIA 24 for 13 yards (Q.Stiggers).', 50, 76, '6', 'Punt'),
+    pl('B.Aubrey 27 yard field goal is GOOD, Center-T.Sieg, Holder-B.Anger.', 9, 0, '21', 'Field Goal Good'),
+    pl('B.Aubrey kicks 65 yards from DAL 35 to end zone, Touchback.', 65, 75, '6', 'Kickoff'),
+    pl('S.Barkley right end for 8 yards, TOUCHDOWN. B.Aubrey extra point is GOOD, Center-T.Sieg, Holder-B.Anger.', 8, 0, '21', 'Rushing Touchdown'),
+    pl('(Shotgun) T.McKee sacked at PHI 5 for -3 yards (D.Ezeiruaku).', 95, 98, '21', 'Sack')] }] } };
+  assert.deepEqual(gcPlays(d2, 'M.Washington').map(x => x.last.slice(0, 22)), ['A.McNamara punts 62 ya'], 'only the punt he ran back');
+  assert.deepEqual(gcPlays(d2, 'B.Anger').length, 0, 'a holder has no plays');
+  const k = gcPlays(d2, 'B.Aubrey', 'Kicker');
+  assert.deepEqual(k.map(x => x.play[3]), ['Field Goal Good', 'Extra Point Good'], 'a kicker: his field goal and extra point, no kickoff');
+  assert.deepEqual([k[1].last, k[1].play.slice(0, 2)], ['B.Aubrey extra point is GOOD', [85, 85]]);
+  const dst = gcPlays(d2, '', 'Defense', '6');
+  assert.deepEqual(dst.map(x => [x.play[3], x.def]), [['Sack', 'D.Ezeiruaku']], "a defense: the other team's sack, with the defender");
 }
 
 // usage: last 3 games vs before, as a share of his team's targets; red zone needs 10+ team chances
