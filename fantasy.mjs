@@ -1762,7 +1762,7 @@ const shown = new Map();
 const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
   <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
-  ${rankText(p) || depthWord(p) ? `<div class="rank">${[rankText(p), depthWord(p)].filter(Boolean).join(' &middot; ')}</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
+  ${depthWord(p) ? `<div class="rank">${depthWord(p)}</div>` : ''}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
 // (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
 const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
@@ -1773,9 +1773,9 @@ const lnk = p => { shown.set(p.id, p); return `<span data-pid="${p.id}" class="l
 // start on a typical team here (16 teams x starting spots, FLEX split across RB/WR/TE); "top starter" = top third of those.
 const tierPool = [...teams.flatMap(t => t.roster), ...allFa];
 const startersAt = pos => teams.length * ((slotCounts[FA_SLOT[pos]] ?? 1) + (['RB', 'WR', 'TE'].includes(pos) ? (slotCounts[23] ?? 0) / 3 : 0));
-// his season rank in plain words, against how many players at his position start in this league
-const rankTier = p => { const k = startersAt(p.pos); return !p.rank ? '' : p.rank <= k / 3 ? 'Top' : p.rank <= k ? 'Startable' : p.rank <= 2 * k ? 'Backup-level' : 'Not startable'; };
-const rankText = p => { const t = rankTier(p), w = POS_NAME[p.pos]?.toLowerCase(); return !t ? '' : t === 'Not startable' ? 'Not worth starting so far' : t + ' ' + w + ' so far'; };
+// his season rank in the same words as the tiers (player sheet): top third of the league's starters at his position,
+// a starter, or below
+const rankTier = p => { const k = startersAt(p.pos); return !p.rank ? '' : p.rank <= k / 3 ? 'Top starter' : p.rank <= k ? 'Starter' : 'Below starter'; };
 const tierCut = {};
 for (const kind of ['week', 'season']) for (const pos of Object.keys(FA_SLOT)) {
   const vals = tierPool.filter(p => p.pos === pos).map(kind === 'week' ? weekValue : seasonValue).sort((a, b) => b - a), k = startersAt(pos);
