@@ -2198,7 +2198,7 @@ html.term section:not(.off){animation:boot .35s ease-out}
 html.glass{--bg:#000;--card:#1c1c1e;--fg:#fff;--muted:rgba(235,235,245,.6);--line:rgba(84,84,88,.65);--chip:#2c2c2e;--accent:#0a84ff;--onaccent:#fff;
 --good:#30d158;--goodbg:rgba(48,209,88,.16);--warn:#ff9f0a;--warnbg:rgba(255,159,10,.16);--bad:#ff453a;--badbg:rgba(255,69,58,.16);
 --glass:rgba(255,255,255,.07);--glassline:transparent;--num:-apple-system,'SF Pro Display',Geist,system-ui,sans-serif;background:#000}
-html.glass body{background:#000;font-family:-apple-system,'SF Pro Text',Geist,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+html.glass body{background:transparent;font-family:-apple-system,'SF Pro Text',Geist,system-ui,sans-serif;font-variant-numeric:tabular-nums}
 html.glass button,html.glass .btn,html.glass .seg button,html.glass #refresh{font-family:inherit}
 html.glass header{background:none}html.glass h1{font-size:34px;letter-spacing:-.02em}
 /* the page: solid, flat, iOS grouped lists */
@@ -2228,18 +2228,27 @@ html.glass nav a.on{color:var(--accent)}html.glass :is(nav a,.seg button):is(.on
 html.glass .blob{display:block;position:absolute;left:0;top:0;border-radius:999px;pointer-events:none;background:rgba(255,255,255,.1);-webkit-backdrop-filter:brightness(1.25) saturate(160%);backdrop-filter:brightness(1.25) saturate(160%);
 transition:transform .55s cubic-bezier(.3,1.4,.5,1),width .55s cubic-bezier(.3,1.4,.5,1),scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}
 html.glass .blob.held{scale:1.12;background:rgba(255,255,255,.16)}
-html.glass .blob{z-index:1}html.glass :is(nav a,.seg button){z-index:2}
+html.glass .blob{z-index:1}html.glass .blob.drag{transition:scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}html.glass :is(nav a,.seg button){z-index:2}
 html.glass .sheet-x{background:rgba(255,255,255,.06)}
 /* buttons and switches inside the page sit on solid cards, so they're flat iOS controls, not glass */
 html.glass .btn{border-radius:999px;color:#fff;background:var(--accent);box-shadow:none}
 html.glass .tools2 .btn,html.glass #refresh{background:rgba(118,118,128,.24);color:var(--fg);border:0}
 html.glass .btn:active,html.glass #refresh:active{transform:scale(.97);filter:brightness(1.1)}
-html.glass .seg{position:relative;background:rgba(20,20,22,.22)}html.glass .seg button{position:relative;border-radius:999px}html.glass .seg button.on{color:#fff}
+html.glass .seg{position:relative;border-radius:999px;background:rgba(20,20,22,.22);touch-action:pan-y}html.glass .seg button{position:relative;border-radius:999px}html.glass .seg button.on{color:#fff}
 /* the player sheet floats in from the edges like an iOS 26 sheet, darker glass so its text stays easy to read */
 html.glass .sheet-bg{background:rgba(0,0,0,.4)}
 html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(28,28,30,.55);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}
 /* top edge: the page fades and softens as it scrolls under the status bar, instead of a hard bar */
 html.glass body::before{height:calc(env(safe-area-inset-top) + 28px);background:linear-gradient(rgba(0,0,0,.8),transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
+/* behind the page: a football field seen from above, faint yard lines and hash marks drifting slowly down the screen under a
+   soft stadium light, so the glass has something to bend and the page isn't flat black */
+html.glass::before{content:'';position:fixed;left:0;right:0;top:-80px;bottom:0;z-index:-1;pointer-events:none;
+background:radial-gradient(90% 55% at 50% 0%,rgba(255,255,255,.09),transparent 70%),
+repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 30% 0/10px 100% repeat-y,repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 70% 0/10px 100% repeat-y,
+repeating-linear-gradient(180deg,transparent 0 79px,rgba(255,255,255,.1) 79px 80px);
+-webkit-mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);animation:field 24s linear infinite}
+@keyframes field{to{transform:translateY(80px)}}
+@media (prefers-reduced-motion:reduce){html.glass::before{animation:none}}
 @media (prefers-reduced-transparency:reduce){html.glass :is(nav,.sheet-card){background:#1c1c1e;-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style></head><body>
 <canvas id="bg-field" aria-hidden="true"></canvas><div class="bgring" id="bg-ring1"></div><div class="bgring r2" id="bg-ring2"></div>
@@ -3963,6 +3972,7 @@ showTab(location.hash.slice(1), false);
 // Glass look: each bar (tab bar, switches) gets one bubble that slides to its picked button, or the tab under your finger.
 // Re-placed whenever a class changes anywhere (picked button, look, held tab, page merges) or the screen resizes.
 const placeBlobs = () => { for (const bar of document.querySelectorAll('nav,.seg')) {
+  if (bar.dataset.drag) continue; // your finger has it
   const on = bar.querySelector(':scope > .press') || bar.querySelector(':scope > .on');
   let b = bar.querySelector(':scope > .blob');
   if (!b) { b = document.createElement('i'); b.className = 'blob'; b.setAttribute('aria-hidden', 'true'); bar.prepend(b); }
@@ -3976,6 +3986,33 @@ const placeBlobs = () => { for (const bar of document.querySelectorAll('nav,.seg
 let blobQ = 0;
 new MutationObserver(() => { if (!blobQ) blobQ = requestAnimationFrame(() => { blobQ = 0; placeBlobs(); }); }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['class'] });
 addEventListener('resize', placeBlobs); placeBlobs();
+// Drag any bubble anywhere along its bar: it follows your finger freely (no stepping from button to button) and swells a
+// little; let go and it springs to the nearest button and picks it. The tab bar's own handlers open that tab; on a switch
+// this presses the button. A plain tap is still a tap.
+document.addEventListener('pointerdown', ev => {
+  const bar = ev.target.closest('nav,.seg'), blob = bar?.querySelector(':scope > .blob');
+  if (!blob || blob.hidden || !document.documentElement.classList.contains('glass')) return;
+  const btns = [...bar.children].filter(x => x !== blob && x.matches('a,button'));
+  if (!btns.length) return;
+  const x0 = ev.clientX, left = bar.getBoundingClientRect().left, w = blob.offsetWidth, y = btns[0].offsetTop;
+  const lo = btns[0].offsetLeft, hi = btns.at(-1).offsetLeft + btns.at(-1).offsetWidth - w;
+  const at = x => Math.min(hi, Math.max(lo, x - left - w / 2));
+  let moved = false;
+  const move = e => {
+    if (!moved && Math.abs(e.clientX - x0) < 4) return;
+    moved = true; bar.dataset.drag = '1'; blob.classList.add('held', 'drag');
+    blob.style.transform = 'translate(' + at(e.clientX) + 'px,' + y + 'px)';
+  };
+  const end = e => {
+    removeEventListener('pointermove', move); removeEventListener('pointerup', end); removeEventListener('pointercancel', end);
+    if (moved && e.type === 'pointerup' && bar.tagName !== 'NAV') {
+      const c = at(e.clientX) + w / 2, pick = btns.find(b => c >= b.offsetLeft && c < b.offsetLeft + b.offsetWidth);
+      if (pick && !pick.classList.contains('on')) pick.click();
+    }
+    delete bar.dataset.drag; blob.classList.remove('held', 'drag'); placeBlobs();
+  };
+  addEventListener('pointermove', move); addEventListener('pointerup', end); addEventListener('pointercancel', end);
+});
 
 // Background, like the password screen: a dot grid with rings of light rolling out from the middle.
 // Dimmer than the lock screen so it doesn't fight the text; ~20 frames a second, and nothing while the app is hidden.
