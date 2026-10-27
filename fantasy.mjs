@@ -2858,12 +2858,13 @@ function drawGc() {
   const [A, H] = F.teams, ids = [A[0], H[0]];
   // yards from the left goal line (the away team's), from "DAL 13" or "50"
   const at = s => { const m = /([A-Z]+)\\s+(\\d+)/.exec(s); return !m ? 50 : m[1] === A[1] ? +m[2] : 100 - +m[2]; };
-  const x = y => (10 + Math.max(0, Math.min(100, y))) / 120 * 100 + '%', ball = F.play?.[4] ? (F.play[2] === A[0] ? F.play[1] : 100 - F.play[1]) : at(F.spot), dir = F.poss === A[0] ? 1 : -1, from = F.from ? at(F.from) : ball;
+  // a touchdown ends in the middle of the end zone, halfway between the goal line and the end line
+  const x = y => (10 + Math.max(0, Math.min(100, y))) / 120 * 100 + '%', ball = F.play?.[4] ? (F.play[2] === A[0] ? 105 : -5) : at(F.spot), dir = F.poss === A[0] ? 1 : -1, from = F.from ? at(F.from) : ball;
   const goal = /goal/i.test(F.down), first = F.dist == null || goal || F.play?.[4] ? null : ball + dir * F.dist;
   const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
   const html = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
-    '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(0, Math.min(100, x))) +
+    '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(-5, Math.min(105, x))) +
       (F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') + '</div>' +
     (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
