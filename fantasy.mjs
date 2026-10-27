@@ -2727,7 +2727,8 @@ function gcField(F, A, H, ball, from, first, fx) {
     if (F.play) {
       const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
       cam = (pt(sx, 26.65)[0] + p[0]) / 2;
-      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], td: td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
+      // a thrown ball spirals, a kicked one tumbles end over end
+      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: /pass|inc|pick/.test(kind) ? 'spiral' : /fg|miss|kick|block/.test(kind) ? 'tumble' : '', td:td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
     }
     // a wide arrow from where the play started to the ball; the tip stops short of the ball so it shows (less on a short play)
     if (F.play) {
@@ -2764,10 +2765,12 @@ function gcField(F, A, H, ball, from, first, fx) {
       if (who.length && !solo) o += '<g class="gc-catch">' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0) + '</g>';
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
+    // the ball's middle sits about 32 px above its ground point, its long axis tipped 20 degrees nose up
     const bw = 3.6 * s / 109;
+    if (gcFly) gcFly.cy = -32 * bw;
     if (F.rz && !td) o += '<ellipse cx="' + pb[0].toFixed(1) + '" cy="' + pb[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
     o += '<g id="gcShad" transform="translate(' + xy(p).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
-      '<g id="gcBall" transform="translate(' + xy(p).replace(',', ' ') + ')"><image href="ball.webp" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/></g>';
+      '<g id="gcBall" transform="translate(' + xy(p).replace(',', ' ') + ')"><g id="gcSpin"><image href="ball.webp" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/></g></g>';
   }
   // show the 60% of the field around the play (or the ball), like a TV camera following it
   const cx = Math.max(480, Math.min(1120, cam ?? pt(fx(F.poss ? ball : 50), 26.65)[0]));
@@ -2784,9 +2787,19 @@ function gcAnimate() {
   const step = () => {
     if (!b.isConnected || gcRun !== run) { conf?.remove(); pop?.remove(); b.ownerSVGElement.style.transform = ''; return; }
     const el = Date.now() - gcAt, t = Math.min(1, Math.max(0, (el - GC_LEAD) / GC_FLY)), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
-    const along = L => { const i = Math.min(L.length - 2, Math.floor(k * (L.length - 1))), r = k * (L.length - 1) - i; return [L[i][0] + (L[i + 1][0] - L[i][0]) * r, L[i][1] + (L[i + 1][1] - L[i][1]) * r]; };
+    const along = (L, u = k) => { const i = Math.min(L.length - 2, Math.floor(u * (L.length - 1))), r = u * (L.length - 1) - i; return [L[i][0] + (L[i + 1][0] - L[i][0]) * r, L[i][1] + (L[i + 1][1] - L[i][1]) * r]; };
     const [x, y] = along(F.b), [gx, gy] = along(F.g), clip = document.querySelector('#gcReveal rect'), trail = fade('gc-trail');
-    b.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')'); sh.setAttribute('transform', 'translate(' + gx.toFixed(1) + ' ' + gy.toFixed(1) + ')');
+    b.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')');
+    // in flight the ball points along its path: a pass spins on its long axis (the laces roll under and back), a kick
+    // turns end over end, three times over the flight. Landed, it lies as drawn
+    const sp = document.getElementById('gcSpin');
+    if (sp && F.spin) {
+      const [x2, y2] = along(F.b, Math.min(1, k + 0.02)), dir = x2 < x - 0.01 ? -1 : 1, tilt = Math.atan2(y2 - y, Math.abs(x2 - x) || 1e-3) * 180 / Math.PI;
+      const c = Math.cos(el / 30), roll = Math.sign(c || 1) * (0.7 + 0.3 * Math.abs(c));
+      sp.setAttribute('transform', t <= 0 || t >= 1 ? '' : 'translate(0 ' + F.cy.toFixed(2) + ') scale(' + dir + ' 1) ' +
+        (F.spin === 'spiral' ? 'rotate(' + tilt.toFixed(1) + ') scale(1 ' + roll.toFixed(2) + ')' : 'rotate(' + (tilt + t * 1080).toFixed(1) + ')') + ' rotate(20) translate(0 ' + (-F.cy).toFixed(2) + ')');
+    }
+    sh.setAttribute('transform', 'translate(' + gx.toFixed(1) + ' ' + gy.toFixed(1) + ')');
     // the trail shows only behind the ball
     if (clip) { clip.setAttribute('x', t < 1 ? Math.min(F.x0, x).toFixed(1) : 0); clip.setAttribute('width', t < 1 ? Math.abs(x - F.x0).toFixed(1) : 1600); }
     if (fade('gc-qb')) fade('gc-qb').style.opacity = Math.min(1, el / GC_LEAD);
