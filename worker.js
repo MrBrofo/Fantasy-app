@@ -156,16 +156,41 @@ async function ask(req, env) {
   }
   // Opus gets fallbacks: if it declines by mistake (a false alarm from its safety checks), the API answers with another
   // model. Haiku has no fallbacks
-  const r = await client.beta.messages.create({
-    model: smart ? 'claude-opus-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
-    ...(smart ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
-    system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; say when something is a guess. Answer in short plain sentences and short lists, no tables. Give a clear pick when asked to choose.',
-    // the league facts are the same for every question until the site rebuilds, so they're cached (cache reads cost a
-    // tenth); only the players named and the question after them are new each time
-    messages: [{ role: 'user', content: Number.isInteger(m.fixed) && m.fixed > 0 && m.fixed < m.text.length
-      ? [{ type: 'text', text: m.text.slice(0, m.fixed), cache_control: { type: 'ephemeral' } }, { type: 'text', text: m.text.slice(m.fixed) }]
-      : m.text }],
-  });
+  // The big parts of the league facts (each other team's roster, every result, league moves, this week's matchups, free
+  // agents) are drawers: Claude gets my team and the standings, plus a list of drawers it can open with look_up, so a
+  // question only pays for the parts it needs. The players and teams the question names come along up front anyway
+  const fixed = Number.isInteger(m.fixed) && m.fixed > 0 && m.fixed < m.text.length ? m.fixed : 0;
+  const DRAWERS = ['Roster of ', 'Every result so far', 'Recent league moves', "This week's matchups", 'Best free agents'];
+  const paras = m.text.slice(0, fixed).split('\n\n'), drawers = {}, core = [];
+  for (const p of paras) (DRAWERS.some(d => p.startsWith(d)) ? (drawers[p.split('\n')[0].replace(/:$/, '').slice(0, 200)] = p) : core.push(p));
+  const names = Object.keys(drawers);
+  const tools = names.length ? [{
+    name: 'look_up',
+    description: 'Open one or more drawers of league facts that are not shown yet. Open every drawer the question needs in one call. Drawers: ' + names.join(' | '),
+    input_schema: { type: 'object', properties: { drawers: { type: 'array', items: { type: 'string', enum: names } } }, required: ['drawers'] },
+  }] : undefined;
+  // my team and the standings are the same for every question until the site rebuilds, so they're cached (cache reads
+  // cost a tenth); only the players named and the question after them are new each time
+  const msgs = [{ role: 'user', content: fixed
+    ? [{ type: 'text', text: core.join('\n\n'), cache_control: { type: 'ephemeral' } }, { type: 'text', text: m.text.slice(fixed) }]
+    : m.text }];
+  let r;
+  // ponytail: 3 rounds of look_up, then it answers with what it has
+  for (let round = 0; ; round++) {
+    r = await client.beta.messages.create({
+      model: smart ? 'claude-opus-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
+      ...(smart ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
+      system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Answer in short plain sentences and short lists, no tables. Give a clear pick when asked to choose.',
+      ...(tools ? { tools, tool_choice: round < 3 ? { type: 'auto' } : { type: 'none' } } : {}),
+      messages: msgs,
+    });
+    if (r.stop_reason !== 'tool_use') break;
+    msgs.push({ role: 'assistant', content: r.content });
+    msgs.push({ role: 'user', content: r.content.filter(b => b.type === 'tool_use').map(b => ({
+      type: 'tool_result', tool_use_id: b.id,
+      content: (Array.isArray(b.input?.drawers) ? b.input.drawers : []).map(d => drawers[d] ?? `No drawer called "${d}".`).join('\n\n') || 'No drawer named.',
+    })) });
+  }
   if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
   return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Opus' : 'Haiku' });
 }

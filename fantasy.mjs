@@ -1934,7 +1934,7 @@ const facts = [
   `This week's matchups (projected${isLive ? ', and live score' : ''}):\n${(league.schedule ?? []).filter(g => g.matchupPeriodId === week && g.away).map(g => [g.home.teamId, g.away.teamId].map(id => { const b = board.find(r => r.t.id === id); return `${teamOf(id)} ${b ? n(b.proj) : '?'}${b?.now != null ? ` (now ${n(b.now)})` : ''}`; }).join(' vs ')).map(x => `- ${x}`).join('\n')}`,
   `Every result so far:\n${Object.keys(weekly).map(Number).sort((a, b) => a - b).map(wk => `- Wk ${wk}: ${(league.schedule ?? []).filter(g => g.matchupPeriodId === wk && g.away).map(g => `${teamOf(g.home.teamId)} ${n(g.home.totalPoints)}-${n(g.away.totalPoints)} ${teamOf(g.away.teamId)}`).join('; ')}`).join('\n')}`,
   moves.length ? `Recent league moves (last 3 weeks):\n${[...moves].sort((a, b) => b.date - a.date).slice(0, 60).map(m => `- ${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${m.type === 'ADD' ? `${teamOf(m.team)} added ${nameOf(m.playerId)}` : m.type === 'DROP' ? `${teamOf(m.team)} dropped ${nameOf(m.playerId)}` : `${teamOf(m.team)} got ${nameOf(m.playerId)} from ${teamOf(m.from)} in a trade`}`).join('\n')}` : '',
-  `Every other team's roster:\n${standings.filter(t => t !== me).map(t => `${t.name}${mgrName(t) ? ` (${mgrName(t)})` : ''}, ${t.w}-${t.l}:\n${[...t.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot)).map(p => `- ${cline(p)}`).join('\n')}`).join('\n\n')}`,
+  ...standings.filter(t => t !== me).map(t => `Roster of ${t.name}${mgrName(t) ? ` (${mgrName(t)})` : ''}, ${t.w}-${t.l}:\n${[...t.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot)).map(p => `- ${cline(p)}`).join('\n')}`),
   ahead.length ? `My remaining schedule: ${ahead.map(g => `wk ${g.week} ${g.t.name} (${g.t.w}-${g.t.l}, projected ${n(g.proj)} that week${g.off.length ? `, without ${g.off.map(p => p.name).join(', ')}` : ''})`).join('; ')}.` : '',
   '__NEWSFACTS__',
   'Explain things simply, I\'m new to football. My question:',
@@ -3343,7 +3343,7 @@ function askExtra(q) {
 // The full facts are often too long for a link, so the link drops the least needed parts until it fits (news, then
 // free agents, schedule, IR, bench), never the question at the end. The clipboard keeps the full text.
 function claudeUrl(t) {
-  const P = String.fromCharCode(10, 10), drop = ['Every other team', 'Recent league moves', 'Every result so far', "This week's matchups", 'Recent news', 'No news', 'Best free agents', 'My remaining schedule', 'IR:', 'Bench:', 'Pending moves'];
+  const P = String.fromCharCode(10, 10), drop = ['Roster of ', 'Recent league moves', 'Every result so far', "This week's matchups", 'Recent news', 'No news', 'Best free agents', 'My remaining schedule', 'IR:', 'Bench:', 'Pending moves'];
   let parts = t.split(P);
   for (const d of drop) { if (encodeURIComponent(parts.join(P)).length <= 12000) break; parts = parts.filter((x, i) => i === parts.length - 1 || !x.startsWith(d)); }
   const q = encodeURIComponent(parts.join(P));
