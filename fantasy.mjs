@@ -2210,7 +2210,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
 
-<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Type your question. Claude opens with it and your team's facts filled in, plus any other player or team you name. It's also copied, so if the box comes up empty, paste it.</p></div>
+<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Type your question. It's copied with your team's facts, plus any other player or team you name. Paste it into Claude and send.</p></div>
 <textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="width:100%;min-height:72px;resize:vertical;margin-top:10px"></textarea>
 <button type="button" id="askbtn" class="btn">Copy &amp; open Claude</button></div></section>
 
@@ -3185,17 +3185,14 @@ function askExtra(q) {
   return (named.length ? NL + NL + 'Other players I mentioned:' + NL + named.map(row).join(NL) : '') +
     teams.map(t => NL + NL + t.name + ' (' + t.rec + ') roster:' + NL + t.ids.map(plOf).filter(Boolean).map(row).join(NL)).join('');
 }
-// claude.ai opens a new chat with ?q= already typed in the box. Very long text may not fit in a link, so then it opens
-// empty and the clipboard copy (always made too) is the fallback
-function claudeUrl(t) { const q = encodeURIComponent(t); return 'https://claude.ai/new' + (q.length <= 12000 ? '?q=' + q : ''); }
 document.getElementById('askbtn').onclick = async () => {
   const q = document.getElementById('askq').value.trim();
   const base = JSON.parse(document.getElementById('facts').textContent), cut = base.lastIndexOf('Explain things simply');
   const facts = q && cut > 0 ? base.slice(0, cut).trimEnd() + askExtra(q) + String.fromCharCode(10, 10) + "Explain things simply, I'm new to football. My question: " + q : base;
   const b = document.getElementById('askbtn');
-  try { await navigator.clipboard.writeText(facts); b.textContent = '✓ Opening Claude. If the box is empty, paste'; }
+  try { await navigator.clipboard.writeText(facts); b.textContent = '✓ Copied! Paste it in Claude'; }
   catch { prompt('Copy this, then paste it into Claude:', facts); }
-  window.open(claudeUrl(facts), '_blank', 'noopener');
+  window.open('https://claude.ai/new', '_blank', 'noopener');
   setTimeout(() => (b.innerHTML = 'Copy &amp; open Claude'), 4000);
 };
 document.addEventListener('click', ev => {
@@ -3851,7 +3848,7 @@ document.addEventListener('click', ev => {
     p.textContent = next; card.querySelector('[data-copy]').dataset.copy = next;
   }
   const w = ev.target.closest('[data-claude]');
-  if (w) navigator.clipboard.writeText(w.dataset.claude).then(() => { w.textContent = 'Opening Claude. If the box is empty, paste'; }, () => {}).finally(() => window.open(claudeUrl(w.dataset.claude), '_blank', 'noopener'));
+  if (w) navigator.clipboard.writeText(w.dataset.claude).then(() => { w.textContent = 'Copied. Paste it into Claude'; }, () => {}).finally(() => window.open('https://claude.ai/new', '_blank', 'noopener'));
 });
 // Floating ESPN button: drag to move (remembered on this phone), tap to open the app (only paths in ESPN's
 // apple-app-site-association, like /football/league, open the app; the bare site opens Safari), fades after 30s untouched
