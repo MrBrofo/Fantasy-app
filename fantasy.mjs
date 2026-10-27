@@ -1817,8 +1817,9 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 :root{color-scheme:dark;--bg:#0b0d10;--card:#15181d;--fg:#f2f4f7;--muted:#9aa3b2;--line:#232830;--accent:#c6f432;--onaccent:#0b0d10;
 --good:#3ddc84;--goodbg:#0f2a1c;--warn:#ffb23f;--warnbg:#2e2310;--bad:#ff5c5c;--badbg:#341616;--chip:#1e2229;--glass:rgba(21,24,29,.72);--glassline:rgba(255,255,255,.08);
 --num:'Geist Mono',ui-monospace,Menlo,monospace}
-*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top) + 12px);-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}html{height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
+/* The body scrolls, not the page: iOS 26 moves fixed bars (the tab bar) up and down while the page itself scrolls */
+body{height:100%;overflow-y:auto;scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top) + 12px);margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 button,a,summary,[role=button]{touch-action:manipulation}
 button,nav a,summary{-webkit-user-select:none;user-select:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
@@ -2382,7 +2383,7 @@ const changedIn = new Set();
 document.addEventListener('change', ev => { changed = true; const s = ev.target.closest('section'); if (s) changedIn.add(s); }, true);
 const busy = () => changed || Date.now() - touched < 60000 || !document.getElementById('sheet').hidden;
 function load() {
-  try { sessionStorage.setItem('scroll', scrollY); } catch {}
+  try { sessionStorage.setItem('scroll', document.body.scrollTop); } catch {}
   location.replace(fresh() + location.hash);
 }
 const verdictText = ${verdictText.toString()};
@@ -2610,7 +2611,7 @@ function liveExtras(d, f) {
 }
 // every 30s while the page is open (a phone in your pocket doesn't ask); the Worker shares one ESPN answer per 20s
 (function liveLoop() { liveTick().finally(() => setTimeout(liveLoop, 30000)); })();
-try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.removeItem('scroll'); scrollTo(0, +y); } } catch {}
+try { const y = sessionStorage.getItem('scroll'); if (y) { sessionStorage.removeItem('scroll'); document.body.scrollTo(0, +y); } } catch {}
 btn.onclick = () => check(true);
 showAgo(); setInterval(showAgo, 1000);
 // coming back to the app counts as idle (you weren't mid-tap), unless a menu or box was changed
@@ -3266,7 +3267,7 @@ function showTab(tab, jump) {
   // red number on Home, and the same number on the to-do list it points to
   const k = document.querySelectorAll('#todo .card.todo').length;
   for (const dot of document.querySelectorAll('nav .dot, #todo h2 .dot')) { dot.hidden = !k; dot.textContent = k; }
-  if (jump) scrollTo({ top: 0 });
+  if (jump) document.body.scrollTo({ top: 0 });
 }
 // Hold the tab bar and slide your finger like on iPhone: the tab under it lights up, letting go opens it.
 // A plain tap works the same way (press and let go on one tab). Keyboard Enter still uses the click.
