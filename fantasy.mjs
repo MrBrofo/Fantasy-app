@@ -1962,7 +1962,7 @@ details.fold{background:var(--card);border:1px solid var(--line);border-radius:1
 details.fold>summary{align-items:center;padding:14px 0;margin:0}details.fold>summary h2,details.fold>summary.group{margin:0;font-size:17px}
 details.fold>summary.group{text-transform:none;letter-spacing:0;color:var(--fg)}
 details.fold[open]>summary{margin-bottom:4px}details.fold .card{background:var(--bg)}
-section:has(>details.fold){margin-top:12px}
+section:has(>details.fold){margin-top:12px}.list+details.fold{margin-top:14px}
 section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
