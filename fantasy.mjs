@@ -3680,8 +3680,9 @@ function showTab(tab, jump) {
   if (!g) { g = GROUPS[tab] ? tab : 'home'; tab = lastPage[g] || GROUPS[g][0]; }
   lastPage[g] = tab;
   if (jump) history.replaceState(null, '', '#' + tab);
-  // a section tagged with the tab itself shows on every page of that tab
-  document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab && s.dataset.tab !== g));
+  // a section tagged with the tab itself shows on every page of that tab, unless a page has the tab's name
+  // (Trades > Trade ideas is 'trades' too: its sections showed under Compare)
+  document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab && (s.dataset.tab !== g || GROUPS[g].includes(g))));
   document.body.classList.toggle('home', tab === 'home');
   navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + g));
   const seg = document.getElementById('seg');
