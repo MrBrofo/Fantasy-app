@@ -2678,6 +2678,10 @@ function gcField(F, A, H, ball, from, first, fx) {
   if (F.poss) {
     o += line(fx(ball), '#3b82f6');
     const p = pt(fx(ball), 26.65), s = k(26.65), X = p[0].toFixed(1);
+    const key = F.last + '|' + F.play, fly = F.play && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (key !== gcKey) { gcKey = key; gcAt = Date.now(); }
+    const anim = fly && Date.now() - gcAt < GC_FLY, hide = anim ? ' style="opacity:0"' : '';
+    gcFly = null;
     // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run
     if (F.play) {
       const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(own(y1)) - Math.sign(fx(own(y1)) - x0) * 1.5, len = Math.abs(x1 - x0); // tip stops short of the ball so it shows
@@ -2688,7 +2692,7 @@ function gcField(F, A, H, ball, from, first, fx) {
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(x0, z), g1 = pt(x1, z);
         o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>' +
-          '<polygon points="' + shape(true) + '" fill="url(#gcPlay)"/>';
+          '<g class="gc-trail"' + hide + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
       }
     }
     if (F.play) {
@@ -2701,18 +2705,41 @@ function gcField(F, A, H, ball, from, first, fx) {
             : '<circle cx="' + X + '" cy="' + Y + '" r="' + r + '" fill="#2a3340" stroke="#fff" stroke-width="4"/><text x="' + X + '" y="' + Y + '" font-size="26" fill="#fff" text-anchor="middle" dominant-baseline="central">' + e(w.n.split('.').pop().slice(0, 2)) + '</text>'); };
       // two photos close together are pushed apart, their stems leaning to where each stood
       const gap = pt(fx(ball), 26.65)[0] - pt(sx, 26.65)[0], push = Math.max(0, (3.2 * r + 8 - Math.abs(gap)) / 2) * Math.sign(gap || 1);
-      if (who.length === 2) o += pin(sx, who[0], 0, -push) + pin(fx(ball), who[1], 1, push);
-      else if (who.length) o += pin(fx(ball), who[who.length - 1], 1);
+      o += '<g class="gc-pins"' + hide + '>' + (who.length === 2 ? pin(sx, who[0], 0, -push) + pin(fx(ball), who[1], 1, push) : who.length ? pin(fx(ball), who[who.length - 1], 1) : '') + '</g>';
+      if (anim && Math.abs(fx(ball) - sx) > 1) {
+        const bx = fx(ball), H = /pass|reception|interception/i.test(F.play[3]) ? Math.min(7, 1.5 + Math.abs(bx - sx) * 0.22) : 0;
+        const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (bx - sx) * u, 26.65, lift ? H * 4 * u * (1 - u) : 0); });
+        gcFly = { b: path(true), g: path(false) };
+      }
     }
     // ball.webp is a Blender render of the ball from the field camera: 240x160, its ground point at (120, 106.9), 0.3 yards across is 109 px
     const bw = 3.6 * s / 109;
     if (F.rz) o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" ry="' + (1.1 * s).toFixed(1) + '" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity=".8"/>';
-    o += '<ellipse cx="' + X + '" cy="' + p[1].toFixed(1) + '" rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/>' +
-      '<image href="ball.webp" x="' + (p[0] - 120 * bw).toFixed(1) + '" y="' + (p[1] - 106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/>';
+    const at0 = gcFly ? gcFly.b[0] : p, g0 = gcFly ? gcFly.g[0] : p;
+    o += '<g id="gcShad" transform="translate(' + xy(g0).replace(',', ' ') + ')"><ellipse rx="' + (2 * s).toFixed(1) + '" ry="' + (0.6 * s).toFixed(1) + '" fill="url(#gcShadow)"/></g>' +
+      '<g id="gcBall" transform="translate(' + xy(at0).replace(',', ' ') + ')"><image href="ball.webp" x="' + (-120 * bw).toFixed(1) + '" y="' + (-106.9 * bw).toFixed(1) + '" width="' + (240 * bw).toFixed(1) + '" height="' + (160 * bw).toFixed(1) + '"/></g>';
   }
   // show the 60% of the field around the ball, like a TV camera following the play
   const cx = Math.max(480, Math.min(1120, pt(fx(F.poss ? ball : 50), 26.65)[0]));
   return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 40 960 430" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
+}
+// A new play plays out over GC_FLY ms: the ball moves along gcFly (its path in the air, and its shadow's on the turf)
+const GC_FLY = 1400;
+let gcKey = '', gcAt = 0, gcFly = null;
+function gcAnimate() {
+  const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly;
+  const fade = c => document.querySelector('#gc .' + c);
+  if (!F) { for (const c of ['gc-trail', 'gc-pins']) if (fade(c)) fade(c).style.opacity = ''; return; }
+  const step = () => {
+    if (!b?.isConnected || gcFly !== F) return;
+    const t = Math.min(1, (Date.now() - gcAt) / GC_FLY), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
+    const along = L => { const i = Math.min(L.length - 2, Math.floor(k * (L.length - 1))), r = k * (L.length - 1) - i; return (L[i][0] + (L[i + 1][0] - L[i][0]) * r).toFixed(1) + ' ' + (L[i][1] + (L[i + 1][1] - L[i][1]) * r).toFixed(1); };
+    b.setAttribute('transform', 'translate(' + along(F.b) + ')'); sh.setAttribute('transform', 'translate(' + along(F.g) + ')');
+    if (fade('gc-trail')) fade('gc-trail').style.opacity = k;
+    if (fade('gc-pins')) fade('gc-pins').style.opacity = Math.max(0, (t - 0.7) / 0.3);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  step();
 }
 // A team's roster from ESPN, by the short name plays use ("T.McKee"), loaded once and then drawn again
 const ROS = {};
@@ -2748,6 +2775,7 @@ function drawGc() {
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
+  gcAnimate();
 }
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
