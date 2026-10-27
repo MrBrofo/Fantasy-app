@@ -2858,8 +2858,10 @@ function gcField(F, A, H, ball, from, first, fx) {
       // laid out on the turf in yards: along the play (dx, dz) and across it (the normal), so it keeps its shape at any angle
       const D = Math.hypot(lx - sx, z1 - z0) || 1, dx = (lx - sx) / D, dz = (z1 - z0) / D, len = D - Math.min(1.5, D * 0.1);
       if (len > 1) {
-        const uh = 1 - Math.min(4, len * 0.4) / len;
-        const at = (u, w, lift) => { const q = pt(sx + dx * u * len - dz * w, z0 + dz * u * len + dx * w, lift ? up(u * len / D) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
+        // the camera squashes yards across the field to about 1/2.3 of yards along it, so a width that points along the
+        // field is narrowed to match: the arrow looks as thick at any angle as it does going straight down the field
+        const uh = 1 - Math.min(4, len * 0.4) / len, thin = 1 / Math.hypot(2.3 * dz, dx);
+        const at = (u, w, lift) => { w *= thin; const q = pt(sx + dx * u * len - dz * w, z0 + dz * u * len + dx * w, lift ? up(u * len / D) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
         const us = Array.from({ length: 25 }, (_, i) => uh * i / 24), back = [...us].reverse();
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(sx, z0), g1 = pt(sx + dx * len, z0 + dz * len);
