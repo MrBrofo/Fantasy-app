@@ -1947,7 +1947,8 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 --num:'Geist Mono',ui-monospace,Menlo,monospace}
 *{box-sizing:border-box}html{height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
 /* The body scrolls, not the page: iOS 26 moves fixed bars (the tab bar) up and down while the page itself scrolls */
-body{height:100%;overflow-y:auto;scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top) + 12px);margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+/* overflow-x: the page never slides sideways, even if something inside is too wide */
+body{height:100%;overflow-y:auto;overflow-x:hidden;scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top) + 12px);margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 /* Home screen app: 100% stops a status bar's height short of the bottom, 100vh is the whole screen */
 @media (display-mode:standalone){html,body{height:100vh}}
 button,a,summary,[role=button]{touch-action:manipulation}
@@ -2028,7 +2029,7 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .sheet-card{position:absolute;left:0;right:0;bottom:0;max-width:720px;margin:0 auto;max-height:88vh;max-height:88dvh;background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;animation:up .35s cubic-bezier(.32,.72,0,1)}
 .sheet-card.closing{animation:down .2s cubic-bezier(.4,0,1,1) forwards}
 @keyframes up{from{transform:translateY(100%)}}@keyframes down{to{transform:translateY(100%)}}
-.sheet-body{overflow-y:auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
+.sheet-body{overflow-y:auto;overflow-x:hidden;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
 .sheet-x{position:absolute;top:10px;right:12px;width:34px;height:34px;border-radius:50%;border:0;background:var(--chip);color:var(--fg);font-size:22px;line-height:1;cursor:pointer;z-index:1}
 .sheet-x::after{content:'';position:absolute;inset:-5px}/* 44px tap area around the 34px close button */
 .sh-top{display:flex;gap:14px;align-items:center;margin-bottom:14px;padding-right:40px}.sh-top .pic{width:64px;height:64px}
@@ -2067,7 +2068,7 @@ html:not(.term):not(.glass) #bg-field,html:not(.term) .bgring{display:none}
 #todo h2 .dot{display:inline-block;vertical-align:middle;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:99px;background:var(--bad);color:#fff;font-size:12px;line-height:20px;text-align:center}#todo h2 .dot[hidden]{display:none}.nowpts b{color:var(--accent);font-family:var(--num)}
 .tag{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
-td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted);white-space:nowrap}tr.me td{font-weight:800;color:var(--fg)}
+td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted);white-space:nowrap}td.num small{white-space:normal}tr.me td{font-weight:800;color:var(--fg)}
 tr.cut td{border-bottom:2px dashed var(--good)}
 tr[data-team]{cursor:pointer}tr[data-team] td:nth-child(2){text-decoration:underline dotted;text-underline-offset:3px}
 details summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between}
@@ -2253,6 +2254,12 @@ background:radial-gradient(90% 55% at 50% 0%,rgba(255,255,255,.09),transparent 7
 repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 30% 0/10px 100% repeat-y,repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 70% 0/10px 100% repeat-y,
 repeating-linear-gradient(180deg,transparent 0 79px,rgba(255,255,255,.1) 79px 80px);
 -webkit-mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent)}
+/* glow, like Terminal: the picked tab, its bubble, win chances, the bars, coloured numbers and chips, and the main button */
+html.glass nav a.on{text-shadow:0 0 10px rgba(10,132,255,.8)}html.glass nav a.on svg{filter:drop-shadow(0 0 6px rgba(10,132,255,.9))}
+html.glass .blob{box-shadow:0 0 18px rgba(10,132,255,.22)}
+html.glass .wp b,html.glass .big b[class^=t-],html.glass .tw,html.glass .stat b[style*=color]{text-shadow:0 0 16px currentColor}
+html.glass .bar i{box-shadow:0 0 10px currentColor}html.glass .chip{box-shadow:0 0 14px -4px currentColor}
+html.glass .btn{box-shadow:0 0 22px rgba(10,132,255,.45)}html.glass .worder span.me{box-shadow:0 0 14px rgba(10,132,255,.5)}
 @media (prefers-reduced-transparency:reduce){html.glass :is(nav,.sheet-card){background:#1c1c1e;-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style></head><body>
 <canvas id="bg-field" aria-hidden="true"></canvas><div class="bgring" id="bg-ring1"></div><div class="bgring r2" id="bg-ring2"></div>
