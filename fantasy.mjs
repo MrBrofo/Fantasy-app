@@ -2308,7 +2308,7 @@ ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pe
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
 <details class="board" style="margin-top:10px"><summary><b>Whole league this week:</b> you're ${ordinal(myBoardRank)} of ${board.length}, ${below.length} team${below.length === 1 ? '' : 's'} below you. <b style="color:${lowestPct >= 15 ? 'var(--bad)' : lowestPct >= 5 ? 'var(--warn)' : 'var(--good)'}">${lowestPct < 1 ? 'Under 1' : lowestPct}% chance</b> you're the lowest score.</summary>
 <table class="cmp" style="margin-top:8px"><tr class="bh"><td></td><td></td>${isLive ? '<td class="num">Now</td>' : ''}<td class="num">Expected</td></tr>${board.map((r, i) => `<tr data-team="${r.t.id}"${r.t === me ? ' style="font-weight:700"' : ''}><td class="num" style="text-align:left">${i + 1}</td><td>${esc(r.t === me ? 'You' : r.t.name)}</td>${isLive ? `<td class="num" data-now>${n(r.now)}</td>` : ''}<td class="num" data-proj>${n(r.proj)}</td></tr>`).reverse().join('')}</table>
-<p class="tag" style="margin:6px 0 0">${isLive ? 'Expected final score (ESPN live projection)' : 'Expected score with every lineup as set right now (averaged projections)'}. ${below.length ? `Below you: ${esc(below.map(r => r.t.name).join(', '))}.` : 'Nobody is projected below you.'} Lineups can still change before games start.</p></details></div>`;
+<p class="tag" style="margin:6px 0 0">${below.length ? `Below you: ${esc(below.map(r => r.t.name).join(', '))}.` : 'Nobody is projected below you.'}</p></details></div>`;
 })() : ''}
 <div id="stale" class="card" hidden style="background:var(--badbg);border-color:var(--bad)"><b style="color:var(--bad)">&#9888; This page stopped updating</b><div class="tag" id="staletext"></div></div>
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
@@ -2318,34 +2318,34 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <nav>${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
 <div id="seg" class="seg" hidden></div>
 
-<section id="todo"><h2>Do this now <span class="dot" hidden></span></h2><p class="sub">Your to-do list, most important first. Tap a button to do it on ESPN.</p>
-${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">The site re-tested its own advice and something doesn't add up. Treat these with care:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : `<p class="tag" style="margin:0 0 8px">&#10003; Advice check: all ${ADVICE_RULES} rules passed this update.</p>`}
+<section id="todo"><h2>Do this now <span class="dot" hidden></span></h2>
+${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">Some advice may be off:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : ``}
 ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${/^(Pickup step|Better backup)/.test(title) && who.length === 2 ? exBtns([who[1]], [who[0]]) : ''}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
   return todo.slice(0, 3).map(card).join('') + (todo.length > 3 ? `<details class="all"><summary>${todo.length - 3} more to do</summary>${todo.slice(3).map(card).join('')}</details>` : ''); })() : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
-<section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
+<section id="changes" hidden><h2>What changed</h2>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
 
-<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Type your question. Claude gets it with your team's facts, plus any other player or team you name, and the answer shows right here.</p></div>
+<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b></div>
 <textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="width:100%;min-height:72px;resize:vertical;margin-top:10px"></textarea>
 <div class="seg" id="askmode" style="margin-top:10px"><button type="button" data-mode="auto">Auto</button><button type="button" data-mode="quick">Quick</button><button type="button" data-mode="smart">Smart</button></div>
-<p class="tag" id="askmodetip" style="margin:6px 0 0"></p>
+
 <button type="button" id="askbtn" class="btn">Ask Claude</button><div id="askout" class="askout" hidden></div>
 <button type="button" id="askopen" class="linkbtn">Or open it in the Claude app</button></div></section>
 
 <section id="alerts" hidden><div class="card"><b>Phone alerts</b>
-<p class="tag" style="margin:2px 0 0">Get a notification when a starter won't play, a hurt player's status is decided before kickoff, a trade offer comes in, and more.</p>
+
 <button type="button" id="alertbtn" class="btn">Turn on alerts</button>
 <div id="alertcode" hidden><p class="tag">Last step: copy this code, then in GitHub open your Fantasy-app repo &rsaquo; Settings &rsaquo; Secrets and variables &rsaquo; Actions &rsaquo; New repository secret. Name it <b>PUSH_SUB</b> and paste the code. You'll get an "Alerts are on" notification within a few minutes.</p>
 <textarea id="alerttext" aria-label="Alert setup code" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
 <button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
 
 
-<section id="news"><h2>News</h2><p class="sub">Latest updates on your players and pickups, from Rotowire via ESPN. Tap a name for details.</p>
+<section id="news"><h2>News</h2>
 <div class="list">__NEWS__</div></section>
 
-<section id="lineup"><h2>My team</h2><p class="sub">Big number = points he's expected to score this week (average of ESPN, Rotowire and CBS). Top starter, starter or below starter compares him with the players who start at his position across your league. Green "up to" = his score if he has a great game. Tap any player to see if he plays, when, his last games and news.</p>
+<section id="lineup"><h2>My team</h2>
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
   const ps = lineupRows.filter(f);
   const rows = ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p, nowPts(p))}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`).join('');
@@ -2354,7 +2354,7 @@ ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.sl
 }).join('')}
 </section>
 
-<section id="bench"><h2>Bench check</h2><p class="sub">Does each bench player earn his spot? Keep = he starts this week or in the next ${benchHorizon.length || 'few'} weeks (byes, injuries), or he's your top backup and clearly better than any free player at his spot. If not, here's a better use of the spot.</p>
+<section id="bench"><h2>Bench check</h2>
 ${benchCheck.length ? `<div class="list">${benchCheck.map(b => `<div class="card"><div class="vhead"><b>${lnk(b.p)}</b><span class="verdict-${b.keep ? 'good' : 'meh'}">${b.keep ? 'Keep' : 'Not needed'}</span></div>
   <p class="why" style="margin:0">${b.keep ? esc(b.keep) : [
     `He doesn't start in any of the next ${benchHorizon.length} weeks, and a free player could back up about as well.`,
@@ -2366,11 +2366,11 @@ ${benchCheck.length ? `<div class="list">${benchCheck.map(b => `<div class="card
   ].filter(Boolean).join(' ')}</p>${b.keep || !(b.swap || b.trade || b.steal) ? '' : `<div class="tools2">${b.swap ? cmpBtn(b.p, b.swap.add, `Compare with ${esc(b.swap.add.name)}`) : ''}${b.trade ? tcBtn([b.p], [b.trade.take], `Trade check: ${esc(b.trade.take.name)}`) : ''}${b.steal ? tcBtn(b.steal.give, [b.steal.take], `Trade check: ${esc(b.steal.take.name)}`) : ''}</div>`}</div>`).join('')}</div>` : '<div class="card empty">Nobody on your bench.</div>'}
 </section>
 
-<section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order. Each step swaps one player for one free player nobody in your league has. Two kinds: <b>this week only</b> (a better start this week, using a spare bench spot, never costing you a long-term player or a bye-week fill-in) and <b>long-term upgrade</b> (better for the rest of the season). Tap the button on a step to make that move on ESPN.</p>
+<section id="pickups"><h2>Pickup plan</h2><p class="sub">Do these in order.</p>
 <div class="card"><div class="vhead"><span class="group" style="margin:0">Waiver order</span><span class="verdict-meh">You pick ${ordinal(me.waiver)} of ${teams.length}</span></div>
 <details class="all" style="margin:-4px 0 4px"><summary>See the full order</summary><div class="worder">${[...teams].sort((a, b) => a.waiver - b.waiver).map(t => `<span class="${t === me ? 'me' : t.waiver < me.waiver ? 'ahead' : ''}">${t.waiver}. ${esc(t.name)}</span>`).join('')}</div></details>
-${nextRun ? `<p class="why" style="margin:0 0 6px"><b>Next waiver run: ${nextRun}.</b></p>` : ''}<p class="tag" style="margin-bottom:0">When two teams claim the same player, the one higher on this list gets him. ${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'} Free agents (not on waivers) go to whoever adds them first.</p></div>
-${fillIns.length ? `<div class="group">Injury fill-ins: grab them first</div><p class="sub">A team's starting quarterback, running back or tight end is out, and his backup is free in your league. The backup usually takes over the work, and most managers (and the experts' numbers) take hours to react.</p><div class="list">${fillIns.map(f => `<div class="card"><div class="row">${freeCard(f.p, f.name, f.team, f.pos)}${f.gain >= 0.5 ? `<span class="verdict-good">+${n(f.gain)} a week for you</span>` : '<span class="verdict-meh">Keep from rivals</span>'}</div>
+${nextRun ? `<p class="why" style="margin:0 0 6px"><b>Next waiver run: ${nextRun}.</b></p>` : ''}<p class="tag" style="margin-bottom:0">${me.waiver > 1 ? `${me.waiver - 1} team${me.waiver > 2 ? 's' : ''} pick before you.` : 'You pick first.'}</p></div>
+${fillIns.length ? `<div class="group">Injury fill-ins: grab them first</div><p class="sub">A starter is out and his backup is free.</p><div class="list">${fillIns.map(f => `<div class="card"><div class="row">${freeCard(f.p, f.name, f.team, f.pos)}${f.gain >= 0.5 ? `<span class="verdict-good">+${n(f.gain)} a week for you</span>` : '<span class="verdict-meh">Keep from rivals</span>'}</div>
   <p class="why">${lnk(f.starter)} ${esc(f.word)}${f.long ? ' and will be out a while' : ''}, so ${esc(f.name)} is next up (${esc(f.owner.name)} has ${esc(f.starter.name)}). ${f.gain >= 0.5 ? `As the starter he'd add about ${n(f.gain)} a week to your lineup.` : 'He wouldn\'t start for you, but adding him keeps him from a rival who needs him.'}${f.p ? ` ${f.p.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}` : ' Search his name in the ESPN app to add him.'}${f.drop ? ` To make room: drop ${esc(f.drop.name)}.` : ''}</p>
   ${MOVE_URL && addMove(f.p, f.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...addMove(f.p, f.drop), week: league.scoringPeriodId }))}">${esc(addMove(f.p, f.drop).label)}</button>` : ''}</div>`).join('')}</div>` : ''}
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
@@ -2385,13 +2385,13 @@ ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div 
   ${s.alts.length ? `<br><span class="tag">If someone else gets him first, take ${s.alts.map(a => `<b>${esc(a.add.name)}</b> (${n(wk ? a.add.proj : rate(a.add))})`).join(' or ')} instead.</span>` : ''}</p>${info([s.add, s.drop])}
   ${MOVE_URL && !locked(s.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `${s.add.wa ? 'Claim' : 'Add'} ${s.add.name}, drop ${s.drop.name}`, type: s.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: s.add.id }, { type: 'DROP', playerId: s.drop.id }], week: league.scoringPeriodId }))}">${s.add.wa ? 'Claim' : 'Add'} ${esc(s.add.name)}, drop ${esc(s.drop.name)}</button>` : ''}</div>`; }).join('')
   : `<div class="card empty">Nobody out there would make your starting lineup better${claims.length ? ', counting your pending claims (see Pending)' : ''}.</div>`}
-${benchUps.length ? `<details class="fold"><summary class="group">Better backups available (${benchUps.length})</summary><p class="sub">Free players clearly better than one of your bench players. Small upgrades: a backup only scores when a starter is out or on bye.</p><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
+${benchUps.length ? `<details class="fold"><summary class="group">Better backups available (${benchUps.length})</summary><div class="list">${benchUps.map(x => `<div class="card"><div class="row">${player(x.add)}${big(rate(x.add), 'per game, rest of season', null, x.add, 'season')}</div>
   <p class="why">Instead of <b>${esc(x.drop.name)}</b> (${n(rate(x.drop))} per game). ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}${esc(alsoText(x.alts, rate))}</p>${info([x.add, x.drop, ...x.alts])}
   ${exBtns([x.drop], [x.add])}
   ${MOVE_URL && !locked(x.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Add ${x.add.name}, drop ${x.drop.name}`, type: x.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: x.add.id }, { type: 'DROP', playerId: x.drop.id }], week: league.scoringPeriodId }))}">Add ${esc(x.add.name)}, drop ${esc(x.drop.name)}</button>` : ''}</div>`).join('')}</div></details>` : ''}
 ${trending.length ? `<details class="fold"><summary class="group">Trending in other leagues (${Math.min(5, trending.length)})</summary><div class="list">${trending.slice(0, 5).map(p => `<div class="card"><div class="row">${player(p)}${p.proj != null ? big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week') : '<span class="tag">No projection for him this week</span>'}</div>${pickBtn(p)}</div>`).join('')}</div>
-<p class="tag">Often means news broke (an injury ahead of him, a bigger role). Not always worth it for you, but worth a look.</p></details>` : ''}
-${breakouts.length ? `<details class="fold"><summary class="group">Breakout watch: bigger role (${breakouts.length})</summary><p class="sub">His playing time or share of his team's targets/carries jumped over his last 3 games. Role changes come before the points, and the experts' numbers follow the points, so these players are cheapest right now. Good use of a spare bench spot.</p><div class="list">${breakouts.map(b => `<div class="card"><div class="row">${freeCard(b.p, b.name, b.team, b.pos)}${b.recent != null ? big(b.recent, 'per game, last 3', null, b.p ?? null, 'season') : ''}</div>
+</details>` : ''}
+${breakouts.length ? `<details class="fold"><summary class="group">Breakout watch: bigger role (${breakouts.length})</summary><div class="list">${breakouts.map(b => `<div class="card"><div class="row">${freeCard(b.p, b.name, b.team, b.pos)}${b.recent != null ? big(b.recent, 'per game, last 3', null, b.p ?? null, 'season') : ''}</div>
   <p class="why"><b>Why:</b> his team is using him a lot more. ${b.cause.length ? `${esc(b.cause.join(' and '))} ${b.cause.length > 1 ? 'are' : 'is'} out, so more of the work goes to him. ` : ''}In his last 3 games he was on the field for <b>${b.u.snapNow}%</b> of his team's plays (${b.u.snapBefore}% before that), and <b>${b.u.shareNow}%</b> of his team's ${b.u.kind === 'carries' ? 'runs went to him' : 'passes were thrown to him'} (${b.u.shareBefore}% before).</p>
   <p class="why"><b>When:</b> more playing time usually turns into more points this week or next. Most managers only notice once the big games show up, so right now he's easy to get.${b.p ? ` ${b.p.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}` : ' Search his name in the ESPN app to add him.'}</p>
   ${pickBtn(b.p)}</div>`).join('')}</div></details>` : ''}
@@ -2399,7 +2399,7 @@ ${fills.length ? `<div class="group">Empty roster spots: ${fills.length}</div><d
   <p class="why">No drop needed.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${esc(byeText(f))}${f.season >= 0.5 ? ` About ${n(f.season)} better per week after that.` : f.rest >= 1 ? ` As a backup, about ${Math.round(f.rest)} points over the next two weeks covering your starters' bye weeks.` : ' A backup for injuries.'}</p>${info([f.add, ...f.byeFor, ...f.alts])}
   ${MOVE_URL && !locked(f.add) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...fillMove(f), week: league.scoringPeriodId }))}">${f.add.wa ? 'Put in a claim for him on ESPN' : 'Add him on ESPN'}</button>` : ''}</div>`).join('')}</div>` : ''}
 </section>
-<section id="pending"><h2>Your pending moves</h2><p class="sub">Waiver claims and trade offers that haven't gone through yet, checked with the same math as everything else.</p>
+<section id="pending"><h2>Your pending moves</h2>
 ${pending.length ? pending.map(m => {
   if (m.kind === 'waiver') {
     const { backup, worseBackup, kp, spare, stack, covers, ahead, worse, keeps, rental, v } = claimCheck(m);
@@ -2431,7 +2431,7 @@ ${pending.length ? pending.map(m => {
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
 
-<section id="trades"><h2>Trade ideas</h2><p class="sub">Swaps worth 2+ points a week to you that the other team could see as fair. "Value" counts how hard a player is to replace, so stars at scarce spots like tight end count extra. Offer them in ESPN under Trade.</p>
+<section id="trades"><h2>Trade ideas</h2>
 <div class="card"><select id="tp-team" class="sel" aria-label="Show trades with"><option value="">All teams</option>${teams.filter(t => t !== me).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
 <label class="pick" style="border:0;padding-bottom:0"><input type="checkbox" id="tp-loose"> Looser check: also show closer calls (trade ideas worth 1+ point a week to you, fleeces with a weaker pitch)</label></div>
 <div class="pool-list" data-step="6">${tradePool.map(t => { const s = myStartersAt(t.after, t.give.pos); return `<div class="card" data-team="${t.team.id}" data-strict="${t.strict ? 1 : 0}"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
@@ -2443,7 +2443,7 @@ ${pending.length ? pending.map(m => {
 ${poolMore}
 </section>
 
-<section id="fleece"><h2>Fleece finder</h2><p class="sub">Trades that look fair on points per game so far, but the rest-of-season projections say clearly favor you. Only trades with a believable, true pitch show up.</p>
+<section id="fleece"><h2>Fleece finder</h2>
 <select id="tp-player" class="sel" aria-label="Player to get" hidden><option value="">Any player</option>${(tradesOpen ? teams : []).filter(t => t !== me).flatMap(t => t.roster.filter(tradeable).sort((a, b) => rate(b) - rate(a)).map(p => `<option value="${p.id}" data-team="${t.id}">${esc(p.name)} (${p.pos})</option>`)).join('')}</select>
 <div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">+${n(f.mine)} a week for you${f.alt ? ', not a fleece' : ''}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
@@ -2458,14 +2458,14 @@ ${poolMore}
 ${poolMore}
 </section>
 
-<section id="buysell"><h2>Buy low, sell high</h2><p class="sub">Touchdown luck over the last 5 games: how many touchdowns he scored vs how many his chances near the goal line usually bring (this season's rate at his position). The chances repeat week to week; scoring on them mostly doesn't, so lucky and unlucky streaks tend to even out. Most managers judge by recent points, which is the opening.</p>
+<section id="buysell"><h2>Buy low, sell high</h2><p class="sub">Touchdowns vs his chances near the goal line, last 5 games. Luck evens out.</p>
 ${sellHigh.length ? `<div class="group">Sell high: yours, scoring above his role</div><div class="list">${sellHigh.map(x => `<div class="card"><div class="row">${player(x.p)}${big(x.l.got, `per game, last ${x.l.games}`, null, x.p, 'season')}</div>
   <p class="why">${esc(roleText(x.l))}. With normal touchdown luck he'd be at about <b>${n(x.l.worth)}</b> a game, not ${n(x.l.got)}, so expect him to cool off. His numbers look great to other managers right now, so this is when he gets the most back in a trade. Try him in the Trade checker.</p></div>`).join('')}</div>` : '<div class="card empty">None of your players are running way above their role right now.</div>'}
 ${buyLow.length ? `<div class="group">Buy low: theirs, scoring below his role</div><div class="list">${buyLow.map(x => `<div class="card"><div class="tag" style="margin-bottom:8px">on <b>${esc(x.t.name)}</b> &middot; ${esc(situation(x.t))}</div><div class="row">${player(x.p)}${big(x.l.got, `per game, last ${x.l.games}`, null, x.p, 'season')}</div>
   <p class="why">${esc(roleText(x.l))}. With normal touchdown luck he'd be at about <b>${n(x.l.worth)}</b> a game, not ${n(x.l.got)}. The chances are what stick, so expect the touchdowns to come, and his manager sees the low number. Pick ${esc(x.t.name)} in Fleece finder and choose him to see your best offer.</p></div>`).join('')}</div>` : '<div class="card empty">Nobody on other teams is running way below his role right now.</div>'}
 </section>
 
-<section id="partners"><h2>Trade partners</h2><p class="sub">Who's short at a position and who has extra. The best trades are with teams that have extra of what you're short on, and are short on what you have extra of.</p>
+<section id="partners"><h2>Trade partners</h2>
 <div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
 <p class="why" style="margin:0">Short on: <b>${myDepth.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}</b>. Extra: <b>${myDepth.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(p => esc(p.name)).join(', ')})`).join('; ') || 'nothing'}</b>.</p></div>
 ${(() => { const card = d => `<div class="card"><div class="vhead"><b>${esc(d.t.name)}</b>${d.theyHave.length && d.youHave.length ? '<span class="verdict-good">Good match</span>' : d.theyHave.length ? '<span class="verdict-meh">Has what you need</span>' : ''}</div>
@@ -2488,11 +2488,11 @@ ${(() => { const card = d => `<div class="card"><div class="vhead"><b>${esc(d.t.
 <div id="tc-out"></div></div></section>
 
 
-<section id="season"><h2>Season outlook</h2><p class="sub">How you've really played, and who's coming up.</p>
+<section id="season"><h2>Season outlook</h2>
 ${week > lastWeek ? '' : `<div class="card"><div class="group" style="margin:0 0 10px">Playoff chances</div><div class="stat">
   <div><b style="color:var(--${playoffPct >= 50 ? 'good' : 'bad'})">${playoffPct}%</b><small>chance you make the playoffs (top ${playoffTeams})</small></div>
   <div><b>${me.w}-${me.l}</b><small>now, with ${lastWeek - week + 1} games left</small></div></div>
-  <p class="why">From playing out the rest of the season 10,000 times with everyone's projected lineups. What it takes:</p>
+  <p class="why">What it takes:</p>
   <div class="worder" style="margin:0">${recordOdds.map(([wins, pct]) => `<span class="${pct >= 50 ? 'me' : ''}">${wins}-${lastWeek - wins}: ${pct}% get in</span>`).join('')}</div></div>`}
 ${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last week (week ${recap.wk})</div><div class="stat">
   <div><b style="color:var(--${recap.opp == null || recap.got >= recap.opp ? 'good' : 'bad'})">${n(recap.got)}</b><small>you scored${recap.opp != null ? ` (${esc(recap.oppName)}: ${n(recap.opp)})` : ''}</small></div>
@@ -2512,14 +2512,14 @@ ${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last wee
     : 'Your record matches how you\'ve played.'}${pfRank > teams.length / 2 ? ' Your team scores less than most, so pickups and trades matter.' : ''}</p></div>
 ${ahead.length ? `<div class="card"><div class="group" style="margin:0 0 4px">Your schedule ahead</div><table>
 ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><td>${esc(g.t.name)} <span class="tag">${g.t.w}-${g.t.l}</span></td><td class="num">proj ~${Math.round(g.proj)}${g.off.length ? `<br><small>no ${esc(g.off.map(p => p.name.split(' ').pop()).join(', '))}</small>` : ''}</td><td style="text-align:right"><span class="lv ${g.level}">${g.level}</span></td></tr>`).join('')}</table>
-<p class="tag">Each opponent's best lineup that week (ESPN's projection, so NFL matchups count; byes and injured players left out) vs the league average that week. "No" lists their starters who are off. Missing 15+ points of starters makes it easy.</p></div>` : ''}
+</div>` : ''}
 </section>
 
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
 ${standings.map((t, i) => `<tr data-team="${t.id}" class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
 ${intel.size || othersPending.size ? `<div class="card"><details open><summary>Behind the scenes: trades in progress, and offers and claims that didn't happen</summary>
-<p class="tag" style="margin-top:0">The ESPN app doesn't show these. A team that offered a player in a trade is shopping him; a team that tried to claim someone needs that position.</p><table>
+<table>
 ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDate - a.proposedDate)].slice(0, 20).map(tx => {
   const nm = id => esc(byId.get(id)?.name ?? names[id] ?? 'someone');
   const date = new Date(tx.proposedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -2535,7 +2535,7 @@ ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDa
 ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>${esc(teamName[m.team] ?? '')}</td><td>${m.type === 'ADD' ? '<b style="color:var(--good)">added</b>' : m.type === 'DROP' ? '<span style="color:var(--bad)">dropped</span>' : `traded with ${esc(teamName[m.from])}`} ${esc(names[m.playerId] ?? '')}</td></tr>`).join('')}</table></details></div>
 </section>
 
-<section id="help"><h2>How it works</h2><p class="sub">Football basics, just what you need for fantasy.</p>
+<section id="help"><h2>How it works</h2>
 <div class="card"><dl>
 <dt>How you win</dt><dd>Every week you play one other team. Your starters score points from what they do in real NFL games. Higher total wins. Bench players don't count.</dd>
 <dt>Positions</dt><dd><span class="pos pos-QB">QB</span> Quarterback: throws the ball. Usually your highest scorer.<br>
@@ -2558,10 +2558,10 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach these sources, so for big decisions it's worth a second opinion.</dd>
 </dl></div>
-<div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><p class="tag" style="margin:0">Every underlined word on this site, A to Z.</p><dl id="dict"></dl></div>
+<div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><dl id="dict"></dl></div>
 <details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
 
-<section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div><p class="tag" style="margin:8px 0 0">Saved on this phone. Everything else works the same in all of them.</p></div></section>
+<section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 <footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
@@ -3366,19 +3366,19 @@ const askHtml = t => t.split(String.fromCharCode(10)).map(l => l.trim()).reduce(
 const ASK_TIP = { auto: 'Picks for you: Smart for decisions, Quick for meanings and lookups.', quick: 'Haiku: fast and almost free. Good for meanings and lookups, not decisions.', smart: 'Opus: best for trades and start/sit, about 2¢ a question.' };
 let askMode = 'auto';
 try { askMode = ASK_TIP[localStorage.getItem('askMode')] ? localStorage.getItem('askMode') : 'auto'; } catch {}
-const askModeShow = () => { document.querySelectorAll('#askmode button').forEach(x => x.classList.toggle('on', x.dataset.mode === askMode)); document.getElementById('askmodetip').textContent = ASK_TIP[askMode]; };
+const askModeShow = () => { document.querySelectorAll('#askmode button').forEach(x => x.classList.toggle('on', x.dataset.mode === askMode)); };
 document.getElementById('askmode').onclick = ev => { const x = ev.target.closest('[data-mode]'); if (!x) return; askMode = x.dataset.mode; try { localStorage.setItem('askMode', askMode); } catch {} askModeShow(); };
 askModeShow();
 // Ask: the Worker asks Claude (paid from the Anthropic credits) and the answer shows here. No Worker: open claude.ai
 document.getElementById('askbtn').onclick = async () => {
   const b = document.getElementById('askbtn'), out = document.getElementById('askout'), facts = askFacts();
   if (!LIVE) return document.getElementById('askopen').click();
-  b.disabled = true; b.textContent = 'Claude is thinking...'; out.hidden = false; out.innerHTML = '<p class="tag">This can take up to a minute.</p>';
+  b.disabled = true; b.textContent = 'Claude is thinking...'; out.hidden = false; out.innerHTML = '';
   try {
     const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
-    out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '') + (d.model ? '<p class="tag">Answered by ' + e(d.model === 'Opus' ? 'Smart (Opus)' : 'Quick (Haiku)') + '</p>' : '');
+    out.innerHTML = askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '');
   } catch (err) { out.innerHTML = '<p class="tag">That didn&#39;t work (' + e(err.message) + '). Use Open in Claude below instead.</p>'; }
   b.disabled = false; b.textContent = 'Ask Claude';
 };
@@ -3813,7 +3813,7 @@ function addHim(p) {
       '<div><b>' + f1(wk) + '</b><small>points for you this week</small></div>' +
       '<div><b>' + f1(theirsGain) + '</b><small>points per week for them</small></div>' +
       '<div><b>' + (accept ? 'Likely' : 'Unlikely') + '</b><small>they say yes (fair on value)</small></div></div>' + roomNote +
-      '<p class="tag" style="margin:8px 0 0">Points per week = how much better your best lineup gets, using the averaged rest-of-season projections.</p>' +
+      
       '<div class="group">Text to send</div><p class="pitch">' + e(texts[0]) + '</p>' +
       '<div class="tools2"><button type="button" class="btn"' + chip + ' data-copy="' + e(texts[0]) + '">Copy text</button>' + (texts.length > 1 ? '<button type="button" class="btn"' + chip + ' data-versions="' + e(JSON.stringify(texts)) + '">Another version</button>' : '') + '</div>' +
       '<button type="button" class="btn"' + chip + ' data-claude="' + e(tcPrompt(give, take, team, theirWeek)) + '">Have Claude write it (copies the facts, opens Claude)</button>' +
