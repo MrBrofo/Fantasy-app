@@ -2171,8 +2171,9 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <section id="changes" hidden><h2>What changed</h2><p class="sub">Since you last tapped "Got it".</p>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
 
-<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Copies all your team's facts. Paste them into Claude, then type your question.</p></div>
-<button type="button" id="askbtn" class="btn">Copy facts &amp; open Claude</button></div></section>
+<section id="ask"><div class="card ask"><div><b>Ask Claude about your team</b><p class="tag" style="margin:2px 0 0">Type your question. It's copied with your team's facts, plus any other player or team you name. Paste it into Claude and send.</p></div>
+<textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="width:100%;min-height:72px;resize:vertical;margin-top:10px"></textarea>
+<button type="button" id="askbtn" class="btn">Copy &amp; open Claude</button></div></section>
 
 <section id="alerts" hidden><div class="card"><b>Phone alerts</b>
 <p class="tag" style="margin:2px 0 0">Get a notification when a starter won't play, a hurt player's status is decided before kickoff, a trade offer comes in, and more.</p>
@@ -3138,13 +3139,32 @@ if ('serviceWorker' in navigator && 'PushManager' in window) {
     document.getElementById('alertcopy').textContent = '✓ Copied';
   };
 }
+// Players and teams named in the question that the facts don't cover (anyone not on my team): full name, or a last
+// name only one player has. A team named gets its roster too. ponytail: plain text match, no nicknames
+function askExtra(q) {
+  if (typeof R !== 'object' || !q) return '';
+  const low = ' ' + q.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ') + ' ', has = w => low.includes(' ' + w.toLowerCase() + ' ');
+  const mine = new Set(R.teams.find(t => t.id === R.me)?.ids ?? []), all = Object.keys(R.pl).map(Number).map(plOf).filter(Boolean);
+  const lastOf = p => p.name.split(' ').filter(w => !['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'].includes(w)).pop() || '';
+  const lastCount = {}; for (const p of all) { const l = lastOf(p).toLowerCase(); lastCount[l] = (lastCount[l] || 0) + 1; }
+  const teams = R.teams.filter(t => t.id !== R.me && has(t.name.replace(/[^A-Za-z0-9' ]+/g, ' ').replace(/ +/g, ' ').trim()));
+  const named = all.filter(p => !mine.has(p.id) && (has(p.name.replace(/[^A-Za-z0-9' ]+/g, ' ')) || (lastOf(p).length >= 4 && lastCount[lastOf(p).toLowerCase()] === 1 && has(lastOf(p))))).slice(0, 12);
+  const owner = p => { const t = R.teams.find(t => t.ids.includes(p.id)); return t ? 'on ' + t.name + "'s team" : 'free agent'; };
+  const row = p => '- ' + p.name + ' (' + p.pos + ', ' + p.team + ', bye wk ' + (p.bye || '?') + '), ' + owner(p) + ': expected ' + (p.proj || 0).toFixed(1) + ' this week, ' + (p.avg || 0).toFixed(1) + ' per game so far, ' + (p.rate || 0).toFixed(1) + ' per game rest of season, ' + (p.status || 'healthy');
+  // String.fromCharCode(10) is a line break (this script sits inside the page's template string, where backslashes get eaten)
+  const NL = String.fromCharCode(10);
+  return (named.length ? NL + NL + 'Other players I mentioned:' + NL + named.map(row).join(NL) : '') +
+    teams.map(t => NL + NL + t.name + ' (' + t.rec + ') roster:' + NL + t.ids.map(plOf).filter(Boolean).map(row).join(NL)).join('');
+}
 document.getElementById('askbtn').onclick = async () => {
-  const facts = JSON.parse(document.getElementById('facts').textContent);
+  const q = document.getElementById('askq').value.trim();
+  const base = JSON.parse(document.getElementById('facts').textContent), cut = base.lastIndexOf('Explain things simply');
+  const facts = q && cut > 0 ? base.slice(0, cut).trimEnd() + askExtra(q) + String.fromCharCode(10, 10) + "Explain things simply, I'm new to football. My question: " + q : base;
   const b = document.getElementById('askbtn');
   try { await navigator.clipboard.writeText(facts); b.textContent = '✓ Copied! Paste it in Claude'; }
   catch { prompt('Copy this, then paste it into Claude:', facts); }
   window.open('https://claude.ai/new', '_blank', 'noopener');
-  setTimeout(() => (b.innerHTML = 'Copy facts &amp; open Claude'), 4000);
+  setTimeout(() => (b.innerHTML = 'Copy &amp; open Claude'), 4000);
 };
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-close]')) return closeSheet();
