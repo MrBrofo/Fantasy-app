@@ -201,6 +201,19 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
   assert(!by.rb4.keep && by.rb4.swap?.add === freeTe && Math.round(by.rb4.swap.gain) === 12 && by.rb4.trade?.take.id === 'x', 'spare: swap for the better TE (+3 x 4 weeks) and a trade');
 }
 
+// chance to play: his own record when listed moves the league rate, more the more times he's been listed
+{
+  const norm = s => s.toLowerCase(), pkey = n => n;
+  const tagHist = { 'a|RB': { Q: [11, 9] }, 'b|RB': { Q: [2, 0] }, 'c|WR': { D: [4, 3] } };
+  const playOdds = new Function('rosSaved', 'practice', 'norm', 'pkey', 'SEASON', cut('const PLAY_ODDS = ', '  return { pct, base: base.pct, tags, played, why: `${base.why}. His own record: he played ${played} of ${tags} times he was listed ${p.status.toLowerCase()} since ${SEASON - 5}, so it\'s ${pct}%` };\n}') + '\nreturn playOdds;')({ tagHist }, new Map(), norm, pkey, 2026);
+  const q = (name, pos, status = 'QUESTIONABLE') => playOdds({ name, pos, status });
+  assert.equal(q('a', 'RB').pct, 78, '9 of 11 played on a 71% base');
+  assert.equal(q('b', 'RB').pct, 51, '0 of 2 only pulls it partway down');
+  assert.equal(q('z', 'RB').pct, 71, 'no record: the league rate');
+  assert.equal(q('c', 'WR', 'DOUBTFUL').pct, 37, 'doubtful uses his doubtful record');
+  assert.equal(q('a', 'RB', 'DOUBTFUL').pct, 7, 'his questionable record is not used when doubtful');
+  assert.equal(q('a', 'RB', 'ACTIVE'), null, 'healthy: no odds');
+}
 // wind cuts passing and kicking outdoors only; a QB split needs games both ways and is pulled toward no change
 {
   const { windFactor, qbSplit } = new Function('rosSaved', cut('const WIND_CUT = ', '  return { ratio, games: wo.length, with: avg(w), without: avg(wo) };\n}') + '\nreturn { windFactor, qbSplit };')({});

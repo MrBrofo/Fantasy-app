@@ -142,7 +142,7 @@ const SLP_ALL = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map(p => `position[]=${p}`)
 let rosSaved = null, rosPrev = null;
 try {
   const old = rosPrev = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
-  if (old.week === week && Date.now() - old.at < 3600e3 && old.v === 5 && old.practice && old.weeks && old.depth && old.weather && old.scores && old.kd) rosSaved = old;
+  if (old.week === week && Date.now() - old.at < 3600e3 && old.v === 5 && old.practice && old.weeks && old.depth && old.weather && old.scores && old.kd && old.tagHist) rosSaved = old;
 } catch {}
 if (!rosSaved) {
   rosSaved = { v: 5, week, at: Date.now(), roto: [], cbs: [] }; // v5: kicker and defense games (kd)
@@ -214,6 +214,29 @@ if (!rosSaved) {
       }
     }
   } catch (err) { console.warn('NFL injury report skipped:', err.message); rosSaved.practice = []; rosSaved.gameStatus = []; }
+  // Each player's own record when listed questionable or doubtful (nflverse injury reports + snap counts, last 5 seasons):
+  // tagHist[name|pos] = { Q: [times listed, times played], D: [...] }. Only changes once a week, so it's reused until then.
+  if (rosPrev?.tagHist && rosPrev.tagHistWeek === week) Object.assign(rosSaved, { tagHist: rosPrev.tagHist, tagHistWeek: week });
+  else try {
+    const csv = async url => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${r.status} on ${url.split('/').pop()}`);
+      const [head, ...rows] = (await r.text()).trim().split('\n').map(l => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).map(s => s.replace(/,$/, '').replace(/^"|"$/g, '')));
+      return rows.map(f => Object.fromEntries(head.map((h, i) => [h, f[i]])));
+    };
+    const hist = {};
+    for (let y = SEASON - 5; y <= SEASON; y++) {
+      const nf = 'https://github.com/nflverse/nflverse-data/releases/download';
+      const snaps = await csv(`${nf}/snap_counts/snap_counts_${y}.csv`), played = new Set(snaps.map(x => `${x.week}|${norm(x.player)}`)), done = new Set(snaps.map(x => x.week));
+      for (const x of await csv(`${nf}/injuries/injuries_${y}.csv`)) {
+        const s = { Questionable: 'Q', Doubtful: 'D' }[x.report_status];
+        if (!s || !['QB', 'RB', 'WR', 'TE'].includes(x.position) || !done.has(x.week) || (y === SEASON && +x.week >= week)) continue;
+        const h = ((hist[`${norm(x.full_name)}|${x.position}`] ??= {})[s] ??= [0, 0]);
+        h[0]++; if (played.has(`${x.week}|${norm(x.full_name)}`)) h[1]++;
+      }
+    }
+    Object.assign(rosSaved, { tagHist: hist, tagHistWeek: week });
+  } catch (err) { console.warn('Injury tag history skipped:', err.message); rosSaved.tagHist = rosPrev?.tagHist ?? {}; }
   // Depth charts (Sleeper, every team, defense too): the top 2 at each spot, with injury status. Sleeper asks
   // that its full player list be downloaded at most once a day, so the last one is reused for 24 hours.
   if (rosPrev?.depth && Date.now() - rosPrev.depthAt < 864e5) Object.assign(rosSaved, { depth: rosPrev.depth, depthAt: rosPrev.depthAt });
@@ -256,13 +279,23 @@ const rosRoto = new Map(rosSaved.roto), rosCbs = new Map(rosSaved.cbs), practice
 // questionable 70.7% and doubtful 6.9% overall, 2017-2024. Practice is the strongest clue, so it's used when NFL.com has it.
 const PLAY_ODDS = { any: { Full: 86, Limited: 71, DNP: 29 }, concussion: { Full: 85, Limited: 57, DNP: 29 }, knee: { Full: 92, Limited: 81, DNP: 28 }, hamstring: { Full: 73, Limited: 62, DNP: 20 } };
 const PRACTICED = { Full: 'he practiced fully', Limited: 'he was limited in practice', DNP: 'he didn\'t practice' };
-function playOdds(p, type) {
+// His own record then moves it: it counts as much as SELF_WEIGHT games at the league rate, so 3 past tags barely
+// move it and 15 mostly decide it (9 of 11 played on a 71% base: (9 + 5 * 0.71) / (11 + 5) = 78%).
+const SELF_WEIGHT = 5;
+function leagueOdds(p, type) {
   if (p.status === 'DOUBTFUL') return { pct: 7, why: 'only about 7 in 100 doubtful players end up playing' };
   if (p.status !== 'QUESTIONABLE') return null;
   const pr = practice.get(pkey(p.name, p.pos, p.team));
   if (!pr) return { pct: 71, why: 'no practice report yet this week; about 71 in 100 questionable players end up playing' };
   const kind = ['concussion', 'knee', 'hamstring'].find(k => new RegExp(k, 'i').test(type ?? '')) ?? 'any';
   return { pct: PLAY_ODDS[kind][pr], why: `${PRACTICED[pr]}${kind === 'any' ? '' : ` (${kind} injury)`}, and players like that played ${PLAY_ODDS[kind][pr]}% of the time` };
+}
+function playOdds(p, type) {
+  const base = leagueOdds(p, type);
+  const [tags, played] = base ? rosSaved.tagHist?.[`${norm(p.name)}|${p.pos}`]?.[p.status[0]] ?? [0, 0] : [0, 0];
+  if (!tags) return base;
+  const pct = Math.round((played + SELF_WEIGHT * base.pct / 100) / (tags + SELF_WEIGHT) * 100);
+  return { pct, base: base.pct, tags, played, why: `${base.why}. His own record: he played ${played} of ${tags} times he was listed ${p.status.toLowerCase()} since ${SEASON - 5}, so it's ${pct}%` };
 }
 // Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
 const vegas = {}, gameNow = {}; // gameNow[team] = { state: 'pre' | 'in' | 'post', text: e.g. 'Q3 4:12' or 'Final' }
@@ -975,7 +1008,7 @@ const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day 
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
 const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
 // The (i) button on a suggestion: every number behind it and where it came from
-const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper) and CBS Sports projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the three. Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024. Rosters, waiver order and claims: your ESPN league.";
+const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper) and CBS Sports projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the three. Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024, moved by each player's own record when listed (nflverse injury reports and snap counts, last 5 seasons). Rosters, waiver order and claims: your ESPN league.";
 const srcLine = p => {
   const ros = ['ESPN', 'Rotowire', 'CBS'].map((s, i) => (p.rosBy?.[i] != null ? `${s} ${n(p.rosBy[i])}` : '')).filter(Boolean).join(', '), odds = playOdds(p, p.inj?.type);
   return `<b>${esc(p.name)}</b>: this week ${esc(srcText(p) || 'no projection (bye or not playing)')}${srcText(p).includes(',') ? `, average ${n(p.proj)}` : ''}` +
@@ -1217,7 +1250,7 @@ function chip(p) {
   else if (s) {
     const wks = p.inj?.back ? Math.ceil((p.inj.back - Date.now()) / (7 * 864e5)) : 0;
     const when = p.inj?.back && wks > 0 ? ` &middot; back ~${dateStr(p.inj.back)}${wks > 1 ? ` (${wks} wks)` : ''}` : '';
-    out.push(`<span class="chip ${s[1]}">${s[0]}${p.inj?.type && p.inj.type !== 'Undisclosed' ? ` (${esc(p.inj.type.toLowerCase())})` : ''}${p.status === 'QUESTIONABLE' ? '' : when}${playOdds(p, p.inj?.type) ? ` &middot; ${playOdds(p, p.inj?.type).pct}% plays` : ''}</span>`);
+    out.push(`<span class="chip ${s[1]}">${s[0]}${p.inj?.type && p.inj.type !== 'Undisclosed' ? ` (${esc(p.inj.type.toLowerCase())})` : ''}${p.status === 'QUESTIONABLE' ? '' : when}${playOdds(p, p.inj?.type) ? ` &middot; ${playOdds(p, p.inj?.type).pct}% plays${playOdds(p, p.inj?.type).tags ? ` (played ${playOdds(p, p.inj?.type).played} of ${playOdds(p, p.inj?.type).tags} times listed)` : ''}` : ''}</span>`);
   }
   if (p.split && !out.length) out.push(`<span class="chip warn">Experts disagree: ${srcText(p)}</span>`);
   return out.join(' ');
@@ -2491,7 +2524,7 @@ function liveProj(d, f) {
       ds.lst = st; ds.lespn = newEspn ?? '';
       // the other sources only count when ESPN has a number (same rule as the build)
       const srcs = newEspn == null ? [] : [newEspn, num(ds.roto), num(ds.cbs)].filter(v => v != null);
-      const pct = ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(st) ? 0 : st === 'DOUBTFUL' ? 7 : st === 'QUESTIONABLE' ? (ds.st === 'QUESTIONABLE' ? +ds.odds : 71) : 100;
+      const pct = ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(st) ? 0 : st === ds.st && ['QUESTIONABLE', 'DOUBTFUL'].includes(st) ? +ds.odds : st === 'DOUBTFUL' ? 7 : st === 'QUESTIONABLE' ? 71 : 100;
       const v = srcs.length ? srcs.reduce((t, s) => t + s, 0) / srcs.length * +ds.wind * pct / 100 : 0;
       ds.cur = v; b.textContent = f(v);
     }
