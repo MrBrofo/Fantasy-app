@@ -1040,6 +1040,21 @@ function lineupMove() {
 }
 const bestMove = lineupMove();
 const pickupMove = s => ({ label: s.add.wa ? 'Put in this waiver claim on ESPN' : 'Do this pickup on ESPN', type: s.add.wa ? 'WAIVER' : 'FREEAGENT', items: [{ type: 'ADD', playerId: s.add.id }, { type: 'DROP', playerId: s.drop.id }] });
+// memo.sent = key -> when sent; memo.q = my players who were questionable last run; memo.downSince = source -> since when
+let memo = { sent: {}, q: {}, downSince: {} }, memoOk = false;
+const memoFile = path.join(dir, 'state', 'alerts.json');
+if (fs.existsSync(memoFile)) { memo = { ...memo, ...JSON.parse(fs.readFileSync(memoFile, 'utf8')) }; memoOk = true; }
+else try {
+  const r = await fetch(`https://mrbrofo.github.io/Fantasy-app/alerts.json?t=${Date.now()}`);
+  if (r.status === 404) memoOk = true; // first run ever
+  else if (r.ok) { memo = { ...memo, ...await r.json() }; memoOk = true; }
+} catch {}
+// When ESPN starts the next week. It publishes no time, so the first update that sees the new week number writes down
+// the moment (updates run every few minutes, so it's that close); the last 6 are kept. memo.week = the week last run saw
+if (memo.week && memo.week < week) memo.turns = [...(memo.turns ?? []), Date.now()].slice(-6);
+memo.week = week;
+const lastTurn = memo.turns?.at(-1) && new Date(memo.turns.at(-1)).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+const turnNote = lastTurn ? `last week it turned over ${lastTurn}` : "early Tuesday morning, after Monday night's game";
 const todo = [];
 for (const p of starters(me)) {
   if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) has no game this week, so he'll score 0.`, bestMove, [p]]);
@@ -1062,7 +1077,7 @@ for (const p of me.roster) {
     const [w] = [p, ...baseRoster.filter(x => x.slot === 'Bench')].sort((a, b) => rate(a) - rate(b));
     // he'd be the first cut once he's back, so keeping him in IR gains nothing: drop him now and the IR spot is open for the
     // next injury. Shown any time, with or without a return date (ESPN clears the date once it passes)
-    if (w === p) todo.push(['week', `Drop ${p.name}`, `${p.inj?.back ? `He may be back around ${dateStr(p.inj.back)}, but even` : 'Even'} healthy he'd be your worst player (expected ${n(rate(p))} a game the rest of the season), so you'd drop him once he's back anyway. Holding him in IR gains nothing, and dropping him now opens the IR spot for your next injury.${locked(p) ? " His game has started, so ESPN won't let you drop him until the week turns over." : ''}`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }, [p]]);
+    if (w === p) todo.push(['week', `Drop ${p.name}`, `${p.inj?.back ? `He may be back around ${dateStr(p.inj.back)}, but even` : 'Even'} healthy he'd be your worst player (expected ${n(rate(p))} a game the rest of the season), so you'd drop him once he's back anyway. Holding him in IR gains nothing, and dropping him now opens the IR spot for your next injury.${locked(p) ? ` His game has started, so ESPN won't let you drop him until the week turns over (${turnNote}).` : ''}`, locked(p) ? null : { label: 'Drop him on ESPN', type: 'ROSTER', items: [{ type: 'DROP', playerId: p.id }] }, [p]]);
     else if (p.inj?.back && p.inj.back - Date.now() < 8 * 864e5) todo.push(['later', `${p.name} may be back around ${dateStr(p.inj.back)}`, `When ESPN takes him off IR you have to move him to your bench, which needs an open bench spot. Plan who you'd drop. Easiest: drop ${w.name} (expected ${n(rate(w))} a game the rest of the season).`, null, [p]]);
   }
 }
@@ -1084,15 +1099,6 @@ const etNow = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', w
 const etHour = Number(etNow.find(x => x.type === 'hour').value), etDay = etNow.find(x => x.type === 'weekday').value;
 const notStarted = p => kickoff(p) > Date.now();
 const soon = (p, hours) => notStarted(p) && kickoff(p) - Date.now() < hours * 3600e3;
-// memo.sent = key -> when sent; memo.q = my players who were questionable last run; memo.downSince = source -> since when
-let memo = { sent: {}, q: {}, downSince: {} }, memoOk = false;
-const memoFile = path.join(dir, 'state', 'alerts.json');
-if (fs.existsSync(memoFile)) { memo = { ...memo, ...JSON.parse(fs.readFileSync(memoFile, 'utf8')) }; memoOk = true; }
-else try {
-  const r = await fetch(`https://mrbrofo.github.io/Fantasy-app/alerts.json?t=${Date.now()}`);
-  if (r.status === 404) memoOk = true; // first run ever
-  else if (r.ok) { memo = { ...memo, ...await r.json() }; memoOk = true; }
-} catch {}
 const alerts = []; // [key, title, body, urgent]
 
 // --- Advice check: every update, re-test the advice against plain rules a smart manager uses. A failure shows on
