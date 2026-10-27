@@ -2717,14 +2717,16 @@ function gcField(F, A, H, ball, from, first, fx) {
     }
     // the last play: a wide arrow from where it started to the ball, arcing up for a pass and flat on the turf for a run
     if (F.play) {
-      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), x1 = fx(td ? ball : own(y1)) - Math.sign(fx(td ? ball : own(y1)) - x0) * 1.5, len = Math.abs(x1 - x0); // tip stops short of the ball so it shows; a touchdown runs on to the scorer in the middle of the end zone
+      const [y0, y1, tid, type] = F.play, own = y => tid === A[0] ? y : 100 - y, x0 = fx(own(y0)), xe = fx(td ? ball : own(y1)), x1 = xe - Math.sign(xe - x0) * Math.min(1.5, Math.abs(xe - x0) * 0.1), len = Math.abs(x1 - x0), loss = !td && y1 < y0;
+      // the tip stops short of the ball so it shows (less on a short play); a touchdown runs on to the scorer in the middle
+      // of the end zone; lost yards point back and are red; a short pass lies flat so its head reads
       if (len > 1) {
-        const z = 26.65, H = /pass|reception|interception/i.test(type) ? Math.min(7, 1.5 + len * 0.22) : 0, uh = 1 - Math.min(4, len * 0.6) / len;
+        const z = 26.65, H = /pass|reception|interception/i.test(type) && len >= 5 ? Math.min(7, 1.5 + len * 0.22) : 0, uh = 1 - Math.min(4, len * 0.4) / len;
         const at = (u, dz, lift) => { const q = pt(x0 + (x1 - x0) * u, z + dz, lift ? H * 4 * u * (1 - u) : 0); return q[0].toFixed(1) + ',' + q[1].toFixed(1); };
         const us = Array.from({ length: 25 }, (_, i) => uh * i / 24), back = [...us].reverse();
         const shape = lift => [...us.map(u => at(u, -2.2, lift)), at(uh, -4.5, lift), at(1, 0, lift), at(uh, 4.5, lift), ...back.map(u => at(u, 2.2, lift))].join(' ');
         const g0 = pt(x0, z), g1 = pt(x1, z);
-        o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>' +
+        o += '<linearGradient id="gcPlay" gradientUnits="userSpaceOnUse" x1="' + g0[0].toFixed(1) + '" y1="0" x2="' + g1[0].toFixed(1) + '" y2="0"><stop offset="0" stop-color="' + (loss ? '#f87171' : '#fff') + '" stop-opacity=".5"/><stop offset="1" stop-color="' + (loss ? '#ef4444' : '#fff') + '" stop-opacity=".95"/></linearGradient>' +
           (gcFly ? '<clipPath id="gcReveal"><rect x="0" y="0" width="1600" height="600"/></clipPath>' : '') +
           '<g class="gc-trail"' + (gcFly ? ' clip-path="url(#gcReveal)"' : '') + '><polygon points="' + shape(true) + '" fill="url(#gcPlay)"/></g>';
       }
