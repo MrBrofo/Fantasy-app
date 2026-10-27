@@ -1988,10 +1988,16 @@ details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 /* Watch: live game. The field is 120 yards (two 10-yard end zones), stripes every 10 */
 #gc{margin-top:14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
 .gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
-.gc-field{position:relative;height:46px;margin-top:12px;border-radius:6px;overflow:hidden;background:repeating-linear-gradient(90deg,#2e7a33 0 8.3333%,#36893b 8.3333% 16.6667%)}
-.gc-field i{position:absolute;top:0;bottom:0}.gc-field .ez{width:8.3333%;display:grid;place-items:center;color:#fff;font:700 9px system-ui,sans-serif;font-style:normal;writing-mode:vertical-rl}
-.gc-field .fd{width:3px;margin-left:-1.5px;background:#f5d90a}.gc-field .drv{top:50%;bottom:auto;height:3px;margin-top:-1.5px;background:#ffffffaa}
-.gc-field .bl{top:50%;bottom:auto;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #0008}.gc-field .bl.rz{background:var(--bad)}
+/* The field leans back like a TV shot: a flat strip rotated away from you */
+.gc-3d{perspective:520px;perspective-origin:50% 0;margin:-24px 0 8px}
+.gc-field{position:relative;height:150px;transform:rotateX(42deg);transform-origin:50% 100%;border:2px solid #fff;border-radius:6px;overflow:hidden;background:repeating-linear-gradient(90deg,#2f7d34 0 8.3333%,#38903d 8.3333% 16.6667%);box-shadow:0 18px 30px -10px #000a}
+.gc-field i{position:absolute;top:0;bottom:0;font-style:normal}.gc-field .yl{left:8.3333%;right:8.3333%;background:repeating-linear-gradient(90deg,#ffffffb0 0 2px,transparent 2px 5%),repeating-linear-gradient(90deg,transparent 0 calc(1% - 1px),#ffffff70 calc(1% - 1px) 1%) 0 12px/100% 8px no-repeat,repeating-linear-gradient(90deg,transparent 0 calc(1% - 1px),#ffffff70 calc(1% - 1px) 1%) 0 calc(100% - 12px)/100% 8px no-repeat;border-right:2px solid #ffffffb0}
+.gc-field .ez{width:8.3333%;display:grid;place-items:center;color:#fff;font:800 13px system-ui,sans-serif;letter-spacing:.12em;writing-mode:vertical-rl;text-shadow:0 1px 2px #0008}.gc-field .ez:first-child{transform:rotate(180deg)}
+.gc-field .n{top:auto;bottom:22px;width:30px;margin-left:-15px;text-align:center;color:#ffffffd0;font:700 13px system-ui,sans-serif}.gc-field .n.t{top:22px;bottom:auto;transform:rotate(180deg)}
+.gc-field .fd{width:4px;margin-left:-2px;background:#f5d90a;box-shadow:0 0 6px #f5d90a}.gc-field .ls{width:4px;margin-left:-2px;background:#3b82f6}
+.gc-field .drv{top:50%;bottom:auto;height:8px;margin-top:-4px;border-radius:4px;background:#ffffff55}
+.gc-field .bl{top:50%;bottom:auto;width:26px;height:15px;margin:-7.5px 0 0 -13px;border-radius:50%;background:radial-gradient(#a0522d,#6b3410);box-shadow:0 3px 4px #000a;border:1px solid #3a1c08}
+.gc-field .bl::after{content:'';position:absolute;left:7px;right:7px;top:6px;height:2px;background:#fff}.gc-field .bl.rz{box-shadow:0 0 0 3px var(--bad),0 3px 4px #000a}
 .gc-p{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.gc-p small{color:var(--muted);text-align:right}
 html.term .gc-field{border-radius:0}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sheet-card{animation:fade .2s ease-out}@keyframes fade{from{opacity:0}}
@@ -2677,11 +2683,12 @@ function drawGc() {
   const who = side => Object.values(P).filter(q => q.side === side && ids.includes(q.pro)).map(q => '<div class="gc-p"><span>' + e(q.name) + '</span><b>' + f1(LD.players?.[q.id]?.[0] ?? 0) + '</b></div>').join('') || '<p class="tag" style="margin:0">None</p>';
   box.innerHTML = '<div class="gc-score">' + F.teams.map(t => '<div' + (t[0] === F.poss ? ' class="has"' : '') + '><span>' + e(t[1]) + '</span><b>' + t[2] + '</b></div>').join('') + '<small>' + e(g[1]) + '</small></div>' +
     (F.down ? '<div class="stat gc-sit"><div><b>' + e(F.down) + '</b><small>down</small></div><div><b>' + e(F.spot) + '</b><small>ball on</small></div><div><b>' + e(F.drive.split(',').slice(0, 2).join(',') || '-') + '</b><small>drive</small></div></div>' : '') +
-    '<div class="gc-field" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '">' +
-      '<i class="ez" style="left:0;background:#' + e(A[3] || '333') + '">' + e(A[1]) + '</i><i class="ez" style="right:0;background:#' + e(H[3] || '333') + '">' + e(H[1]) + '</i>' +
+    '<div class="gc-3d"><div class="gc-field" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '">' +
+      '<i class="ez" style="left:0;background:#' + e(A[3] || '333') + '">' + e(A[1]) + '</i><i class="ez" style="right:0;background:#' + e(H[3] || '333') + '">' + e(H[1]) + '</i><i class="yl"></i>' +
+      [10, 20, 30, 40, 50, 60, 70, 80, 90].map(y => ['', ' t'].map(t => '<i class="n' + t + '" style="left:' + x(y) + '">' + Math.min(y, 100 - y) + '</i>').join('')).join('') +
       (F.poss ? '<i class="drv" style="left:' + x(Math.min(from, ball)) + ';width:' + Math.abs(ball - from) / 120 * 100 + '%"></i>' : '') +
       (first != null ? '<i class="fd" style="left:' + x(first) + '"></i>' : '') +
-      (F.poss ? '<i class="bl' + (F.rz ? ' rz' : '') + '" style="left:' + x(ball) + '"></i>' : '') + '</div>' +
+      (F.poss ? '<i class="ls" style="left:' + x(ball) + '"></i><i class="bl' + (F.rz ? ' rz' : '') + '" style="left:' + x(ball) + '"></i>' : '') + '</div></div>' +
     (F.last ? '<p class="why" style="margin:10px 0 0"><b>Last play:</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
