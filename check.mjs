@@ -359,3 +359,8 @@ console.log('ok');
   const k1 = { ...consts, slotCounts: { ...consts.slotCounts, 17: 1 } };
   const w = new Function(...Object.keys(k1), 'me', 'Date', code)(...Object.values(k1), { roster: [...ks, rb] }, { now: () => NOW }).weakness;
   assert.ok(w(ks[2]) < w(rb) && w(ks[1]) < w(rb) && w(ks[0]) > w(rb)); console.log('spare kicker ok'); }
+// a rest-of-season pickup that drops this week's starter pays for the points lost this week
+{ const ros = [{ ...pl(50, 'RB', 'RB', 20, 2), ros: 5 }, { ...pl(51, 'RB', 'RB', 15, 2), ros: 12 }], fa = { ...pl(52, 'RB', 'FA', 3, 4), ros: 8 };
+  const k2 = { ...consts, slotCounts: { 2: 2, 20: 0, 21: 0 }, allFa: [fa] };
+  const r2 = new Function(...Object.keys(k2), 'me', 'Date', code)(...Object.values(k2), { roster: ros }, { now: () => NOW });
+  assert.equal(r2.bestSwap(ros, r2.seasonValue).length, 0); console.log('week cost ok'); }
