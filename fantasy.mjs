@@ -2681,7 +2681,8 @@ function gcField(F, A, H, ball, from, first, fx) {
   const zone = (x1, t, rot, scored) => { const c = pt(x1 + 5, 26.65); return quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(t[3] || '333') + '" style="mix-blend-mode:multiply"') +
     (scored ? '<g class="gc-tdz" style="opacity:.7">' + quad(x1, x1 + 10, 0, 53.3, 'fill="#' + e(tdTeam[3] || '333') + '"') + quad(x1, x1 + 10, 0, 53.3, 'fill="#fff" fill-opacity=".25"') + '</g><g class="gc-tdt">' + paint(x1, 'TOUCHDOWN') + '</g>' : '') +
     (scored ? '' : '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '" font-size="48" fill="#fff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" letter-spacing="6" transform="rotate(' + rot + ' ' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ')">' + e(t[1]) + '</text>'); };
-  let o = '<image href="field.webp" width="1600" height="490"/>' + zone(0, A, -50, td && tdLeft) + zone(110, H, 50, td && !tdLeft);
+  // field-jump.webp is the same render with about a third of the fans in the air: shown in turns after a play, the crowd jumps
+  let o = '<image href="field.webp" width="1600" height="490"/><image class="gc-jump" href="field-jump.webp" width="1600" height="490" opacity="0"/>' + zone(0, A, -50, td && tdLeft) + zone(110, H, 50, td && !tdLeft);
   if (F.poss && !td) o += quad(fx(Math.min(from, ball)), fx(Math.max(from, ball)), 21, 32.3, 'fill="#fff" fill-opacity=".1"');
   if (first != null) o += line(fx(first), '#f5d90a');
   if (F.poss || td) {
@@ -2737,7 +2738,7 @@ function gcField(F, A, H, ball, from, first, fx) {
   return '<svg class="gc-fs" viewBox="' + (cx - 480).toFixed(0) + ' 0 960 470" role="img" aria-label="' + e((F.teams.find(t => t[0] === F.poss)?.[1] ?? '') + ' ball on ' + F.spot) + '"><defs><radialGradient id="gcShadow"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>' + o + '</svg>';
 }
 // A new play plays out: the passer fades in over GC_LEAD ms, then over GC_FLY ms the ball moves along gcFly (its path in the air, and its shadow's on the turf)
-const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 1800;
+const GC_LEAD = 250, GC_FLY = 1400, GC_TD = 1800, GC_CHEER = 2000, GC_TD_CHEER = 3500;
 let gcKey = '', gcAt = 0, gcFly = null, gcRun = null;
 function gcAnimate() {
   const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly, run = gcRun = {};
@@ -2768,7 +2769,10 @@ function gcAnimate() {
       if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
     }
     if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(1, Math.max(0, (t - 0.6) / 0.3));
-    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0)) requestAnimationFrame(step);
+    // the crowd jumps for a couple of seconds once the ball gets there, longer for a touchdown
+    const cheer = (F.td ? GC_TD_CHEER : GC_CHEER) / 1000, jump = document.querySelector('#gc .gc-jump');
+    if (jump) jump.setAttribute('opacity', tl >= 0 && tl < cheer && Math.floor(tl * 6) % 2 === 0 ? 1 : 0);
+    if (t < 1 || tl < cheer || (F.td && conf !== null)) requestAnimationFrame(step);
   };
   step();
 }
@@ -2830,7 +2834,7 @@ function drawGc() {
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
   if (html === box.gcHtml) return;
   box.innerHTML = box.gcHtml = html;
-  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD) gcAnimate();
+  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD_CHEER) gcAnimate();
 }
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 document.addEventListener('click', ev => {
