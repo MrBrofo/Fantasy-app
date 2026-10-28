@@ -2096,7 +2096,7 @@ dl{margin:0}dt{font-weight:700;margin-top:12px}dd{margin:2px 0 0;color:var(--mut
 .vhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
 [class^=verdict-]{flex:none;font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px}
 .verdict-good{background:var(--goodbg);color:var(--good)}.verdict-bad{background:var(--badbg);color:var(--bad)}.verdict-meh{background:var(--chip);color:var(--muted)}
-footer{color:var(--muted);font-size:12px;text-align:center;margin-top:32px}
+
 .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 #refresh{flex:none;position:relative;background:rgba(255,255,255,.06);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font:600 13px Geist,system-ui,sans-serif;cursor:pointer;transition:transform .1s ease-out}
 #refresh::after{content:'';position:absolute;inset:-6px -4px}
@@ -2195,7 +2195,7 @@ html.term #gloss b{color:var(--good);letter-spacing:.1em;text-transform:uppercas
 html.term .sheet-card{border-radius:0;border-top:1px solid #ffffff59;background:#000}
 html.term .sheet-x{border-radius:0}
 html.term .pic{border:1px solid var(--line)}
-html.term footer{letter-spacing:.1em;text-transform:uppercase;font-size:10px}
+
 /* each page boots in when you open it */
 html.term section:not(.off){animation:boot .35s ease-out}
 @keyframes boot{from{opacity:0;transform:translateY(6px)}}
@@ -2563,7 +2563,6 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 
 <section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
-<footer>Updated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })} ET &middot; new data about every 3 minutes &middot; this page checks for it every minute</footer>
 </div>
 <div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
 <script type="application/json" id="pdata">__PDATA__</script>
