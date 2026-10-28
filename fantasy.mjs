@@ -3397,9 +3397,18 @@ const askDone = (d, more) => askHtml(d.answer || 'No answer came back.') + (d.cu
 // open and again whenever it's opened; the site's update sends a notification when it's in.
 // ponytail: one slow question at a time, a new one replaces the one waiting (its notification still comes)
 let slowT = 0;
+const slowGet = () => { try { return JSON.parse(localStorage.getItem('askSlow') || 'null'); } catch { return null; } };
+// tap Cancel while one is waiting: it's dropped (not charged if it hadn't started)
+const slowCancel = () => {
+  const p = slowGet();
+  clearTimeout(slowT);
+  try { localStorage.removeItem('askSlow'); } catch {}
+  document.getElementById('askout').hidden = true; askReady();
+  if (p && LIVE) fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ cancel: p.id }) }).catch(() => {});
+};
 const slowCheck = async () => {
   clearTimeout(slowT);
-  let p = null; try { p = JSON.parse(localStorage.getItem('askSlow') || 'null'); } catch {}
+  const p = slowGet();
   const out = document.getElementById('askout');
   if (!p || !LIVE) return;
   out.hidden = false;
@@ -3407,8 +3416,10 @@ const slowCheck = async () => {
     const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ batch: p.id }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
-    if (d.pending) { out.innerHTML = '<p class="tag">Half-price answer on the way for: ' + e(p.q) + '<br>Usually a few minutes, up to a day. You&#39;ll get a notification, so you can close the app.</p>'; slowT = setTimeout(slowCheck, 30000); return; }
+    if (d.pending) { out.innerHTML = '<p class="tag">Half-price answer on the way for: ' + e(p.q) + '<br>Usually a few minutes, up to a day. You&#39;ll get a notification, so you can close the app.</p>'; slowT = setTimeout(slowCheck, 30000); askReady(); return; }
+    if (slowGet()?.id !== p.id) return; // cancelled or replaced while this check was out
     try { localStorage.removeItem('askSlow'); } catch {}
+    askReady();
     askPaid(d.cost);
     if (!p.more) askLast = d.answer || '';
     out.innerHTML = '<p class="tag">' + e(p.q) + '</p>' + askDone(d, p.more);
@@ -3441,9 +3452,10 @@ const askRun = async more => {
   askCtl = null; b.textContent = 'Ask Claude'; askReady();
 };
 // tap again while it's thinking to cancel; with an empty box there's nothing to ask
-const askReady = () => { document.getElementById('askbtn').disabled = !askCtl && !document.getElementById('askq').value.trim(); };
+// a half-price question waiting counts as busy too
+const askReady = () => { const b = document.getElementById('askbtn'), busy = askCtl || slowGet(); b.textContent = busy ? 'Cancel' : 'Ask Claude'; b.disabled = !busy && !document.getElementById('askq').value.trim(); };
 document.getElementById('askq').addEventListener('input', askReady); askReady();
-document.getElementById('askbtn').onclick = () => askCtl ? askCtl.abort() : askRun(false);
+document.getElementById('askbtn').onclick = () => askCtl ? askCtl.abort() : slowGet() ? slowCancel() : askRun(false);
 document.getElementById('askout').addEventListener('click', ev => { if (ev.target.id === 'askmore') askRun(true); });
 // Talk to type: the phone's own speech-to-text fills the box as you talk; tap again to stop. Hidden where the browser
 // has none (then the keyboard's mic key does the same)

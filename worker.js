@@ -121,7 +121,7 @@ async function slow(req, env) {
   if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
   if (!env.ANTHROPIC_API_KEY) return reply(200, { done: [] });
   const page = await new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }).messages.batches.list({ limit: 20 });
-  return reply(200, { done: page.data.filter(b => b.processing_status === 'ended' && Date.now() - Date.parse(b.ended_at) < 864e5).map(b => b.id) });
+  return reply(200, { done: page.data.filter(b => b.processing_status === 'ended' && b.request_counts.succeeded > 0 && Date.now() - Date.parse(b.ended_at) < 864e5).map(b => b.id) });
 }
 
 async function ask(req, env) {
@@ -135,6 +135,8 @@ async function ask(req, env) {
   const PRICE = { sonnet: [2, 10, 2.5, 0.2], haiku: [0.1, 0.5, 0.125, 0.01] };
   let cost = 0;
   const bill = (which, u) => { const [i, o, w, rd] = PRICE[which]; cost += ((u?.input_tokens ?? 0) * i + (u?.output_tokens ?? 0) * o + (u?.cache_creation_input_tokens ?? 0) * w + (u?.cache_read_input_tokens ?? 0) * rd) / 1e6; };
+  // Cancel on the page: drop the waiting half-price question
+  if (typeof m.cancel === 'string' && /^msgbatch_[A-Za-z0-9_]+$/.test(m.cancel)) { await client.messages.batches.cancel(m.cancel).catch(() => null); return reply(200, { ok: true }); }
   // Slow: the page asks again with the batch id until the half-price answer is in
   if (typeof m.batch === 'string' && /^msgbatch_[A-Za-z0-9_]+$/.test(m.batch)) {
     const b = await client.messages.batches.retrieve(m.batch);
