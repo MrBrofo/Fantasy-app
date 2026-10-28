@@ -19,21 +19,72 @@ const page = p => () => {
 };
 const [Moves, Trades, Team, Season, AskP, League] = ['moves', 'trades', 'team', 'season', 'ask', 'league'].map(page);
 
+// the phone spins around a few times (its back shows the logo) and lands facing you
+const PhoneBack = () => (
+  <div style={{ position: 'absolute', left: -390, top: -844, width: 780, height: 1688, borderRadius: 110, background: 'linear-gradient(150deg,#26262b,#0d0d10 60%)', border: '6px solid #2c2c30', boxShadow: '0 60px 160px rgba(0,0,0,.8)' }}>
+    <div style={{ position: 'absolute', left: 50, top: 50, width: 260, height: 260, borderRadius: 70, background: '#18181c', border: '3px solid #333' }}>
+      {[[40, 40], [140, 40], [40, 140]].map(([x, y]) => <div key={x + ',' + y} style={{ position: 'absolute', left: x, top: y, width: 80, height: 80, borderRadius: '50%', background: 'radial-gradient(#2a3550, #050508 70%)', border: '4px solid #3a3a40' }} />)}
+    </div>
+    <Img src={staticFile('icon-512.png')} style={{ position: 'absolute', left: 250, top: 700, width: 280, height: 280, borderRadius: 64, opacity: 0.9 }} />
+  </div>
+);
+const spinner = (turns, dur) => () => {
+  const f = useCurrentFrame(), p = interpolate(f, [0, dur], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const ry = -360 * turns * (1 - p), fast = 1 - p, face = { position: 'absolute', backfaceVisibility: 'hidden', transformStyle: 'preserve-3d' };
+  return (
+    <AbsoluteFill style={{ perspective: 2200, filter: `blur(${fast * 5}px)` }}>
+      <div style={{ position: 'absolute', left: '50%', top: '50%', transformStyle: 'preserve-3d', transform: `scale(${0.7 + p * 0.2}) rotateX(${fast * 14}deg) rotateZ(${fast * -10}deg) rotateY(${ry}deg)` }}>
+        <div style={face}><Screen page="home" /></div>
+        <div style={{ ...face, transform: 'rotateY(180deg)' }}><PhoneBack /></div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+const Spin = spinner(2, 40), SpinFast = spinner(3, 30);
+
+// the points predictor: it dips, then climbs higher and higher while the camera pushes in, landing on the hit
+const Predictor = () => {
+  const f = useCurrentFrame(), N = 47;
+  const v = t => (t < 12 ? 112 - 28 * Easing.inOut(Easing.quad)(t / 12) : 84 + 67 * Math.min(1, (t - 12) / 32) ** 2.2);
+  const now = v(Math.min(f, 44)), up = now >= 112, c = up ? GLASS.good : GLASS.bad;
+  const climb = Math.max(0, Math.min(1, (f - 12) / 35)), push = 1 + 0.55 * climb ** 2, jit = climb ** 3 * 6;
+  const pts = []; for (let t = 0; t <= Math.min(f, 44); t++) pts.push([40 + (t / 44) * 720, 360 - (v(t) - 70) * 3.6]);
+  return (
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ width: 860, transformOrigin: '38% 30%', transform: `scale(${push}) translate(${Math.sin(f * 3.1) * jit}px, ${Math.cos(f * 2.3) * jit}px)`, background: GLASS.card, borderRadius: 52, padding: 44, fontFamily: SANS }}>
+        <div style={{ fontSize: 30, color: GLASS.muted, fontWeight: 800 }}>Projected points</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 20 }}>
+          <div style={{ fontSize: 170, fontWeight: 900, letterSpacing: '-.04em', color: c, textShadow: up ? `0 0 ${20 + climb * 60}px ${c}88` : 'none', fontVariantNumeric: 'tabular-nums' }}>{now.toFixed(1)}</div>
+          <div style={{ fontSize: 44, fontWeight: 800, color: c }}>{up ? '▲' : '▼'} {Math.abs(now - 112).toFixed(1)}</div>
+        </div>
+        <svg width={760} height={380} style={{ overflow: 'visible' }}>
+          <line x1={40} x2={760} y1={360 - 42 * 3.6} y2={360 - 42 * 3.6} stroke="#ffffff30" strokeDasharray="8 10" strokeWidth={3} />
+          <polyline points={pts.map(p => p.join(',')).join(' ')} fill="none" stroke={c} strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 ${8 + climb * 20}px ${c})` }} />
+          {pts.length > 0 && <circle cx={pts.at(-1)[0]} cy={pts.at(-1)[1]} r={14} fill="#fff" style={{ filter: `drop-shadow(0 0 16px ${c})` }} />}
+        </svg>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 // [from, to, shot, offset into it, caption, caption delay]
 const CLIPS = [[0, 33, Matchup, 75], [33, 64, Board, 0], [64, 97, Macro, 60], [97, 128, Side, 60], [128, 153, Orbit, 60], [153, 186, Carousel, 40],
   [186, 215, Play, 50, 'live plays while you watch', 10], [215, 246, Sheet, 20, 'tap any player'],
   [246, 276, Tour, 0, 'whole league in one app'], [276, 301, Flip, 30, 'two looks'],
   [301, 329, Alert, 30, 'pings you when you score'], [329, 358, Fly, 50, 'live win odds'],
   [358, 379, Wall, 20], [379, 410, League, 0, null], [410, 435, Field3D, 70, 'the game drawn out live'],
-  [435, 482, Moves, 0, 'tells you who to pick up'], [482, 530, Trades, 0, 'finds trades that fleece ppl'],
-  [530, 577, Team, 0, 'who to start'], [577, 614, Season, 0, 'your playoff odds'],
-  [614, 649, Fan, 60], [649, 703, AskP, 0, 'ask it anything about your team', 22],
-  [703, 750, Orbit, 40, "finds who'll overpay"], [750, 788, Macro, 40, 'lucky or actually good'],
-  [788, 838, Tabs, 10, 'all in 5 tabs'], [838, 879, Carousel, 60], [879, 908, Fly, 40], [908, 941, Wall, 60]];
-const END = 941; // the ows start: end card from here, fading out with the song
+  // from here on every cut sits on the song's beat grid (152 bpm: beat n at 0.305 + 0.3945n s): every 2 beats,
+  // single beats into the hits, 4 beats for the spin, the points climb and Ask
+  [435, 459, Moves, 0, 'tells you who to pick up'], [459, 483, Trades, 0, 'finds trades that fleece ppl'],
+  [483, 506, Team, 0, 'who to start'], [506, 530, Season, 0, 'your playoff odds'],
+  [530, 577, Spin, 0], [577, 601, Fan, 60], [601, 648, Predictor, 0, 'projects your points', 4],
+  [648, 696, AskP, 0, 'ask it anything about your team', 14], [696, 719, Orbit, 40, "finds who'll overpay"],
+  [719, 743, Macro, 40, 'lucky or actually good'], [743, 790, Tabs, 10, 'all in 5 tabs'], [790, 814, Flip, 30],
+  [814, 826, Field3D, 70], [826, 838, Wall, 60], [838, 885, Carousel, 60], [885, 909, Fly, 40], [909, 944, SpinFast, 0]];
+const END = 944; // beat 79: the ows start; end card from here, fading out with the song
 export const E2_LEN = 1029;
 const X = 8; // crossfade frames: each clip runs this much past its cut, under the next one fading in
-const HITS = [186, 246, 270, 329, 379, 435, 649, 838, 941]; // the song's biggest hits: shake, flash, light leak
+const HITS = [186, 246, 270, 329, 379, 435, 648, 838, 944]; // the song's biggest hits: shake, flash, light leak
 const sinceHit = f => { const h = HITS.findLast(a => a <= f); return h === undefined ? 99 : f - h; };
 const ease = (f, a, b) => interpolate(f, [a, b], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
 
@@ -143,10 +194,13 @@ const SFX = [
   [258, 'swipe', 0.35], // tour swipes to the next page
   [286, 'whoosh', 0.4], // look flips
   [306, 'ding', 0.45], // notification drops in
-  [64, 'shutter', 0.4], [750, 'shutter', 0.4], // close-ups
-  ...[660, 664, 667, 671, 674, 678, 683, 686].map(a => [a, 'tick', 0.15]), // typing on the Ask page
-  [796, 'tick', 0.5], [826, 'tick', 0.5], // tab taps
-  [903, 'riser', 0.5], [END, 'impact', 0.7], [END, 'shimmer', 0.5],
+  [64, 'shutter', 0.4], [719, 'shutter', 0.4], // close-ups
+  [530, 'whoosh', 0.45], [541, 'whoosh', 0.35], [553, 'swipe', 0.3], [909, 'whoosh', 0.45], [917, 'whoosh', 0.35], // phone spins
+  [601, 'fall', 0.5], [612, 'climb', 0.7], // points dip, then climb into the hit
+  ...[652, 656, 659, 663, 666, 670, 675, 678].map(a => [a, 'tick', 0.15]), // typing on the Ask page
+  [751, 'tick', 0.5], [781, 'tick', 0.5], // tab taps
+  [800, 'whoosh', 0.4], // look flips
+  [906, 'riser', 0.5], [END, 'impact', 0.7], [END, 'shimmer', 0.5],
 ];
 const Sfx = () => SFX.map(([a, n, v], i) => <Sequence key={i} from={a}><Audio src={staticFile(`sfx/${n}.wav`)} volume={v * 0.75} /></Sequence>);
 
@@ -173,7 +227,7 @@ export const Edit2 = () => {
           {CLIPS.filter(c => c[4]).map(([a, b, , , text, d = 0]) => <Cap key={a} at={a + d} len={b - a - d} text={text} />)}
         </AbsoluteFill>
         <Sequence from={END}><End /></Sequence>
-        {HITS.map(a => <Flash key={a} at={a} len={6} peak={[186, 379, 649, 838].includes(a) ? 0.75 : 0.35} />)}
+        {HITS.map(a => <Flash key={a} at={a} len={6} peak={[186, 379, 648, 838].includes(a) ? 0.75 : 0.35} />)}
         <Grain amount={0.07} />
         <Audio src={staticFile('ref/song2long.m4a')} volume={0.55} />
         <Sfx />
