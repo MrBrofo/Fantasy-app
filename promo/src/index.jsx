@@ -1,7 +1,8 @@
 import { registerRoot, Composition } from 'remotion';
 import { Promo } from './Promo';
 import { Angles, ANGLES_LEN } from './Angles';
-import { Edit1, E1_LEN, Edit2, E2_LEN } from './Edits';
+import { Edit1, E1_LEN } from './Edits';
+import { Edit2, E2_LEN } from './Edit2';
 
 registerRoot(() => (
   <>
