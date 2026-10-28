@@ -6,6 +6,7 @@ argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 OUT = argv[0] if argv else 'helmet.png'
 SIZE = int(argv[1]) if len(argv) > 1 else 512
 SAMPLES = int(argv[2]) if len(argv) > 2 else 32
+LOOK = argv[3] if len(argv) > 3 else 'white'  # white: white shell, blue stripe; blue: bright blue shell, white stripe
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -25,7 +26,7 @@ def srgb(h):
     c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
     return tuple(x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c)
 
-SHELL = mat('shell', srgb('#0a6cff'), rough=0.22, metal=0.45, coat=1.0)
+SHELL = mat('shell', srgb('#eef3fa'), rough=0.2, metal=0.05, coat=1.0) if LOOK == 'white' else mat('shell', srgb('#3d95ff'), rough=0.2, metal=0.3, coat=1.0)
 WHITE = mat('white', srgb('#f4f7fb'), rough=0.3, coat=0.6)
 MASK = mat('mask', srgb('#2a2f38'), rough=0.3, metal=0.6)
 DARK = mat('dark', srgb('#06101e'), rough=0.6)
@@ -79,8 +80,9 @@ def stripe(r, w, m):
     for c in cuts: boolean(o, c)
     st = box((0, 0, 0), (2, w, 2)); boolean(o, st, 'INTERSECT'); st.hide_render = st.hide_viewport = True
     o.data.materials.clear(); o.data.materials.append(m)
+BLUE = mat('blue', srgb('#0a6cff'), rough=0.2, metal=0.3, coat=1.0)
 stripe(1.008, 0.15, NAVY)
-stripe(1.014, 0.095, WHITE)
+stripe(1.014, 0.095, BLUE if LOOK == 'white' else WHITE)
 
 # dark padding inside, so the face opening shows shadow, not the shell's inside
 pad = shell(0.9); boolean(pad, cuts[1]); pad.data.materials.clear(); pad.data.materials.append(DARK)
@@ -131,7 +133,7 @@ def light(loc, energy, size, color=(1, 1, 1)):
     l = bpy.data.objects.new('l', bpy.data.lights.new('l', 'AREA')); sc.collection.objects.link(l)
     l.location = loc; l.data.energy = energy; l.data.size = size; l.data.color = color
     l.rotation_euler = (Vector((0, 0, 0)) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
-light((-3, -4, 5), 220, 4)                    # big soft key, top left
+light((-3, -4, 5), 220 if LOOK == 'white' else 330, 4)                    # big soft key, top left
 light((4, 3, 2), 260, 2, (0.55, 0.75, 1))     # cool rim from behind right
 light((-4, 3, -1), 160, 2, (1, 1, 1))          # rim on the back edge
 light((3, -3, -3), 30, 3)                     # fill from below
