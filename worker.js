@@ -179,10 +179,11 @@ async function ask(req, env) {
     ? [{ type: 'text', text: core.join('\n\n'), cache_control: { type: 'ephemeral' } }, { type: 'text', text: m.text.slice(fixed) }]
     : m.text }];
   let r;
-  // ponytail: 3 rounds of look_up, then it answers with what it has
+  // ponytail: 3 rounds of look_up, then it answers with what it has. Low effort: less thinking billed, and the answers are
+  // short anyway
   for (let round = 0; ; round++) {
     r = await client.beta.messages.create({
-      model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'medium' },
+      model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'low' },
       system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Keep it short: the answer first, then the main reasons, 6 short lines or bullets at most, plain words, no tables or headings. Give a clear pick when asked to choose. Only when I ask you to tell me more, explain in full detail.',
       ...(tools ? { tools, tool_choice: round < 3 ? { type: 'auto' } : { type: 'none' } } : {}),
       messages: msgs,
@@ -190,10 +191,13 @@ async function ask(req, env) {
     bill(smart ? 'sonnet' : 'haiku', r.usage);
     if (r.stop_reason !== 'tool_use') break;
     msgs.push({ role: 'assistant', content: r.content });
-    msgs.push({ role: 'user', content: r.content.filter(b => b.type === 'tool_use').map(b => ({
+    const res = r.content.filter(b => b.type === 'tool_use').map(b => ({
       type: 'tool_result', tool_use_id: b.id,
       content: (Array.isArray(b.input?.drawers) ? b.input.drawers : []).map(d => drawers[d] ?? `No drawer called "${d}".`).join('\n\n') || 'No drawer named.',
-    })) });
+    }));
+    // cache up to the drawers just opened, so the next round reads all of it at a tenth of the price instead of paying again
+    if (res.length) res[res.length - 1].cache_control = { type: 'ephemeral' };
+    msgs.push({ role: 'user', content: res });
   }
   if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.', cost });
   return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Sonnet' : 'Haiku', cost });
