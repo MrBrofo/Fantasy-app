@@ -1,21 +1,16 @@
 // Edit 2, in the style of the history edit Brody sent: words land on the kicks, slow zooms with zoom-blur crossfades,
-// punch lines on the hits, and a short caption on each feature, all typed the plain TikTok way.
+// punch lines on the hits, and a short caption on each feature.
 // Song: Brody's longer recording slowed to 0.8x (same speed and pitch as the short clip), bass boosted, starting where the
 // short clip did. Frames 0-494 match the short clip; the rest follows the kicks to the "ow" chops at 31.4s, then fades.
-import { AbsoluteFill, Audio, Img, Sequence, interpolate, staticFile, useCurrentFrame, Easing, delayRender, continueRender } from 'remotion';
+import { AbsoluteFill, Audio, Img, Sequence, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
+import { loadFont as interTight } from '@remotion/google-fonts/InterTight';
 import { GLASS, Look, Bg, clamp, usePop } from './theme';
 import { Matchup, Play } from './Promo';
 import { Screen } from './screens';
 import { Side, Fly, Orbit, Wall, Flip, Macro, Tabs, Board, Field3D, Alert, Carousel, Fan, Tour, Sheet } from './Angles';
 import { Grain, Flash } from './Edits';
 
-// TikTok Sans (TikTok's own typeface, OFL, from Google Fonts) so the text reads like it was typed in the app
-const SANS = "'TikTok Sans', sans-serif";
-if (typeof document !== 'undefined') {
-  const wait = delayRender('TikTok Sans');
-  Promise.all([500, 700, 800, 900].map(w => new FontFace('TikTok Sans', `url(${staticFile(`fonts/tiktok-${w}.ttf`)})`, { weight: String(w) }).load().then(ff => document.fonts.add(ff))))
-    .then(() => continueRender(wait));
-}
+const SANS = interTight('normal', { weights: ['800', '900'] }).fontFamily;
 
 // a page of the app, drifting slowly toward you in a slight tilt
 const page = p => () => {
@@ -77,49 +72,58 @@ const Ghost = () => {
   </AbsoluteFill>;
 };
 
-// ---- text: plain, like it was typed in TikTok. Lowercase, TikTok Sans, on the beat, no fancy fades ----
-const shadow = '0 2px 6px rgba(0,0,0,.55), 0 0 2px rgba(0,0,0,.6)';
-// a tiny bump when something lands, the way text "hits" in an edit (3 frames, then still)
-const bump = t => (t < 3 ? 1.06 - t * 0.02 : 1);
-
-// the intro line: each word just appears on its kick
-const Lines = ({ lines, words }) => {
+// ---- text ----
+// one word rising out of a slot: slides up, unblurs, letters pull in tight
+const Word = ({ w, at, f }) => {
+  const p = ease(f, at, at + 9);
+  return (
+    <span style={{ display: 'inline-block', overflow: 'hidden', verticalAlign: 'bottom', padding: '0 .14em', margin: '0 -.04em' }}>
+      <span style={{ display: 'inline-block', transform: `translateY(${(1 - p) * 105}%)`, filter: `blur(${(1 - p) * 10}px)`, letterSpacing: `${(1 - p) * 0.25 - 0.03}em` }}>{w}</span>
+    </span>
+  );
+};
+// the intro line: words come in on the kicks
+const Lines = ({ lines, words, size = 104, top = 580 }) => {
   const f = useCurrentFrame();
   let n = 0;
   return (
-    <div style={{ position: 'absolute', top: 640, width: '100%', padding: '0 70px', textAlign: 'center', fontFamily: SANS, fontWeight: 800, fontSize: 92, lineHeight: 1.12, color: '#fff', textShadow: shadow }}>
-      {lines.map(l => <div key={l}>{l.split(' ').map(w => { const at = words[n++], t = f - at; return <span key={w} style={{ display: 'inline-block', margin: '0 .13em', opacity: t >= 0 ? 1 : 0, transform: `scale(${bump(t)})` }}>{w}</span>; })}</div>)}
+    <div style={{ position: 'absolute', top, width: '100%', padding: '0 60px', textAlign: 'center', fontFamily: SANS, fontWeight: 900, fontSize: size, lineHeight: 1.0, color: '#fff', textShadow: '0 8px 40px #000c' }}>
+      {lines.map(l => <div key={l}>{l.split(' ').map(w => <Word key={w} w={w} at={words[n++]} f={f} />)}</div>)}
     </div>
   );
 };
-// a punch: big and bold on a hit, gone on the next cut
-const Punch = ({ at, len, text, size = 150 }) => {
+// a punch: one short line that lands hard on a hit (tracking snaps in, zooms down from big, blurs off at the end)
+const Punch = ({ at, len, text, size = 170 }) => {
   const f = useCurrentFrame(), t = f - at;
   if (t < 0 || t >= len) return null;
+  const p = interpolate(t, [0, 6], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.6)) }), out = ease(t, len - 6, len), q = Math.min(1, p);
   return (
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
-      <div style={{ fontFamily: SANS, fontWeight: 900, fontSize: size, lineHeight: 1, letterSpacing: '-.02em', color: '#fff', textAlign: 'center', padding: '0 50px', textShadow: shadow, transform: `scale(${t < 3 ? 1.12 - t * 0.04 : 1})` }}>{text}</div>
+      <div style={{ fontFamily: SANS, fontWeight: 900, fontSize: size, lineHeight: 1, letterSpacing: `${(1 - q) * 0.3 - 0.04}em`, color: '#fff', textAlign: 'center', padding: '0 40px', transform: `scale(${1.5 - p * 0.5 + out * 0.08}) translateY(${-out * 40}px)`, filter: `blur(${(1 - q) * 18 + out * 14}px)`, opacity: 1 - out, textShadow: `${(1 - q) * -10}px 0 #ff2a5a, ${(1 - q) * 10}px 0 #2ae0ff, 0 10px 50px #000d` }}>{text}</div>
     </AbsoluteFill>
   );
 };
-// a feature caption in TikTok's own text style: white box, black text, each line its own box
+// a feature caption, low on the screen: one short line rises in, then floats up and out before the cut
 const Cap = ({ at, len, text }) => {
   const f = useCurrentFrame(), t = f - at;
-  if (t < 0 || t >= len - 2) return null;
+  if (t < 0 || t >= len) return null;
+  const b = ease(t, 2, 12), out = ease(t, len - 7, len - 1);
   return (
-    <div style={{ position: 'absolute', left: 80, right: 80, top: 1560, textAlign: 'center', transform: `scale(${bump(t)})` }}>
-      <span style={{ fontFamily: SANS, fontWeight: 700, fontSize: 54, lineHeight: 1.5, color: '#000', background: '#fff', padding: '6px 22px', borderRadius: 14, boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}>{text}</span>
+    <div style={{ position: 'absolute', left: 0, right: 0, top: 1600, padding: '0 60px', textAlign: 'center', opacity: 1 - out, transform: `translateY(${-out * 24}px)`, filter: `blur(${out * 8}px)`, textShadow: '0 6px 30px #000' }}>
+      <div style={{ overflow: 'hidden' }}>
+        <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 66, letterSpacing: '-.025em', color: '#fff', transform: `translateY(${(1 - b) * 100}%)`, filter: `blur(${(1 - b) * 8}px)` }}>{text}</div>
+      </div>
     </div>
   );
 };
 // the end: helmet and name, riding the ows, then fading to black with the song
 const End = () => {
-  const f = useCurrentFrame(), p = usePop(0, 10), fade = ease(f, 48, 86);
+  const f = useCurrentFrame(), p = usePop(0, 10), n = ease(f, 8, 22), fade = ease(f, 48, 86);
   return (
-    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', gap: 44, background: '#000', opacity: 1 - fade }}>
-      <div style={{ position: 'absolute', width: 1000, height: 1000, borderRadius: '50%', background: 'radial-gradient(#0a84ff30, transparent 65%)', transform: `scale(${p})` }} />
-      <Img src={staticFile('icon-512.png')} style={{ width: 380, height: 380, borderRadius: 88, transform: `scale(${p * (1 + f * 0.0015)})` }} />
-      <div style={{ fontFamily: SANS, fontWeight: 900, fontSize: 130, letterSpacing: '-.02em', color: '#fff', opacity: f >= 8 ? 1 : 0 }}>gameday</div>
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', gap: 40, background: '#000', opacity: 1 - fade }}>
+      <div style={{ position: 'absolute', width: 1000, height: 1000, borderRadius: '50%', background: 'radial-gradient(#0a84ff38, transparent 65%)', transform: `scale(${p * (1 + Math.sin(f / 6) * 0.04)})` }} />
+      <Img src={staticFile('icon-512.png')} style={{ width: 380, height: 380, borderRadius: 88, transform: `scale(${p * (1 + f * 0.0015)}) rotate(${(1 - p) * -20}deg)` }} />
+      <div style={{ overflow: 'hidden' }}><div style={{ fontFamily: SANS, fontWeight: 900, fontSize: 140, letterSpacing: `${(1 - n) * 0.3 - 0.045}em`, color: '#fff', transform: `translateY(${(1 - n) * 100}%)`, filter: `blur(${(1 - n) * 10}px)` }}>gameday</div></div>
     </AbsoluteFill>
   );
 };
@@ -138,14 +142,15 @@ export const Edit2 = () => {
           <Sequence from={838} durationInFrames={54}><Ghost /></Sequence>
           <AbsoluteFill style={{ background: 'rgba(255,150,60,.05)', mixBlendMode: 'soft-light' }} />
           <AbsoluteFill style={{ background: 'radial-gradient(transparent 55%, #000a)' }} />
+          <AbsoluteFill style={{ background: 'linear-gradient(transparent 66%, #000d 90%)' }} />
           <Leak />
+          {f >= 3 && f < 182 && <Lines lines={['my league really', 'thought they could', 'fleece me']} words={[3, 9, 17, 27, 33, 47, 64, 73]} />}
+          <Punch at={186} len={24} text="not today" />
+          <Punch at={379} len={30} text="6-1 btw" />
+          <Punch at={649} len={22} text="it even has ai" size={120} />
+          <Punch at={838} len={38} text="gameday" size={190} />
+          {CLIPS.filter(c => c[4]).map(([a, b, , , text, d = 0]) => <Cap key={a} at={a + d} len={b - a - d} text={text} />)}
         </AbsoluteFill>
-        {f >= 3 && f < 184 && <Lines lines={['my league really', 'thought they could', 'fleece me']} words={[3, 9, 17, 27, 33, 47, 64, 73]} />}
-        <Punch at={186} len={22} text="not today" />
-        <Punch at={379} len={31} text="6-1 btw" size={170} />
-        <Punch at={649} len={22} text="it even has ai" size={120} />
-        <Punch at={838} len={38} text="gameday" size={180} />
-        {CLIPS.filter(c => c[4]).map(([a, b, , , text, d = 0]) => <Cap key={a} at={a + d} len={b - a - d} text={text} />)}
         <Sequence from={END}><End /></Sequence>
         {HITS.map(a => <Flash key={a} at={a} len={6} peak={[186, 379, 649, 838].includes(a) ? 0.75 : 0.35} />)}
         <Grain amount={0.07} />
