@@ -2849,7 +2849,8 @@ const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 let gcOpen = false; // the Watch view is open on this sheet
 function render(p) {
   const max = Math.max(1, ...p.games.map(g => g.pts ?? 0));
-  return '<div class="sh-top">' + (document.querySelector('[data-pid="' + p.id + '"] .pic')?.outerHTML ?? '') +
+  // not the sheet itself: it carries data-pid too, and its first photo is whoever was on the page under it
+  return '<div class="sh-top">' + (document.querySelector(':not(#sheet)[data-pid="' + p.id + '"] .pic')?.outerHTML ?? '') +
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
     '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
@@ -3800,6 +3801,7 @@ function teamPage(tid) {
     const pts = st === 'in' || st === 'post' ? '<b>' + now.toFixed(1) + ' pts</b> ' + (st === 'post' ? 'final' : 'so far &middot; ' + e(clock)) : '';
     return '<div class="card row"><span class="slot">' + (slot === 'Bench' || slot === 'IR' ? '' : e(slot)) + '</span><div class="player"' + (P[id] ? ' data-pid="' + id + '"' : '') + '>' + photo(x) +
       '<div class="who"><div class="name">' + e(x.name) + '</div><div class="meta"><span class="pos pos-' + x.pos.replace('/', '') + '">' + x.pos + '</span> ' + e(x.team || '') + '</div>' +
+      (x.status === 'healthy' || x.status === 'on bye this week' ? '' : '<span class="chip ' + (/^(might|day)/.test(x.status) ? 'warn' : 'bad') + '">' + e(x.status[0].toUpperCase() + x.status.slice(1)) + '</span>') +
       (game ? '<div class="nowpts">' + game + '</div>' : '') + (st === 'bye' ? '' : '<div class="nowpts" data-live="' + id + '" data-pro="' + pro + '"' + (pts ? '>' + pts : ' hidden>') + '</div>') +
       '</div></div><div class="big"><b>' + proj.toFixed(1) + '</b><small>expected</small></div></div>';
   };
