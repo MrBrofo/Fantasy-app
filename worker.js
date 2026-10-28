@@ -135,7 +135,7 @@ async function ask(req, env) {
     const b = await client.messages.batches.retrieve(m.batch);
     if (b.processing_status !== 'ended') return reply(200, { pending: true });
     for await (const x of await client.messages.batches.results(m.batch)) {
-      if (x.result.type !== 'succeeded') return reply(200, { answer: 'The slow answer didn't come back (' + x.result.type + '). Ask again.' });
+      if (x.result.type !== 'succeeded') return reply(200, { answer: "The slow answer didn't come back (" + x.result.type + '). Ask again.' });
       const r = x.result.message, u = r.usage, [i, o, w, rd] = [2, 10, 2.5, 0.2].map(p => p / 2);
       if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
       return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('
