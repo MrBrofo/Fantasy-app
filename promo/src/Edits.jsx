@@ -45,7 +45,7 @@ const EndCard = ({ handle }) => {
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', gap: 50, background: '#000' }}>
       <div style={{ position: 'absolute', width: 900, height: 900, borderRadius: '50%', background: 'radial-gradient(#0a84ff40, transparent 65%)', transform: `scale(${p})` }} />
       <Img src={staticFile('icon-512.png')} style={{ width: 400, height: 400, borderRadius: 92, transform: `scale(${p}) rotate(${(1 - p) * -20}deg) translateY(${Math.sin(f / 10) * 8}px)` }} />
-      <div style={{ fontFamily: GLASS.font, fontSize: 110, fontWeight: 800, letterSpacing: '-.03em', color: '#fff', opacity: t, transform: `translateY(${(1 - t) * 50}px)` }}>{handle || 'Fantasy'}</div>
+      <div style={{ fontFamily: GLASS.font, fontSize: 110, fontWeight: 800, letterSpacing: '-.03em', color: '#fff', opacity: t, transform: `translateY(${(1 - t) * 50}px)` }}>{handle || 'Gameday'}</div>
     </AbsoluteFill>
   );
 };
@@ -64,7 +64,7 @@ const Title = () => {
   const f = useCurrentFrame(), w = interpolate(f, [2, 10], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   return (
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', background: '#000' }}>
-      <div style={{ padding: '18px 40px', border: '3px solid #fff', clipPath: `inset(0 ${(1 - w) * 50}% 0 ${(1 - w) * 50}%)`, fontFamily: GLASS.font, fontSize: 84, fontWeight: 800, letterSpacing: '.18em', color: '#fff' }}>FANTASY</div>
+      <div style={{ padding: '18px 40px', border: '3px solid #fff', clipPath: `inset(0 ${(1 - w) * 50}% 0 ${(1 - w) * 50}%)`, fontFamily: GLASS.font, fontSize: 84, fontWeight: 800, letterSpacing: '.18em', color: '#fff' }}>GAMEDAY</div>
       <div style={{ marginTop: 26, fontFamily: GLASS.font, fontSize: 30, letterSpacing: '.5em', color: '#ffffffaa', opacity: w }}>WEEK 8</div>
     </AbsoluteFill>
   );
@@ -120,39 +120,86 @@ const LeagueZoom = () => {
   const f = useCurrentFrame();
   return <AbsoluteFill><div style={{ position: 'absolute', left: '50%', top: '50%', transform: `scale(${1.05 + f * 0.006}) translateY(${-120 + f * 2}px)` }}><Screen page="league" /></div></AbsoluteFill>;
 };
-const HIT = 186;
 const E2 = [[0, 33, Matchup, 75], [33, 64, Board, 0], [64, 97, Macro, 60], [97, 128, Side, 60], [128, 153, Orbit, 60], [153, 186, Carousel, 40],
   [186, 215, Play, 50], [215, 246, Sheet, 20], [246, 276, Tour, 0], [276, 301, Flip, 30], [301, 329, Alert, 30], [329, 358, Fly, 50],
   [358, 379, Wall, 20], [379, 410, LeagueZoom, 0], [410, 435, Field3D, 70]];
 export const E2_LEN = 494;
-const X = 6; // crossfade frames: each clip runs this much past its cut, under the next one fading in
+const X = 8; // crossfade frames: each clip runs this much past its cut, under the next one fading in
+const HITS = [186, 246, 270, 329, 379, 435]; // the song's biggest hits: shake, flash, light leak, RGB split
+const sinceHit = f => { const h = HITS.findLast(a => a <= f); return h === undefined ? 99 : f - h; };
 
-// zoom-blur in, slow push the whole time, fade out under the next clip
-const whip = (t, len) => {
-  const inn = interpolate(t, [0, X], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) }), out = interpolate(t, [len - X, len], [1, 0], clamp);
-  return { opacity: Math.min(inn, out), transform: `scale(${(1.28 - inn * 0.28) * (1 + t * 0.0025)}) rotate(${(1 - inn) * 3}deg)`, filter: `blur(${(1 - inn) * 22}px) sepia(.22) saturate(.85) contrast(1.08)` };
-};
-const Caption = ({ lines, size = 96 }) => (
-  <div style={{ position: 'absolute', top: 640, width: '100%', padding: '0 50px', textAlign: 'center', fontFamily: ANTON, fontSize: size, lineHeight: 1.02, color: '#fff', textTransform: 'uppercase', textShadow: '0 5px 0 #000, 0 0 30px #000a', WebkitTextStroke: '2px #000' }}>
-    {lines.map(l => <div key={l}>{l}</div>)}
-  </div>
+// one clip, the reference's way: a blurred copy behind a sharp centre (soft streaky edges), warm faded colour,
+// and on the way in a zoom-blur whip with trailing copies, blended like a double exposure over the last clip
+const Clip2 = ({ at, len, S, off }) => (
+  <Sequence from={at} durationInFrames={len}><Body2 len={len} shot={<Sequence from={-off}><S /></Sequence>} /></Sequence>
 );
-
-export const Edit2 = ({ handle = '@fantasy.' }) => {
+const Body2 = ({ len, shot }) => {
+  const t = useCurrentFrame();
+  const inn = interpolate(t, [0, X], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) }), out = interpolate(t, [len - X, len], [1, 0], clamp);
+  const sharp = 'radial-gradient(ellipse 62% 52% at 50% 47%, #000 55%, transparent 100%)';
+  return (
+    <AbsoluteFill style={{ opacity: Math.min(inn, out), mixBlendMode: inn < 1 ? 'screen' : 'normal', transform: `scale(${(1.3 - inn * 0.3) * (1 + t * 0.003)}) rotate(${(1 - inn) * 4}deg)`, filter: `blur(${(1 - inn) * 12}px) sepia(.3) saturate(.8) contrast(1.12) brightness(.97)` }}>
+      <AbsoluteFill style={{ filter: 'blur(18px)', transform: 'scale(1.1)' }}>{shot}</AbsoluteFill>
+      <AbsoluteFill style={{ WebkitMaskImage: sharp, maskImage: sharp }}>{shot}</AbsoluteFill>
+      {inn < 1 && [1, 2].map(k => <AbsoluteFill key={k} style={{ opacity: 0.35 / k, transform: `scale(${1 + (1 - inn) * 0.14 * k})` }}>{shot}</AbsoluteFill>)}
+    </AbsoluteFill>
+  );
+};
+// warm light leaks drifting across, flaring on each hit
+const Leak = () => {
+  const f = useCurrentFrame(), s = sinceHit(f), flare = s < 14 ? (1 - s / 14) * 0.55 : 0;
+  return (
+    <AbsoluteFill style={{ mixBlendMode: 'screen', opacity: 0.16 + flare, pointerEvents: 'none' }}>
+      <AbsoluteFill style={{ background: `radial-gradient(40% 30% at ${20 + Math.sin(f / 37) * 25}% ${30 + Math.cos(f / 29) * 20}%, #ff8a3c, transparent 70%)` }} />
+      <AbsoluteFill style={{ background: `radial-gradient(35% 28% at ${80 + Math.cos(f / 31) * 20}% ${75 + Math.sin(f / 41) * 15}%, #ff3c7a, transparent 70%)` }} />
+    </AbsoluteFill>
+  );
+};
+// the big helmet faded in over the shots, like the ghosted portrait in the reference
+const Ghost = () => {
   const f = useCurrentFrame();
-  const punch = interpolate(f, [HIT, HIT + 4], [1.6, 1], { ...clamp, easing: Easing.out(Easing.back(2)) });
+  return <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', mixBlendMode: 'screen', opacity: interpolate(f, [0, 10, 40, 54], [0, 0.2, 0.2, 0], clamp) }}>
+    <Img src={staticFile('icon-512.png')} style={{ width: 1500, height: 1500, filter: 'grayscale(1) contrast(1.3)', transform: `scale(${1 + f * 0.004}) rotate(${f * 0.05}deg)` }} />
+  </AbsoluteFill>;
+};
+// big Anton text; `rgb` splits it into red and cyan copies (fades after a hit)
+const BigText = ({ lines, size = 104, top = 600, rgb = 0, words }) => {
+  const f = useCurrentFrame();
+  let n = 0;
+  return (
+    <div style={{ position: 'absolute', top, width: '100%', padding: '0 50px', textAlign: 'center', fontFamily: ANTON, fontSize: size, lineHeight: 1.02, color: '#fff', textTransform: 'uppercase', WebkitTextStroke: '2px #000', textShadow: `${-rgb}px 0 #ff2a2a, ${rgb}px 0 #2af0ff, 0 6px 0 #000, 0 0 40px #000c` }}>
+      {lines.map(l => <div key={l}>{l.split(' ').map(w => {
+        const at = words ? words[n++] : 0, p = interpolate(f, [at, at + 5], [0, 1], { ...clamp, easing: Easing.out(Easing.back(2.2)) });
+        return <span key={w} style={{ display: 'inline-block', margin: '0 .12em', opacity: f >= at ? 1 : 0, transform: `scale(${1.5 - p * 0.5})`, filter: `blur(${(1 - p) * 8}px)` }}>{w}</span>;
+      })}</div>)}
+    </div>
+  );
+};
+
+export const Edit2 = ({ handle = '@brodyy_244' }) => {
+  const f = useCurrentFrame(), s = sinceHit(f);
+  const kick = s < 12 ? (1 - s / 12) : 0, rgb = kick * 14;
+  const shakeHit = `translate(${Math.sin(f * 2.7) * kick * 24}px, ${Math.cos(f * 3.3) * kick * 18}px) scale(${1 + kick * 0.04})`;
+  const slam = (at, from = 1.8) => interpolate(f, [at, at + 5], [from, 1], { ...clamp, easing: Easing.out(Easing.back(2)) });
   return (
     <Look t={GLASS}>
-      <AbsoluteFill style={{ background: '#000', fontFamily: GLASS.font, color: '#fff' }}>
-        <Bg />
-        {E2.map(([a, b, S, off], i) => <Clip key={a} at={a} len={b - a + (i < E2.length - 1 ? X : 0)} S={S} off={off} fx={whip} />)}
-        <AbsoluteFill style={{ background: 'radial-gradient(transparent 45%, #000d)' }} />
-        {f >= 6 && f < HIT && <Caption lines={['Rivals trying to take', 'your waivers, fleece', 'and conquer.']} />}
-        {f >= HIT && f < HIT + 22 && <div style={{ transform: `scale(${punch})` }}><Caption lines={['Win it all.']} size={150} /></div>}
-        <Flash at={HIT} len={6} peak={0.9} />
+      <AbsoluteFill style={{ background: '#000', fontFamily: GLASS.font, color: '#fff', overflow: 'hidden' }}>
+        <AbsoluteFill style={{ transform: shakeHit }}>
+          <Bg />
+          {E2.map(([a, b, S, off], i) => <Clip2 key={a} at={a} len={b - a + (i < E2.length - 1 ? X : 0)} S={S} off={off} />)}
+          <Sequence from={276} durationInFrames={54}><Ghost /></Sequence>
+          <Sequence from={410} durationInFrames={30}><Ghost /></Sequence>
+          <AbsoluteFill style={{ background: 'rgba(255,150,60,.10)', mixBlendMode: 'soft-light' }} />
+          <AbsoluteFill style={{ background: 'radial-gradient(transparent 42%, #000e)' }} />
+          <Leak />
+          {f >= 3 && f < 186 && <BigText lines={['They tried to', 'fleece you,', 'trade and conquer.']} words={[3, 9, 17, 27, 33, 47, 64, 73]} rgb={f < 80 ? 3 : 0} />}
+          {f >= 186 && f < 212 && <div style={{ transform: `scale(${slam(186)})` }}><BigText lines={['Not today.']} size={170} top={780} rgb={rgb} /></div>}
+          {f >= 379 && f < 410 && <div style={{ transform: `scale(${slam(379, 2.4)})` }}><BigText lines={['Gameday.']} size={200} top={760} rgb={rgb} /></div>}
+        </AbsoluteFill>
         <Sequence from={435} durationInFrames={24}><EndCard /></Sequence>
-        {f >= 459 && <AbsoluteFill style={{ background: '#000', justifyContent: 'center', alignItems: 'center', fontFamily: GLASS.font, fontSize: 92, fontWeight: 500, opacity: interpolate(f, [459, 465], [0, 1], clamp) }}>{handle}</AbsoluteFill>}
-        <Grain amount={0.1} />
+        {f >= 459 && <AbsoluteFill style={{ background: '#000', justifyContent: 'center', alignItems: 'center', fontFamily: GLASS.font, fontSize: 88, fontWeight: 500, opacity: interpolate(f, [459, 465], [0, 1], clamp) }}>{handle}</AbsoluteFill>}
+        {HITS.map(a => <Flash key={a} at={a} len={6} peak={a === 186 || a === 379 ? 0.9 : 0.45} />)}
+        <Grain amount={0.12} />
         <Audio src={staticFile('ref/song2.m4a')} />
       </AbsoluteFill>
     </Look>

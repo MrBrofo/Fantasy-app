@@ -10,8 +10,8 @@ const Boot = () => {
   return (
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', gap: 40 }}>
       {T.glass
-        ? <div style={{ fontSize: 150, fontWeight: 800, letterSpacing: `${-0.04 + (1 - name) * 0.3}em`, filter: `blur(${(1 - name) * 20}px)`, opacity: name }}>Fantasy</div>
-        : <div style={{ fontSize: 110, fontWeight: 800, letterSpacing: '.14em', textShadow: glow(T, '#ffffff88', 30) }}><span style={{ color: T.muted }}>&gt;</span>{typed('FANTASY', f, 4, 0.45)}<Cursor /></div>}
+        ? <div style={{ fontSize: 150, fontWeight: 800, letterSpacing: `${-0.04 + (1 - name) * 0.3}em`, filter: `blur(${(1 - name) * 20}px)`, opacity: name }}>Gameday</div>
+        : <div style={{ fontSize: 110, fontWeight: 800, letterSpacing: '.14em', textShadow: glow(T, '#ffffff88', 30) }}><span style={{ color: T.muted }}>&gt;</span>{typed('GAMEDAY', f, 4, 0.45)}<Cursor /></div>}
       <div style={{ transform: `scale(${2 - stamp}) rotate(${(1 - stamp) * -8}deg)`, opacity: stamp }}>
         <Chip c={T.good} style={T.glass ? { fontSize: 38, padding: '14px 34px' } : { fontSize: 40, padding: '12px 28px', borderWidth: 3, boxShadow: `0 0 40px ${T.good}`, textShadow: `0 0 20px ${T.good}` }}>Access granted</Chip>
       </div>
@@ -164,7 +164,7 @@ const Outro = () => {
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', gap: 50 }}>
       <div style={{ position: 'absolute', width: 900, height: 900, borderRadius: '50%', background: `radial-gradient(${halo}, transparent 65%)`, transform: `scale(${p})` }} />
       <Img src={staticFile('icon-512.png')} style={{ width: 420, height: 420, borderRadius: 96, transform: `scale(${p}) rotate(${(1 - p) * -25}deg) translateY(${Math.sin(f / 10) * 8}px)`, boxShadow: `0 0 60px ${halo}` }} />
-      <div style={{ fontSize: 110, fontWeight: 800, letterSpacing: T.glass ? '-.03em' : '.14em', opacity: t, transform: `translateY(${(1 - t) * 60}px)`, textShadow: glow(T, '#ffffff88', 30) }}>{T.glass ? 'Fantasy' : 'FANTASY'}<Cursor /></div>
+      <div style={{ fontSize: 110, fontWeight: 800, letterSpacing: T.glass ? '-.03em' : '.14em', opacity: t, transform: `translateY(${(1 - t) * 60}px)`, textShadow: glow(T, '#ffffff88', 30) }}>{T.glass ? 'Gameday' : 'GAMEDAY'}<Cursor /></div>
     </AbsoluteFill>
   );
 };
