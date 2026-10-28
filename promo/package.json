@@ -2,7 +2,8 @@
   "private": true,
   "scripts": {
     "studio": "remotion studio src/index.jsx",
-    "render": "remotion render src/index.jsx Promo out/promo.mp4"
+    "render": "remotion render src/index.jsx Promo out/promo.mp4",
+    "render:edit2": "remotion render Edit2 out/edit2-raw.mp4 && ffmpeg -y -i out/edit2-raw.mp4 -c:v copy -af \"volume=5dB,alimiter=limit=0.94:attack=2:release=60:level=disabled\" -c:a aac -b:a 192k out/edit2.mp4"
   },
   "dependencies": {
     "@remotion/cli": "4.0.300",

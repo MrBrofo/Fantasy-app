@@ -128,6 +128,28 @@ const End = () => {
   );
 };
 
+// ---- sound effects (public/sfx, made with ffmpeg): [frame, file, volume] ----
+const PUNCHES = [186, 379, 838];
+const SFX = [
+  // every cut gets a whoosh or a swipe, except the hits, which get their own sound
+  ...CLIPS.slice(1).map(([a], i) => [a, i % 2 ? 'swipe' : 'whoosh', 0.3]).filter(([a]) => !HITS.includes(a)),
+  ...[3, 9, 17, 27, 33, 47, 64, 73].map(a => [a, 'pop', 0.35]), // intro words
+  ...PUNCHES.flatMap(a => [[a - 24, 'swell', 0.5], [a, 'impact', 0.6], [a, 'glitch', 0.25]]),
+  [186, 'subdrop', 0.55], [838, 'subdrop', 0.55],
+  ...HITS.filter(a => !PUNCHES.includes(a) && a !== END).map(a => [a, 'thump', 0.5]),
+  ...CLIPS.filter(c => c[4]).map(([a, , , , , d = 0]) => [a + d + 2, 'tick', 0.35]), // captions
+  [198, 'crowd', 0.5], // touchdown
+  [225, 'whoosh', 0.35], // player card slides up
+  [258, 'swipe', 0.35], // tour swipes to the next page
+  [286, 'whoosh', 0.4], // look flips
+  [306, 'ding', 0.45], // notification drops in
+  [64, 'shutter', 0.4], [750, 'shutter', 0.4], // close-ups
+  ...[660, 664, 667, 671, 674, 678, 683, 686].map(a => [a, 'tick', 0.15]), // typing on the Ask page
+  [796, 'tick', 0.5], [826, 'tick', 0.5], // tab taps
+  [903, 'riser', 0.5], [END, 'impact', 0.7], [END, 'shimmer', 0.5],
+];
+const Sfx = () => SFX.map(([a, n, v], i) => <Sequence key={i} from={a}><Audio src={staticFile(`sfx/${n}.wav`)} volume={v * 0.75} /></Sequence>);
+
 export const Edit2 = () => {
   const f = useCurrentFrame(), s = sinceHit(f);
   const kick = s < 12 ? (1 - s / 12) : 0;
@@ -147,14 +169,14 @@ export const Edit2 = () => {
           {f >= 3 && f < 182 && <Lines lines={['my league really', 'thought they could', 'fleece me']} words={[3, 9, 17, 27, 33, 47, 64, 73]} />}
           <Punch at={186} len={24} text="not today" />
           <Punch at={379} len={30} text="6-1 btw" />
-          <Punch at={649} len={22} text="it even has ai" size={120} />
           <Punch at={838} len={38} text="gameday" size={190} />
           {CLIPS.filter(c => c[4]).map(([a, b, , , text, d = 0]) => <Cap key={a} at={a + d} len={b - a - d} text={text} />)}
         </AbsoluteFill>
         <Sequence from={END}><End /></Sequence>
         {HITS.map(a => <Flash key={a} at={a} len={6} peak={[186, 379, 649, 838].includes(a) ? 0.75 : 0.35} />)}
         <Grain amount={0.07} />
-        <Audio src={staticFile('ref/song2long.m4a')} />
+        <Audio src={staticFile('ref/song2long.m4a')} volume={0.55} />
+        <Sfx />
       </AbsoluteFill>
     </Look>
   );
