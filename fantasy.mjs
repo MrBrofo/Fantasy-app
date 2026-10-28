@@ -2590,7 +2590,7 @@ function showAgo() {
   if (m >= 30) document.getElementById('staletext').textContent = 'The last update was ' + (m < 120 ? m + ' minutes' : Math.round(m / 60) + ' hours') + ' ago, so the advice below may be out of date. If it lasts, ask Claude to check the GitHub runs (the ESPN login may have expired).';
   const left = Math.ceil((nextAt() - Date.now()) / 1000);
   const next = left > 0 ? 'next in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : 'next any moment';
-  ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next + liveNote;
+  ago.textContent = (m < 1 ? 'updated just now' : m < 60 ? 'updated ' + m + ' min ago' : 'updated ' + Math.round(m / 60) + ' hr ago') + ' \\u00b7 ' + next + (liveAt ? ' \\u00b7 live ' + (Date.now() - liveAt < 5000 ? 'just now' : Math.round((Date.now() - liveAt) / 1000) + 's ago') : liveNote);
   if (ready) { if (!busy()) load(); return; }
   // once the countdown is over, look for the new version every 15s instead of every minute
   if (left <= 0 && !document.hidden && Date.now() - lastCheck > 15000) { lastCheck = Date.now(); check(false); }
@@ -2672,17 +2672,17 @@ async function check(clicked) {
 // Live scores from the Cloudflare Worker: every 30s while a game is on, every 5 minutes otherwise. Points so far,
 // the score, win chance, ESPN's final guess and game clocks change in place.
 const LIVE = JSON.parse(document.getElementById('live')?.textContent || 'null');
-// liveNote: shown after "updated ... ago" so you can tell live scores are working
-let liveOn = false, liveNote = '', LD = null; // LD: the last live answer, for the Watch view
+// after "updated ... ago": how long ago the last live update (every 30s) came in, ticking up, or why live scores are off
+let liveOn = false, liveNote = '', liveAt = 0, LD = null; // LD: the last live answer, for the Watch view
 async function liveTick() {
   if (!LIVE || document.hidden) return;
   try {
     const fa = faIds(), r = await fetch(LIVE.url + '?week=' + LIVE.week + (fa.length ? '&fa=' + fa.join(',') : ''), { headers: { 'x-live': LIVE.token } });
-    if (!r.ok) { liveNote = ' \u00b7 live scores off (' + (r.status === 401 ? 'password mismatch' : 'ESPN login rejected') + ')'; return showAgo(); }
+    if (!r.ok) { liveAt = 0; liveNote =' \u00b7 live scores off (' + (r.status === 401 ? 'password mismatch' : 'ESPN login rejected') + ')'; return showAgo(); }
     const d = await r.json(), $ = id => document.getElementById(id), f = v => (Math.round(v * 10) / 10).toFixed(1);
     LD = d; drawGc(); for (const p of Object.values(P)) if (p.pro) { gcG(p); break; } // starts loading last week's games
     liveOn = Object.values(d.games).some(g => g[0] === 'in');
-    liveNote = liveOn ? ' \u00b7 live scores on' : ' \u00b7 live scores ready'; showAgo();
+    liveAt = Date.now(); showAgo();
     for (const el of document.querySelectorAll('[data-live]')) {
       const x = d.players[el.dataset.live], pts = Array.isArray(x) ? x[0] : x, g = d.games[el.dataset.pro];
       if (pts == null || !g || (g[0] === 'pre' && !pts)) continue;
