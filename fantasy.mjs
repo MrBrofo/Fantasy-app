@@ -2329,7 +2329,8 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 
 <section id="ask"><div class="card ask"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>Ask Claude about your team</b><button type="button" id="askbal" class="linkbtn" style="font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums">Set credits</button></div>
 <div style="position:relative;margin:10px 0 6px"><textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="display:block;width:100%;min-height:72px;resize:vertical;padding-right:36px;margin:0"></textarea><button type="button" id="askmic" class="askmic" aria-label="Talk to type"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button></div>
-<div class="seg" id="askmode" style="margin-top:10px"><button type="button" data-mode="auto">Auto</button><button type="button" data-mode="quick">Quick</button><button type="button" data-mode="smart">Smart</button><button type="button" data-mode="slow">Slow &frac12;</button></div>
+<div class="seg" id="askmode" style="margin-top:10px"><button type="button" data-mode="auto">Auto</button><button type="button" data-mode="quick">Quick</button><button type="button" data-mode="smart">Smart</button></div>
+<label class="pick" style="border:0;padding:8px 0 0"><input type="checkbox" id="askslow"> Half price: answers take a few minutes (up to a day), and you get a notification</label>
 
 <button type="button" id="askbtn" class="btn">Ask Claude</button><div id="askout" class="askout" hidden></div>
 <button type="button" id="askopen" class="linkbtn">Or open it in the Claude app</button></div></section>
@@ -3362,12 +3363,16 @@ const askHtml = t => t.split(String.fromCharCode(10)).map(l => l.trim()).reduce(
   return !l ? o : /^[-*] /.test(l) ? o + '<li>' + h + '</li>' : o + '<p>' + h + '</p>';
 }, '').replace(/((?:<li>.*?<[/]li>)+)/g, '<ul>$1</ul>');
 // which model answers: Auto lets the Worker pick from the question, Quick is Haiku, Smart is Sonnet (remembered)
-const ASK_TIP = { auto: 'Picks for you: Smart for decisions, Quick for meanings and lookups.', quick: 'Haiku: fast and almost free. Good for meanings and lookups, not decisions.', smart: 'Sonnet: best for trades and start/sit.', slow: 'Sonnet at half price: the answer takes minutes (up to a day) and you get a notification.' };
+const ASK_TIP = { auto: 'Picks for you: Smart for decisions, Quick for meanings and lookups.', quick: 'Haiku: fast and almost free. Good for meanings and lookups, not decisions.', smart: 'Sonnet: best for trades and start/sit.' };
 let askMode = 'auto';
 try { askMode = ASK_TIP[localStorage.getItem('askMode')] ? localStorage.getItem('askMode') : 'auto'; } catch {}
 const askModeShow = () => { document.querySelectorAll('#askmode button').forEach(x => x.classList.toggle('on', x.dataset.mode === askMode)); };
 document.getElementById('askmode').onclick = ev => { const x = ev.target.closest('[data-mode]'); if (!x) return; askMode = x.dataset.mode; try { localStorage.setItem('askMode', askMode); } catch {} askModeShow(); };
 askModeShow();
+// Half price switch: works with any mode; saved on this phone
+const askSlowBox = document.getElementById('askslow');
+try { askSlowBox.checked = localStorage.getItem('askSlowOn') === '1'; } catch {}
+askSlowBox.onchange = () => { try { localStorage.setItem('askSlowOn', askSlowBox.checked ? '1' : '0'); } catch {} };
 // credits left: the API can't tell the page the balance, so it's typed in once (from console.anthropic.com > Billing)
 // and each answer's cost, worked out by the Worker from the tokens it used, comes off it. Saved on this phone only
 const money = x => x < 0.995 ? (x * 100).toFixed(x < 0.1 ? 2 : 1) + '¢' : '$' + x.toFixed(2);
@@ -3417,7 +3422,7 @@ const askRun = async more => {
   askCtl = new AbortController(); b.textContent = 'Cancel'; out.hidden = false;
   if (more) document.getElementById('askmore')?.replaceWith(Object.assign(document.createElement('p'), { className: 'tag', textContent: 'Getting the full answer...' })); else out.innerHTML = '';
   try {
-    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode }), signal: askCtl.signal });
+    const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode, slow: askSlowBox.checked }), signal: askCtl.signal });
     const d = await r.json().catch(() => ({}));
     askPaid(d.cost);
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);

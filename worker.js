@@ -130,36 +130,26 @@ async function ask(req, env) {
   let m;
   try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  // Slow: the page asks again with the batch id until the half-price answer is in (cost is half Sonnet's price)
-  if (typeof m.batch === 'string' && /^msgbatch_w+$/.test(m.batch)) {
-    const b = await client.messages.batches.retrieve(m.batch);
-    if (b.processing_status !== 'ended') return reply(200, { pending: true });
-    for await (const x of await client.messages.batches.results(m.batch)) {
-      if (x.result.type !== 'succeeded') return reply(200, { answer: "The slow answer didn't come back (" + x.result.type + '). Ask again.' });
-      const r = x.result.message, u = r.usage, [i, o, w, rd] = [2, 10, 2.5, 0.2].map(p => p / 2);
-      if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
-      return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: 'Sonnet', cost: ((u.input_tokens ?? 0) * i + (u.output_tokens ?? 0) * o + (u.cache_creation_input_tokens ?? 0) * w + (u.cache_read_input_tokens ?? 0) * rd) / 1e6 });
-    }
-    return reply(200, { answer: 'The slow answer came back empty. Ask again.' });
-  }
-  if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 250000) return reply(400, { error: 'Bad question' });
-  const SYS = 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Keep it short: the answer first, then the main reasons, 6 short lines or bullets at most, plain words, no tables or headings. Give a clear pick when asked to choose. Only when I ask you to tell me more, explain in full detail.';
-  // Slow: Sonnet through the Batch API, half price. A batch is one shot, so it can't open drawers: it gets all the facts at
-  // once. The answer takes minutes (up to a day); the page checks back with the id, and the site's next update sends a
-  // notification when it's in (it reads the finished batches from /slow)
-  if (m.mode === 'slow') {
-    const b = await client.messages.batches.create({ requests: [{ custom_id: 'ask', params: {
-      model: 'claude-sonnet-5-5', max_tokens: 4000, output_config: { effort: 'low' },
-      system: SYS.replace('; if a fact you need is in a drawer, open it with look_up before answering', ''),
-      messages: [{ role: 'user', content: m.text }],
-    } }] });
-    return reply(200, { batch: b.id });
-  }
   // what this question cost, from the tokens each call used ($ per million: input, output, cache write, cache read), so
   // the page can take it off the credits it shows
   const PRICE = { sonnet: [2, 10, 2.5, 0.2], haiku: [0.1, 0.5, 0.125, 0.01] };
   let cost = 0;
   const bill = (which, u) => { const [i, o, w, rd] = PRICE[which]; cost += ((u?.input_tokens ?? 0) * i + (u?.output_tokens ?? 0) * o + (u?.cache_creation_input_tokens ?? 0) * w + (u?.cache_read_input_tokens ?? 0) * rd) / 1e6; };
+  // Slow: the page asks again with the batch id until the half-price answer is in
+  if (typeof m.batch === 'string' && /^msgbatch_[A-Za-z0-9_]+$/.test(m.batch)) {
+    const b = await client.messages.batches.retrieve(m.batch);
+    if (b.processing_status !== 'ended') return reply(200, { pending: true });
+    for await (const x of await client.messages.batches.results(m.batch)) {
+      if (x.result.type !== 'succeeded') return reply(200, { answer: "The slow answer didn't come back (" + x.result.type + '). Ask again.' });
+      const r = x.result.message, which = /haiku/.test(r.model) ? 'haiku' : 'sonnet';
+      bill(which, r.usage); cost /= 2;
+      if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
+      return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: which === 'haiku' ? 'Haiku' : 'Sonnet', cost });
+    }
+    return reply(200, { answer: 'The slow answer came back empty. Ask again.' });
+  }
+  if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 250000) return reply(400, { error: 'Bad question' });
+  const SYS = 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Keep it short: the answer first, then the main reasons, 6 short lines or bullets at most, plain words, no tables or headings. Give a clear pick when asked to choose. Only when I ask you to tell me more, explain in full detail.';
   // Quick = Haiku (a tiny fraction of the price, fast), Smart = Sonnet (half Opus's price, and just as good at weighing
   // the facts it's handed). Auto: Haiku reads just the question (a fraction of a cent, about a second) and sends anything
   // that asks me to decide something to Sonnet; only plain lookups and meanings go to Haiku, and anything unclear to Sonnet
@@ -191,6 +181,17 @@ async function ask(req, env) {
     }).catch(() => null);
     bill('haiku', c?.usage);
     smart = !/EASY/.test(c?.content.filter(b => b.type === 'text').map(b => b.text).join('') ?? '');
+  }
+  // Slow switch on: the same model (Auto still picks first) through the Batch API, half price. A batch is one shot, so it
+  // can't open drawers: it gets all the facts at once. The answer takes minutes (up to a day); the page checks back with
+  // the id, and the site's next update sends a notification when it's in (it reads the finished batches from /slow)
+  if (m.slow === true) {
+    const b = await client.messages.batches.create({ requests: [{ custom_id: 'ask', params: {
+      model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'low' },
+      system: SYS.replace('; if a fact you need is in a drawer, open it with look_up before answering', ''),
+      messages: [{ role: 'user', content: m.text }],
+    } }] });
+    return reply(200, { batch: b.id, cost });
   }
   // The big parts of the league facts (each other team's roster, every result, league moves, this week's matchups, free
   // agents) are drawers: Claude gets my team and the standings, plus a list of drawers it can open with look_up, so a
