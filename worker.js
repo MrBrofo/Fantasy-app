@@ -182,17 +182,6 @@ async function ask(req, env) {
     bill('haiku', c?.usage);
     smart = !/EASY/.test(c?.content.filter(b => b.type === 'text').map(b => b.text).join('') ?? '');
   }
-  // Slow switch on: the same model (Auto still picks first) through the Batch API, half price. A batch is one shot, so it
-  // can't open drawers: it gets all the facts at once. The answer takes minutes (up to a day); the page checks back with
-  // the id, and the site's next update sends a notification when it's in (it reads the finished batches from /slow)
-  if (m.slow === true) {
-    const b = await client.messages.batches.create({ requests: [{ custom_id: 'ask', params: {
-      model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'low' },
-      system: SYS.replace('; if a fact you need is in a drawer, open it with look_up before answering', ''),
-      messages: [{ role: 'user', content: m.text }],
-    } }] });
-    return reply(200, { batch: b.id, cost });
-  }
   // The big parts of the league facts (each other team's roster, every result, league moves, this week's matchups, free
   // agents) are drawers: Claude gets my team and the standings, plus a list of drawers it can open with look_up, so a
   // question only pays for the parts it needs. The players and teams the question names come along up front anyway
@@ -201,6 +190,29 @@ async function ask(req, env) {
   const paras = m.text.slice(0, fixed).split('\n\n'), drawers = {}, core = [];
   for (const p of paras) (DRAWERS.some(d => p.startsWith(d)) ? (drawers[p.split('\n')[0].replace(/:$/, '').slice(0, 200)] = p) : core.push(p));
   const names = Object.keys(drawers);
+  // Slow switch on: the same model (Auto still picks first) through the Batch API, half price. A batch is one shot, so it
+  // can't open drawers itself: Haiku first reads just the question and the drawer names (a fraction of a cent) and picks
+  // the drawers, and the batch gets those up front. The answer takes minutes (up to a day); the page checks back with the
+  // id, and the site's next update sends a notification when it's in (it reads the finished batches from /slow)
+  if (m.slow === true) {
+    let pick = names; // no question to go on, or the picker failed: all of them
+    if (names.length && typeof m.q === 'string' && m.q.trim()) {
+      const c = await client.messages.create({
+        model: 'claude-haiku-5-5', max_tokens: 1000, output_config: { effort: 'low' },
+        system: 'Pick the drawers of fantasy football league facts needed to answer the question. My team, the standings and any player or team the question names are already included. Reply with each drawer name needed, one per line, copied exactly, or NONE. If unsure about a drawer, include it.',
+        messages: [{ role: 'user', content: 'Drawers:\n' + names.join('\n') + '\n\nQuestion: ' + m.q.slice(0, 2000) }],
+      }).catch(() => null);
+      bill('haiku', c?.usage);
+      const said = c?.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+      if (said != null) pick = names.filter(n => said.includes(n));
+    }
+    const b = await client.messages.batches.create({ requests: [{ custom_id: 'ask', params: {
+      model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'low' },
+      system: SYS.replace('; if a fact you need is in a drawer, open it with look_up before answering', ''),
+      messages: [{ role: 'user', content: fixed ? [...core, ...pick.map(n => drawers[n])].join('\n\n') + '\n\n' + m.text.slice(fixed).replace(/^\n+/, '') : m.text }],
+    } }] });
+    return reply(200, { batch: b.id, cost });
+  }
   const tools = names.length ? [{
     name: 'look_up',
     description: 'Open one or more drawers of league facts that are not shown yet. Open every drawer the question needs in one call. Drawers: ' + names.join(' | '),
