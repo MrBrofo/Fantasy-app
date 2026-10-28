@@ -2330,7 +2330,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <section id="ask"><div class="card ask"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>Ask Claude about your team</b><button type="button" id="askbal" class="linkbtn" style="font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums">Set credits</button></div>
 <div style="position:relative;margin:10px 0 6px"><textarea id="askq" class="sel" rows="3" aria-label="Your question" placeholder="Should I trade Kelce for Bijan? Who should I pick up at RB?" style="display:block;width:100%;min-height:72px;resize:vertical;padding-right:36px;margin:0"></textarea><button type="button" id="askmic" class="askmic" aria-label="Talk to type"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button></div>
 <div class="seg" id="askmode" style="margin-top:10px"><button type="button" data-mode="auto">Auto</button><button type="button" data-mode="quick">Quick</button><button type="button" data-mode="smart">Smart</button></div>
-<label class="pick" style="border:0;padding:8px 0 0"><input type="checkbox" id="askslow"> Half price: answers take a few minutes (up to a day), and you get a notification</label>
+<label class="pick" style="border:0;padding:8px 0 0"><input type="checkbox" id="askslow"> Half price</label>
 
 <button type="button" id="askbtn" class="btn">Ask Claude</button><div id="askout" class="askout" hidden></div>
 <button type="button" id="askopen" class="linkbtn">Or open it in the Claude app</button></div></section>
