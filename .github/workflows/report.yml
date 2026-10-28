@@ -49,6 +49,13 @@ jobs:
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }} # unlocks the site; not set = site not locked
           SEASON: "2026"
 
+      # One-time check of the FantasyPros key (see fp-probe.mjs); a failure here never stops the site
+      - name: FantasyPros probe
+        run: node fp-probe.mjs || true
+        env:
+          FANTASYPROS_KEY: ${{ secrets.FANTASYPROS_KEY }}
+          SEASON: "2026"
+
       # Saved right after the build (before deploy), so a failed deploy never forgets alerts already sent
       - uses: actions/cache/save@v4
         if: always() # also after a failed build, so the "stopped updating" alert goes out once a day, not every run
