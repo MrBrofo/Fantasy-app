@@ -138,9 +138,7 @@ async function ask(req, env) {
       if (x.result.type !== 'succeeded') return reply(200, { answer: "The slow answer didn't come back (" + x.result.type + '). Ask again.' });
       const r = x.result.message, u = r.usage, [i, o, w, rd] = [2, 10, 2.5, 0.2].map(p => p / 2);
       if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
-      return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('
-
-').trim(), cut: r.stop_reason === 'max_tokens', model: 'Sonnet', cost: ((u.input_tokens ?? 0) * i + (u.output_tokens ?? 0) * o + (u.cache_creation_input_tokens ?? 0) * w + (u.cache_read_input_tokens ?? 0) * rd) / 1e6 });
+      return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: 'Sonnet', cost: ((u.input_tokens ?? 0) * i + (u.output_tokens ?? 0) * o + (u.cache_creation_input_tokens ?? 0) * w + (u.cache_read_input_tokens ?? 0) * rd) / 1e6 });
     }
     return reply(200, { answer: 'The slow answer came back empty. Ask again.' });
   }
