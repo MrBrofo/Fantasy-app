@@ -20,14 +20,14 @@ const useCount = (a = 10, b = 70) => {
 };
 
 // 1. flatten: the screen faces you, tips back until it lies flat, then its layers lift off it as the camera glides over
-const Flatten = () => {
+export const Flatten = () => {
   const f = useCurrentFrame(), c = useCount(0, 50);
   const rx = go(f, 20, 90, 0, 62), rz = go(f, 60, 150, 0, -28), lift = go(f, 80, 140, 0, 70), ty = go(f, 20, 150, 0, 120);
   return <Stage style={{ transform: `translateY(${ty}px) scale(${go(f, 0, 150, 0.95, 1.12)}) rotateX(${rx}deg) rotateZ(${rz}deg)` }}><Screen page="team" depth={lift} {...c} /></Stage>;
 };
 
 // 2. side: edge-on, a thin slab of layers, then it swings round to face you with a little overshoot
-const Side = () => {
+export const Side = () => {
   const f = useCurrentFrame(), { fps } = useVideoConfig(), c = useCount(40, 100);
   const s = spring({ frame: f - 30, fps, config: { damping: 11, mass: 1.2 } });
   const ry = 86 - f * 0.15 - s * 86, depth = interpolate(s, [0, 1], [45, 4]);
@@ -35,7 +35,7 @@ const Side = () => {
 };
 
 // 3. fly-through: the layers spread far apart and the camera flies forward through each one into the screen
-const Fly = () => {
+export const Fly = () => {
   const f = useCurrentFrame(), c = useCount(0, 60), P = 1200, D = 520;
   const cam = go(f, 0, 175, -2200, 1500, Easing.inOut(Easing.sin));
   // a layer fades as it reaches the camera, so it blooms past instead of filling the frame
@@ -50,14 +50,14 @@ const Fly = () => {
 };
 
 // 4. exploded orbit: layers float apart and the camera swings around them
-const Orbit = () => {
+export const Orbit = () => {
   const f = useCurrentFrame(), c = useCount(10, 70);
   const depth = go(f, 0, 50, 0, 150, Easing.out(Easing.back(1.4)));
   return <Stage persp={2000} style={{ transform: `scale(.82) rotateX(${18 + Math.sin(f / 50) * 6}deg) rotateY(${go(f, 0, 150, -42, 38)}deg)` }}><Screen page="trades" depth={depth} {...c} /></Stage>;
 };
 
 // 5. wall: a tilted wall of screens, both looks and every tab, sliding past
-const Wall = () => {
+export const Wall = () => {
   const f = useCurrentFrame();
   const cells = [];
   for (let r = -3; r <= 3; r++) for (let q = -2; q <= 2; q++) cells.push([q, r]);
@@ -74,7 +74,7 @@ const Wall = () => {
 };
 
 // 6. look flip: Glass on the front, Terminal on the back, it flips over and back
-const Flip = () => {
+export const Flip = () => {
   const f = useCurrentFrame(), { fps } = useVideoConfig(), c = useCount(0, 50);
   const a = spring({ frame: f - 40, fps, config: { damping: 13 } }), b = spring({ frame: f - 100, fps, config: { damping: 13 } });
   const ry = (a + b) * 180, face = { position: 'absolute', backfaceVisibility: 'hidden', transformStyle: 'preserve-3d' };
@@ -87,7 +87,7 @@ const Flip = () => {
 };
 
 // 7. macro: way in close on the matchup card, rack focus, slow push across the numbers
-const Macro = () => {
+export const Macro = () => {
   const f = useCurrentFrame(), c = useCount(0, 110);
   const focus = go(f, 0, 30, 18, 0, Easing.out(Easing.cubic));
   return (
@@ -99,7 +99,7 @@ const Macro = () => {
 
 // 8. tab bar close-up: the glass bubble springs from tab to tab and the page swaps above it
 const PAGES = [['My Team', [['112.4', 'good'], ['74% to win', 'good']]], ['Lineup', [['QB · 22.1', 'good'], ['TE · Hurt', 'warn']]], ['Pickup plan', [['+ R. Rice', 'good'], ['− bench RB', 'bad']]], ['Trade ideas', [['WR for TE', 'good'], ['Fleece', 'good']]], ['Settings', [['Glass', 'accent'], ['Terminal', 'good']]]];
-const Tabs = () => {
+export const Tabs = () => {
   const T = useT(), f = useCurrentFrame(), { fps } = useVideoConfig();
   const tab = [0, 1, 2, 3].reduce((t, i) => t + spring({ frame: f - 18 - i * 30, fps, config: { damping: 11, mass: 0.7 } }), 0);
   const page = Math.round(tab), [title, rows] = PAGES[page], swap = spring({ frame: f - 18 - (page - 1) * 30 - 4, fps, config: { damping: 14 } });
@@ -116,7 +116,7 @@ const Tabs = () => {
 };
 
 // 9. chalkboard: the coach's board lies flat like a field and the camera skims across it, the matchup card hovering above
-const Board = () => {
+export const Board = () => {
   const f = useCurrentFrame();
   return (
     <AbsoluteFill>
@@ -131,7 +131,7 @@ const Board = () => {
 };
 
 // 10. the live play on a floating screen that swings in space
-const Field3D = () => {
+export const Field3D = () => {
   const f = useCurrentFrame();
   return (
     <Stage persp={2000} style={{ transform: `scale(${go(f, 0, 180, 0.7, 0.88)}) rotateY(${go(f, 0, 180, -34, 14)}deg) rotateX(${go(f, 0, 180, 16, 4)}deg)` }}>
@@ -141,7 +141,7 @@ const Field3D = () => {
 };
 
 // 11. alert: the screen tilts in space and a glass notification drops in front of it
-const Alert = () => {
+export const Alert = () => {
   const T = useT(), f = useCurrentFrame(), drop = usePop(36, 11);
   return (
     <Stage persp={1800} style={{ transform: `scale(.86) rotateX(${go(f, 0, 150, 22, 12)}deg) rotateY(${go(f, 0, 150, -28, -14)}deg)` }}>
@@ -157,7 +157,7 @@ const Alert = () => {
 };
 
 // 12. carousel: every page on a ring, turning past the camera
-const Carousel = () => {
+export const Carousel = () => {
   const f = useCurrentFrame(), N = PAGE_NAMES.length, R = 1350;
   return (
     <Stage persp={2200} style={{ transform: `translateY(-100px) translateZ(-3400px) rotateX(-14deg) rotateY(${-f * 0.9}deg)` }}>
@@ -167,7 +167,7 @@ const Carousel = () => {
 };
 
 // 13. deck: all the pages stacked like cards, then fanned out
-const Fan = () => {
+export const Fan = () => {
   const f = useCurrentFrame(), { fps } = useVideoConfig(), N = PAGE_NAMES.length;
   const s = spring({ frame: f - 20, fps, config: { damping: 13, mass: 1.1 } }), slide = go(f, 90, 150, 0, 1);
   return (
@@ -180,7 +180,7 @@ const Fan = () => {
 };
 
 // 14. tour: one phone, swiping through every page
-const Tour = () => {
+export const Tour = () => {
   const f = useCurrentFrame(), N = PAGE_NAMES.length, per = 22;
   const i = Math.min(N - 1, Math.floor(f / per)), e = i < N - 1 ? go(f % per, 12, per, 0, 1, Easing.inOut(Easing.quad)) : 0;
   const one = (p, x) => <div style={{ position: 'absolute', left: 390 + x, top: 844 }}><Screen page={p} /></div>;
@@ -195,7 +195,7 @@ const Tour = () => {
 };
 
 // 15. player card: the sheet slides up over the lineup, the phone tilted
-const Sheet = () => {
+export const Sheet = () => {
   const f = useCurrentFrame(), { fps } = useVideoConfig();
   const p = spring({ frame: f - 30, fps, config: { damping: 15, mass: 0.9 } });
   const layer = i => (i === 4 ? { opacity: p } : i === 5 ? { transform: `translateZ(${p * 60}px) translateY(${(1 - p) * 1300}px)` } : {});
