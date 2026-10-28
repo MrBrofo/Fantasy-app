@@ -116,13 +116,47 @@ async function live(req, env) {
 
 // Ask Claude: the site's question with my team's facts, answered by Claude. Same password as live scores, so only a
 // page that could unlock the site can spend the credits; the question and facts are capped so one ask stays cheap.
+// The slow answers finished in the last day, for the site's update to send a notification for each one (once)
+async function slow(req, env) {
+  if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
+  if (!env.ANTHROPIC_API_KEY) return reply(200, { done: [] });
+  const page = await new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }).messages.batches.list({ limit: 20 });
+  return reply(200, { done: page.data.filter(b => b.processing_status === 'ended' && Date.now() - Date.parse(b.ended_at) < 864e5).map(b => b.id) });
+}
+
 async function ask(req, env) {
   if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
   if (!env.ANTHROPIC_API_KEY) return reply(500, { error: 'No ANTHROPIC_API_KEY on the Worker' });
   let m;
   try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
-  if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 250000) return reply(400, { error: 'Bad question' });
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  // Slow: the page asks again with the batch id until the half-price answer is in (cost is half Sonnet's price)
+  if (typeof m.batch === 'string' && /^msgbatch_w+$/.test(m.batch)) {
+    const b = await client.messages.batches.retrieve(m.batch);
+    if (b.processing_status !== 'ended') return reply(200, { pending: true });
+    for await (const x of await client.messages.batches.results(m.batch)) {
+      if (x.result.type !== 'succeeded') return reply(200, { answer: 'The slow answer didn't come back (' + x.result.type + '). Ask again.' });
+      const r = x.result.message, u = r.usage, [i, o, w, rd] = [2, 10, 2.5, 0.2].map(p => p / 2);
+      if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
+      return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('
+
+').trim(), cut: r.stop_reason === 'max_tokens', model: 'Sonnet', cost: ((u.input_tokens ?? 0) * i + (u.output_tokens ?? 0) * o + (u.cache_creation_input_tokens ?? 0) * w + (u.cache_read_input_tokens ?? 0) * rd) / 1e6 });
+    }
+    return reply(200, { answer: 'The slow answer came back empty. Ask again.' });
+  }
+  if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > 250000) return reply(400, { error: 'Bad question' });
+  const SYS = 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Keep it short: the answer first, then the main reasons, 6 short lines or bullets at most, plain words, no tables or headings. Give a clear pick when asked to choose. Only when I ask you to tell me more, explain in full detail.';
+  // Slow: Sonnet through the Batch API, half price. A batch is one shot, so it can't open drawers: it gets all the facts at
+  // once. The answer takes minutes (up to a day); the page checks back with the id, and the site's next update sends a
+  // notification when it's in (it reads the finished batches from /slow)
+  if (m.mode === 'slow') {
+    const b = await client.messages.batches.create({ requests: [{ custom_id: 'ask', params: {
+      model: 'claude-sonnet-5-5', max_tokens: 4000, output_config: { effort: 'low' },
+      system: SYS.replace('; if a fact you need is in a drawer, open it with look_up before answering', ''),
+      messages: [{ role: 'user', content: m.text }],
+    } }] });
+    return reply(200, { batch: b.id });
+  }
   // what this question cost, from the tokens each call used ($ per million: input, output, cache write, cache read), so
   // the page can take it off the credits it shows
   const PRICE = { sonnet: [2, 10, 2.5, 0.2], haiku: [0.1, 0.5, 0.125, 0.01] };
@@ -184,7 +218,7 @@ async function ask(req, env) {
   for (let round = 0; ; round++) {
     r = await client.beta.messages.create({
       model: smart ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', max_tokens: 4000, output_config: { effort: 'low' },
-      system: 'You help a beginner with their ESPN fantasy football team (half PPR). Use the facts given; if a fact you need is in a drawer, open it with look_up before answering. Say when something is a guess. Keep it short: the answer first, then the main reasons, 6 short lines or bullets at most, plain words, no tables or headings. Give a clear pick when asked to choose. Only when I ask you to tell me more, explain in full detail.',
+      system: SYS,
       ...(tools ? { tools, tool_choice: round < 3 ? { type: 'auto' } : { type: 'none' } } : {}),
       messages: msgs,
     });
@@ -207,6 +241,7 @@ export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
     if (req.method === 'POST' && new URL(req.url).pathname === '/ask') return ask(req, env).catch(err => reply(500, { error: err.message }));
+    if (req.method === 'POST' && new URL(req.url).pathname === '/slow') return slow(req, env).catch(err => reply(500, { error: err.message }));
     if (req.method === 'GET') return live(req, env).catch(err => reply(500, { error: err.message }));
     if (req.method !== 'POST') return reply(405, { error: 'GET or POST only' });
     if (!env.KEY || req.headers.get('x-key') !== env.KEY) return reply(401, { error: 'Wrong password' });
