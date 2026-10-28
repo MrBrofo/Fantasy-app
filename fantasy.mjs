@@ -4123,7 +4123,8 @@ document.addEventListener('pointerdown', ev => {
   if (!still) requestAnimationFrame(draw);
 })();
 
-// Glass background: a coach's chalkboard on the field. Every few seconds a new play draws itself: the offense lines up,
+// Glass background: a coach's chalkboard on the field. Three plays run at once (top, middle and bottom of the screen, each
+// starting a third of a play after the last, at a random spot across) so the whole board is busy. Each play: the offense lines up,
 // each receiver's route grows out with a glowing runner on its tip, the defenders follow, the QB's pass arcs to one of
 // them (in blue), and it all fades for the next play. ~30 frames a second, nothing while the app is hidden; with reduce
 // motion on, one play stands still.
@@ -4135,9 +4136,10 @@ document.addEventListener('pointerdown', ev => {
   const ROUTES = [[[0, -16]], [[0, -3], [6, -9]], [[0, -8], [5, -15]], [[0, -7], [-5, -7]], [[0, -9], [1, -7]], [[0, -8], [-5, -14]], [[0, -8], [7, -8]]];
   const WHEEL = [[-3, -1], [-5, -4], [-5, -14]], FLAT = [[-4, -1], [-7, -2]];
   const PLAY = 5.5, ease = x => 1 - (1 - Math.min(1, Math.max(0, x))) ** 3, pick = a => a[Math.floor(Math.random() * a.length)];
-  let play = null, start = 0, last = -99;
-  const newPlay = () => {
-    const w = innerWidth, h = innerHeight, u = Math.min(w, 520) / 30, c = w / 2, y0 = h * (0.45 + Math.random() * 0.3);
+  const LANES = [0.3, 0.6, 0.9]; // where each play's line of scrimmage sits, as a share of the screen's height
+  let plays = [], last = -99;
+  const newPlay = lane => {
+    const w = innerWidth, h = innerHeight, u = Math.min(w, 520) / 36, c = 12 * u + Math.random() * Math.max(0, w - 24 * u), y0 = h * (lane + (Math.random() - 0.5) * 0.06);
     const path = (x, y, steps, flip) => [[x, y], ...steps.map(([dx, dy]) => [x + dx * u * flip, y + dy * u])];
     const runners = [[c - 12 * u, y0, 1], [c + 12 * u, y0, -1], [c + 8 * u, y0 + u, -1], [c - 5 * u, y0, 1]].map(([x, y, f]) => path(x, y, pick(ROUTES), f));
     runners.push(path(c + 1.5 * u, y0 + 5 * u, pick([WHEEL, FLAT]), Math.random() < 0.5 ? 1 : -1));
@@ -4152,15 +4154,22 @@ document.addEventListener('pointerdown', ev => {
     for (let i = 0; i < seg.length; i++) { if (left <= seg[i]) { const k = seg[i] ? left / seg[i] : 0; return [p.slice(0, i + 1), [p[i][0] + (p[i + 1][0] - p[i][0]) * k, p[i][1] + (p[i + 1][1] - p[i][1]) * k]]; } left -= seg[i]; }
     return [p.slice(0, -1), p.at(-1)];
   };
-  const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; play = null; if (still) { last = -99; draw(PLAY * 0.55 * 1000); } };
+  const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; plays = []; if (still) { last = -99; draw(PLAY * 0.55 * 1000); } };
   const draw = now => {
     if (!still) requestAnimationFrame(draw);
     if (document.hidden || now - last < 33 || dragging.size || !document.documentElement.classList.contains('glass')) return;
     last = now;
     const t = now / 1000;
-    if (!play || t - start > PLAY) { play = newPlay(); start = still ? t - PLAY * 0.55 : t; }
-    const s = t - start, { u, runners, line, qb, d, to } = play, fade = Math.min(1, s / 0.4, (PLAY - s) / 0.9), f = ease((s - 0.5) / 2.2);
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, innerWidth, innerHeight);
+    LANES.forEach((lane, i) => {
+      // the first round starts part way through, so the three are never in step
+      if (!plays[i] || t - plays[i].start > PLAY) plays[i] = { ...newPlay(lane), start: still ? t - PLAY * 0.55 : t - (plays[i] ? 0 : i * PLAY / 3) };
+      drawPlay(plays[i], t - plays[i].start);
+    });
+    cx.globalAlpha = 1;
+  };
+  const drawPlay = ({ u, runners, line, qb, d, to }, s) => {
+    const fade = Math.min(1, s / 0.4, (PLAY - s) / 0.9), f = ease((s - 0.5) / 2.2);
     cx.globalAlpha = Math.max(0, fade); cx.lineCap = cx.lineJoin = 'round'; cx.lineWidth = 2;
     const ring = ([x, y], a) => { cx.strokeStyle = 'rgba(255,255,255,' + a + ')'; cx.beginPath(); cx.arc(x, y, u * 0.6, 0, 7); cx.stroke(); };
     for (const p of line) ring(p, 0.3);
