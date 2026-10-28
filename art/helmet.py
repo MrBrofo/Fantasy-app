@@ -88,6 +88,23 @@ pad = shell(0.9); boolean(pad, cuts[1]); pad.data.materials.clear(); pad.data.ma
 bpy.ops.mesh.primitive_cylinder_add(radius=0.1, depth=0.05, location=(-0.05, -0.905, -0.18), rotation=(math.radians(90), 0, 0))
 bpy.context.object.data.materials.append(DARK); bpy.ops.object.shade_smooth()
 
+# my team's picture as a sticker on the side: a fine grid wrapped onto the shell, under the same clear coat
+import os
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logo.png')
+if os.path.exists(LOGO):
+    tgt = shell(1.0); tgt.hide_render = tgt.hide_viewport = True
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=60, y_subdivisions=60, size=1.05, location=(0.05, -1.3, 0.45), rotation=(math.radians(90), 0, 0))
+    dec = bpy.context.object
+    sw = dec.modifiers.new('w', 'SHRINKWRAP'); sw.target = tgt; sw.wrap_method = 'NEAREST_SURFACEPOINT'; sw.offset = 0.004
+    bpy.ops.object.shade_smooth()
+    dm = bpy.data.materials.new('logo'); dm.use_nodes = True; nt = dm.node_tree
+    b = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+    tex = nt.nodes.new('ShaderNodeTexImage'); tex.image = bpy.data.images.load(LOGO); tex.extension = 'CLIP'
+    nt.links.new(tex.outputs['Color'], b.inputs['Base Color']); nt.links.new(tex.outputs['Alpha'], b.inputs['Alpha'])
+    b.inputs['Roughness'].default_value = 0.2
+    if 'Coat Weight' in b.inputs: b.inputs['Coat Weight'].default_value = 1.0
+    dec.data.materials.append(dm)
+
 # facemask: tubes along bezier curves
 def bar(points, r=0.045):
     cu = bpy.data.curves.new('bar', 'CURVE'); cu.dimensions = '3D'; cu.bevel_depth = r; cu.bevel_resolution = 6
