@@ -2711,6 +2711,7 @@ async function swap(html) {
   Object.assign(P, np);
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
   if (typeof hideGone === 'function') hideGone();
+  window.poolDraw?.();
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
   if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) { body.innerHTML = render(P[sheet.dataset.pid]); drawGc(); }
@@ -4261,6 +4262,7 @@ function addHim(p) {
     reset();
   };
   if (teamSel) { teamSel.onchange = pickTeam; loose.onchange = reset; playerSel.onchange = reset; draw(); }
+  window.poolDraw = draw; // the page update puts back every card and button as built; this re-picks them
 }
 // Do now: slide a card left to remove it. Remembered on this phone (by week and title), so a page update doesn't bring it back.
 const goneKey = 'todoGone', gone = () => { try { return JSON.parse(localStorage.getItem(goneKey)) || []; } catch { return []; } };
