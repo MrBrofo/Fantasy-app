@@ -284,19 +284,19 @@ const PRACTICED = { Full: 'he practiced fully', Limited: 'he was limited in prac
 // move it and 15 mostly decide it (9 of 11 played on a 71% base: (9 + 5 * 0.71) / (11 + 5) = 78%).
 const SELF_WEIGHT = 5;
 function leagueOdds(p, type) {
-  if (p.status === 'DOUBTFUL') return { pct: 7, why: 'only about 7 in 100 doubtful players end up playing' };
+  if (p.status === 'DOUBTFUL') return { pct: 7, why: 'only 7 in 100 doubtful players play' };
   if (p.status !== 'QUESTIONABLE') return null;
   const pr = practice.get(pkey(p.name, p.pos, p.team));
-  if (!pr) return { pct: 71, why: 'no practice report yet this week; about 71 in 100 questionable players end up playing' };
+  if (!pr) return { pct: 71, why: 'no practice report yet' };
   const kind = ['concussion', 'knee', 'hamstring'].find(k => new RegExp(k, 'i').test(type ?? '')) ?? 'any';
-  return { pct: PLAY_ODDS[kind][pr], why: `${PRACTICED[pr]}${kind === 'any' ? '' : ` (${kind} injury)`}, and players like that played ${PLAY_ODDS[kind][pr]}% of the time` };
+  return { pct: PLAY_ODDS[kind][pr], why: PRACTICED[pr] };
 }
 function playOdds(p, type) {
   const base = leagueOdds(p, type);
   const [tags, played] = base ? rosSaved.tagHist?.[`${norm(p.name)}|${p.pos}`]?.[p.status[0]] ?? [0, 0] : [0, 0];
   if (!tags) return base;
   const pct = Math.round((played + SELF_WEIGHT * base.pct / 100) / (tags + SELF_WEIGHT) * 100);
-  return { pct, base: base.pct, tags, played, why: `${base.why}. His own record: he played ${played} of ${tags} times he was listed ${p.status.toLowerCase()} since ${SEASON - 5}, so it's ${pct}%` };
+  return { pct, base: base.pct, tags, played, why: `${base.why}; he's played ${played} of ${tags} times listed ${p.status.toLowerCase()}` };
 }
 // Vegas lines (DraftKings, from ESPN's public scoreboard): points each NFL team is expected to score
 const vegas = {}, gameNow = {}; // gameNow[team] = { state: 'pre' | 'in' | 'post', text: e.g. 'Q3 4:12' or 'Final' }
@@ -1931,7 +1931,7 @@ const statusWords = p => p.inj?.season ? 'out for the season' : p.bye === week ?
 const snap = Object.fromEntries(me.roster.map(p => [p.id, { n: p.name, s: statusWords(p), slot: p.slot === 'Bench' ? 'bench' : p.slot === 'IR' ? 'IR' : 'starting', pr: Math.round((p.proj ?? 0) * 10) / 10 }]));
 
 // Everything Claude needs to answer questions about this team, as plain text to paste
-const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${playOdds(p, p.inj?.type) ? ` (${playOdds(p, p.inj?.type).pct}% chance he plays: ${playOdds(p, p.inj?.type).why})` : ''}${p.rank ? `, ${rankText(p)}` : ''}${depthWord(p) ? `, ${depthWord(p)} on his NFL team's depth chart` : ''}${recentPts(pkey(p.name, p.pos, p.team)).length ? `, last games ${recentPts(pkey(p.name, p.pos, p.team)).map(n).join(', ')} (newest first)` : ''}${hitLine(p) ? `. ${hitLine(p)[1]}` : ''}${notes(p).length ? `. Notes: ${notes(p).join(' ')}` : ''}`;
+const line = p => `${p.name} (${p.pos}, ${p.teamName}, bye wk ${p.bye ?? '?'}): expected ${n(weekValue(p))} this week${p.roto != null || p.cbs != null ? ` (${srcText(p)})` : ''}${p.vegas ? `, Vegas expects his team to score ${n(p.vegas)}` : ''}, ${n(p.avg)} per game so far, ${n(p.ros)} per game expected rest of season, ${statusWords(p)}${playOdds(p, p.inj?.type) ? ` (${playOdds(p, p.inj?.type).pct}% chance he plays. ${playOdds(p, p.inj?.type).why})` : ''}${p.rank ? `, ${rankText(p)}` : ''}${depthWord(p) ? `, ${depthWord(p)} on his NFL team's depth chart` : ''}${recentPts(pkey(p.name, p.pos, p.team)).length ? `, last games ${recentPts(pkey(p.name, p.pos, p.team)).map(n).join(', ')} (newest first)` : ''}${hitLine(p) ? `. ${hitLine(p)[1]}` : ''}${notes(p).length ? `. Notes: ${notes(p).join(' ')}` : ''}`;
 // the same, shorter, for every other player in the league (other rosters, free agents)
 const cline = p => `${p.name} (${p.pos}, ${p.teamName}${p.slot ? `, ${p.slot === 'Bench' ? 'bench' : p.slot}` : ''}): ${n(weekValue(p))} expected this week, ${n(p.avg)}/g so far, ${n(p.ros)}/g rest of season${p.rank ? `, ${rankText(p)}` : ''}${recentPts(pkey(p.name, p.pos, p.team)).length ? `, last games ${recentPts(pkey(p.name, p.pos, p.team)).map(n).join(', ')}` : ''}${hitLine(p) ? `, ${hitLine(p)[0]}` : ''}, ${statusWords(p)}${p.bye ? `, bye wk ${p.bye}` : ''}`;
 const teamOf = id => teams.find(t => t.id === id)?.name ?? 'free agency';
@@ -4464,8 +4464,8 @@ for (const [id, p] of shown) {
   const play = inj?.season ? ['no', `No. He's out for the season${hurtType}.`]
     : p.bye === week ? ['no', 'No. His team has no game this week (bye week).']
     : ['OUT', 'INJURY_RESERVE', 'SUSPENSION'].includes(p.status) ? ['no', `No. ${STATUS[p.status][0]}${hurtType}.${back}`]
-    : p.status === 'DOUBTFUL' ? ['no', `Probably not${hurtType}: ${playOdds(p, inj?.type).pct}% chance he plays. ${playOdds(p, inj?.type).why[0].toUpperCase()}${playOdds(p, inj?.type).why.slice(1)}, so plan to bench him.`]
-    : p.status === 'QUESTIONABLE' ? ['maybe', `${playOdds(p, inj?.type).pct >= 60 ? 'Probably' : playOdds(p, inj?.type).pct >= 40 ? 'Maybe' : 'Probably not'}${hurtType}: ${playOdds(p, inj?.type).pct}% chance he plays. ${playOdds(p, inj?.type).why[0].toUpperCase()}${playOdds(p, inj?.type).why.slice(1)}. Teams say who's out about 90 minutes before kickoff, so check then.`]
+    : p.status === 'DOUBTFUL' ? ['no', `Probably not${hurtType}: ${playOdds(p, inj?.type).pct}% chance he plays. ${playOdds(p, inj?.type).why[0].toUpperCase()}${playOdds(p, inj?.type).why.slice(1)}.`]
+    : p.status === 'QUESTIONABLE' ? ['maybe', `${playOdds(p, inj?.type).pct >= 60 ? 'Probably' : playOdds(p, inj?.type).pct >= 40 ? 'Maybe' : 'Probably not'}${hurtType}: ${playOdds(p, inj?.type).pct}% chance he plays. ${playOdds(p, inj?.type).why[0].toUpperCase()}${playOdds(p, inj?.type).why.slice(1)}.`]
     : ['yes', 'Yes, he\'s expected to play.'];
   const t = owner.get(id), mine = t === me;
   const advice = !mine ? null : inj?.season ? ['no', 'Drop him. He won\'t play again this season, so he\'s wasting a roster spot.'] : p.slot === 'IR' ? ['maybe', 'He\'s in your IR spot, so he doesn\'t use a bench spot. Leave him there until he\'s healthy.']

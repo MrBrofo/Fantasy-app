@@ -205,7 +205,7 @@ assert.equal(early.bestMove.items.length, 4, 'two in, two out');
 {
   const norm = s => s.toLowerCase(), pkey = n => n;
   const tagHist = { 'a|RB': { Q: [11, 9] }, 'b|RB': { Q: [2, 0] }, 'c|WR': { D: [4, 3] } };
-  const playOdds = new Function('rosSaved', 'practice', 'norm', 'pkey', 'SEASON', cut('const PLAY_ODDS = ', '  return { pct, base: base.pct, tags, played, why: `${base.why}. His own record: he played ${played} of ${tags} times he was listed ${p.status.toLowerCase()} since ${SEASON - 5}, so it\'s ${pct}%` };\n}') + '\nreturn playOdds;')({ tagHist }, new Map(), norm, pkey, 2026);
+  const playOdds = new Function('rosSaved', 'practice', 'norm', 'pkey', 'SEASON', cut('const PLAY_ODDS = ', '  return { pct, base: base.pct, tags, played, why: `${base.why}; he\'s played ${played} of ${tags} times listed ${p.status.toLowerCase()}` };\n}') + '\nreturn playOdds;')({ tagHist }, new Map(), norm, pkey, 2026);
   const q = (name, pos, status = 'QUESTIONABLE') => playOdds({ name, pos, status });
   assert.equal(q('a', 'RB').pct, 78, '9 of 11 played on a 71% base');
   assert.equal(q('b', 'RB').pct, 51, '0 of 2 only pulls it partway down');
