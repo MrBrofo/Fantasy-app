@@ -2100,6 +2100,7 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .lg .dot{animation:lgfade .35s ease-out both}
 @keyframes lgdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes lgfade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.lg *{animation:none!important}}
+.stat .pw{cursor:pointer;border:1px solid var(--accent)}.stat .pw .chev{display:inline-block;color:var(--accent);transition:transform .2s}.stat .pw.on .chev{transform:rotate(90deg)}html.term .stat .pw{border-color:var(--accent)}
 .lgx{display:flex;margin-top:4px}.lgx div{flex:1;text-align:center;cursor:pointer}.lgx .on small{color:var(--fg);font-weight:700}
 .lg .hit{fill:var(--fg);opacity:0;cursor:pointer}.lg .hit.on{opacity:.06}html.term .lg .hit{rx:0}.lg .dot,.lg path,.lg line{pointer-events:none}.lgwhy{margin:8px 0 0}.lgx small{display:block}
 .lgk{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px}.lgk i{display:inline-block;width:16px;border-top:2.5px solid var(--accent);vertical-align:middle;margin-right:6px}.lgk i.p{border-top:2px dashed #dfe4ec;opacity:.75}
@@ -2364,7 +2365,7 @@ ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pe
 })() : ''}
 <div id="stale" class="card" hidden style="background:var(--badbg);border-color:var(--bad)"><b style="color:var(--bad)">&#9888; This page stopped updating</b><div class="tag" id="staletext"></div></div>
 ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:var(--warn)"><b style="color:var(--warn)">&#9888; ${esc(down.join(' and '))} didn't load this time.</b>
-<div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points Vegas expects his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
+<div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points the betting odds expect his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
 <a id="fab" href="https://fantasy.espn.com/football/league?leagueId=${LEAGUE_ID}&amp;seasonId=${SEASON}" aria-label="Open the ESPN Fantasy app"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1c/b2/68/1cb2683b-9dce-d70c-8905-2562c0482eda/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/120x120bb.jpg" alt=""></a>
 <nav>${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
@@ -2894,6 +2895,13 @@ const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 let gcOpen = false; // the Watch view is open on this sheet
 // last games as a line chart: what he scored (solid, glowing, shaded under, numbers on the dots: green when he beat his
 // projection, red when he fell short) and what he was projected (dashed). The line draws itself in when the sheet opens.
+let pwOpen = false; // the "Why" under the expected number is open
+document.addEventListener('click', ev => {
+  const t = ev.target.closest('#sheet [data-projwhy]');
+  if (!t) return;
+  pwOpen = !pwOpen; t.classList.toggle('on', pwOpen); t.setAttribute('aria-expanded', pwOpen);
+  document.getElementById('projwhy').hidden = !pwOpen;
+});
 let lgWk = null; // the week tapped on the chart; a new sheet starts on the newest
 const lgPick = G => { const i = G.findIndex(g => g.wk === lgWk); return i < 0 ? G.length - 1 : i; };
 document.addEventListener('click', ev => {
@@ -2936,14 +2944,14 @@ function render(p) {
     (p.plays.length ? '<details class="plays"' + (p.plays.length <= 8 ? ' open' : '') + '><summary><b>His plays this game</b> (' + p.plays.length + ', newest first)</summary>' +
       p.plays.map(x => '<p' + (x.td ? ' class="td"' : '') + '><small>' + e(x.when) + '</small> ' + e(x.text) + '</p>').join('') + '</details>' : '') +
     '<div class="stat">' +
-      '<div><b>' + e(p.proj) + '</b><small>expected this week' + (p.ceiling ? ' (up to ' + e(p.ceiling) + ')' : '') + '</small></div>' +
+      (p.sources || p.notes.length ? '<div class="pw' + (pwOpen ? ' on' : '') + '" data-projwhy role="button" tabindex="0" aria-expanded="' + pwOpen + '"><b>' + e(p.proj) + ' <span class="chev">&rsaquo;</span></b>' : '<div><b>' + e(p.proj) + '</b>') + '<small>expected this week' + (p.ceiling ? ' (up to ' + e(p.ceiling) + ')' : '') + '</small></div>' +
       '<div><b>' + e(p.avg) + '</b><small>points per game this season</small></div>' +
       '<div><b>' + e(p.rank) + '</b><small>' + e(p.rankWhy || 'rank at his position') + '</small></div>' +
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
+    // tap the expected number: where it comes from and what's moving it this week
+    (p.sources || p.notes.length ? '<div id="projwhy"' + (pwOpen ? '' : ' hidden') + '><div class="group">Why ' + e(p.proj) + '</div>' + [p.sources, ...p.notes].filter(Boolean).map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') + '</div>' : '') +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
     (p.hit ? '<div class="group">How often he connects</div><p class="why" style="margin:0">' + e(p.hit) + '</p>' : '') +
-    (p.sources ? '<div class="group">Where "expected" comes from</div><p class="why" style="margin:0">' + e(p.sources) + '</p>' : '') +
-    (p.notes.length ? '<div class="group">What&rsquo;s affecting him</div>' + p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') : '') +
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
     (p.games.length ? (G => '<div class="group">Last games (fantasy points)</div>' + chart(G, lgPick(G)) + '<p class="why lgwhy">' + weekText(G[lgPick(G)]) + '</p>')(p.games) : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
@@ -3338,7 +3346,7 @@ document.addEventListener('click', ev => {
   drawGc();
 });
 let closeTimer;
-function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; lgWk = null; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; lgWk = null; pwOpen = false; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
@@ -4570,7 +4578,7 @@ for (const [id, p] of shown) {
     : recent < p.avg * 0.75 ? `Cold: ${n(recent)} per game over his last ${played.length} games, worse than his season average.` : '';
   const sources = [
     p.bye === week ? 'No game this week (bye), so no projection.' : p.roto != null || p.cbs != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
-    p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Vegas expects his team to score about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
+    p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Betting odds have his team scoring about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
   ].filter(Boolean).join(' ');
   pdata[id] = {
     id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: p.teamName, free: t ? null : { wa: !!p.wa, locked: locked(p) },
