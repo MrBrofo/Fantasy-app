@@ -387,5 +387,7 @@ console.log('ok');
 // (a regex like /\d/) silently disappears and breaks the whole page
 { const from = src.indexOf('<script>', src.indexOf('id="live"')) + 8, to = src.indexOf('</script></body></html>`', from);
   const page = new Function('ctx', 'with (ctx) { return `' + src.slice(from, to) + '`; }')(new Proxy({}, { has: (t, k) => k !== 'undefined', get: () => 'X' }));
-  new Function(page); // throws on a syntax error
+  // with the two String.raw blocks it pulls in (__TOOLSJS__, __MOVEJS__)
+  const raw = name => { const i = src.indexOf('const ' + name + ' = String.raw`') + name.length + 20; return src.slice(i, i + src.slice(i).search(/\r?\n`;/)); };
+  new Function(page.replace('__TOOLSJS__', () => raw('TOOLS_JS').replace('__BESTLINEUP__', 'function bestLineup() {}')).replace('__MOVEJS__', () => raw('MOVE_JS'))); // throws on a syntax error
   console.log('page script ok'); }
