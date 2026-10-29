@@ -383,12 +383,28 @@ function qbSplit(k, qbK, weeks = rosSaved.weeks ?? {}) {
   return { ratio, games: wo.length, with: avg(w), without: avg(wo) };
 }
 
+// Each source's projection and what the player then scored, to weight the sources by how close they've been in
+// this league's scoring. srcHist.weeks[wk][id] = [espn, roto, cbs, fp, actual]. Kept in state/ (Actions cache), with
+// site/sources.json as the copy to fall back on if the cache is ever lost.
+const histFile = path.join(dir, 'state', 'sources.json');
+let srcHist = null;
+try { srcHist = fs.existsSync(histFile) ? JSON.parse(fs.readFileSync(histFile, 'utf8')) : await (await fetch(`https://mrbrofo.github.io/Fantasy-app/sources.json?t=${Date.now()}`)).json(); } catch {}
+if (srcHist?.season !== SEASON) srcHist = { season: SEASON, weeks: {} };
+// weight = 1 / average miss, compared only on players every source projected, once 3 past weeks have scores
+// ponytail: one weight per source for every position; per-position weights once there's a full season of rows
+const srcWeights = (() => {
+  const rows = Object.entries(srcHist.weeks).filter(([wk]) => +wk < week).flatMap(([, r]) => Object.values(r)).filter(r => r[4] != null && r.slice(0, 4).every(v => v != null));
+  if (new Set(Object.entries(srcHist.weeks).filter(([wk, r]) => +wk < week && Object.values(r).some(x => x[4] != null)).map(([wk]) => wk)).size < 3 || rows.length < 100) return null;
+  return [0, 1, 2, 3].map(i => rows.length / Math.max(rows.length, rows.reduce((s, r) => s + Math.abs(r[i] - r[4]), 0))); // miss of at least 1 point
+})();
+const blend = v => { const w = v.map((x, i) => x == null ? 0 : srcWeights?.[i] ?? 1), tw = w.reduce((s, x) => s + x, 0); return tw ? v.reduce((s, x, i) => s + (x ?? 0) * w[i], 0) / tw : null; };
+
 // ratings[0] = season-long; positionalRanking = e.g. 14th-best QB so far
 function row(p, ratings) {
   const season = stat(p, 0, 0);
   const proj = stat(p, 1, 1);
   const pos = POS[p.defaultPositionId] ?? '?', team = proAbbr[p.proTeamId] ?? 'FA';
-  // expected points = average of ESPN, Rotowire, CBS and FantasyPros, whichever have a number (none if ESPN has none, e.g. bye)
+  // expected points = average of ESPN, Rotowire, CBS and FantasyPros (weighted by past accuracy once there's enough), whichever have a number (none if ESPN has none, e.g. bye)
   const espn = proj?.appliedTotal ?? null, k = team === 'FA' && pos !== 'D/ST' ? [...sleeper.keys(), ...cbs.keys()].find(x => x.startsWith(`${norm(p.fullName)}|`)) ?? pkey(p.fullName, pos, team) : pkey(p.fullName, pos, team);
   const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null, fx = espn == null ? null : fp.get(k) ?? null;
   const all = [espn, roto, cb, fx?.[0]].filter(v => v != null), wind = windFactor(pos, rosSaved.weather?.[TEAM(team)]);
@@ -401,7 +417,7 @@ function row(p, ratings) {
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
     now: stat(p, 0, 1)?.appliedTotal ?? null, nowLine: scoring(stat(p, 0, 1)),
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
-    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length * wind : null, wind, espn, roto, cbs: cb, fp: fx?.[0] ?? null, experts: fx, rosRank: fpRos.get(k)?.[1] ?? null, split: split(all), vegas: vegas[TEAM(team)] ?? null,
+    proj: all.length ? blend([espn, roto, cb, fx?.[0] ?? null]) * wind : null, wind, espn, roto, cbs: cb, fp: fx?.[0] ?? null, experts: fx, rosRank: fpRos.get(k)?.[1] ?? null, split: split(all), vegas: vegas[TEAM(team)] ?? null,
     ros: rosAll.length ? rosAll.reduce((s, v) => s + v, 0) / rosAll.length : null, rosBy,
     owned: p.ownership?.percentOwned ?? null, trend: p.ownership?.percentChange ?? 0, rank: ratings?.[0]?.positionalRanking || null,
   };
@@ -1087,7 +1103,7 @@ const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day 
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
 const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs], ['FantasyPros', p.fp]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
 // The (i) button on a suggestion: every number behind it and where it came from
-const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper), CBS Sports and FantasyPros (expert consensus) projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the four (FantasyPros from their rest-of-season expert rankings). Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024, moved by each player's own record when listed (nflverse injury reports and snap counts, last 5 seasons). Rosters, waiver order and claims: your ESPN league.";
+const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper), CBS Sports and FantasyPros (expert consensus) projections, each weighted by how close it has been in your league's scoring once 3 weeks are saved. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the four (FantasyPros from their rest-of-season expert rankings). Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024, moved by each player's own record when listed (nflverse injury reports and snap counts, last 5 seasons). Rosters, waiver order and claims: your ESPN league.";
 const srcLine = p => {
   const ros = ['ESPN', 'Rotowire', 'CBS'].map((s, i) => (p.rosBy?.[i] != null ? `${s} ${n(p.rosBy[i])}` : '')).filter(Boolean).join(', '), odds = playOdds(p, p.inj?.type);
   return `<b>${esc(p.name)}</b>: this week ${esc(srcText(p) || 'no projection (bye or not playing)')}${srcText(p).includes(',') ? `, average ${n(p.proj)}` : ''}` +
@@ -4757,7 +4773,7 @@ for (const [id, p] of shown) {
   const experts = ex ? `Experts rank him ${ex[1].replace(/(\D+)(\d+)/, '$1 #$2')} this week (${ex[5]} experts, from #${ex[2]} to #${ex[3]})${ex[4] ? `, start grade ${ex[4]}` : ''}.` : '';
   const projVs = p.proj == null || !p.avg ? '' : Math.abs(d) < 2 ? `About his usual: he averages ${n(p.avg)} a game.` : `${d > 0 ? 'More' : 'Less'} than his usual ${n(p.avg)} a game.`;
   const sources = [
-    p.bye === week ? 'No game this week (bye), so no projection.' : p.roto != null || p.cbs != null || p.fp != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
+    p.bye === week ? 'No game this week (bye), so no projection.' : p.roto != null || p.cbs != null || p.fp != null ? `${srcText(p)}. ${srcWeights ? 'We weight them by how close each has been this season.' : 'We use the average.'} ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
     p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Betting odds have his team scoring about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
   ].filter(Boolean).join(' ');
   pdata[id] = {
@@ -5006,6 +5022,16 @@ fs.writeFileSync(path.join(dir, 'site', 'index.html'), process.env.SITE_PASSWORD
 fs.cpSync(path.join(dir, 'icons'), path.join(dir, 'site'), { recursive: true });
 if (cbsSaved) fs.writeFileSync(path.join(dir, 'site', 'cbs.json'), JSON.stringify(cbsSaved));
 fs.writeFileSync(path.join(dir, 'site', 'ros.json'), JSON.stringify(rosSaved));
+// Projections update until his game starts; what he scored is added once it's over
+const r1 = v => v == null ? null : Math.round(v * 10) / 10, wkHist = srcHist.weeks[week] ??= {};
+for (const p of byId.values()) {
+  const g = gameNow[TEAM(p.team)]?.state;
+  if (g === 'pre' && p.espn != null && [p.roto, p.cbs, p.fp].some(v => v != null)) wkHist[p.id] = [p.espn, p.roto, p.cbs, p.fp, null].map(r1);
+  else if (g === 'post' && wkHist[p.id] && p.now != null) wkHist[p.id][4] = r1(p.now);
+}
+fs.mkdirSync(path.dirname(histFile), { recursive: true });
+fs.writeFileSync(histFile, JSON.stringify(srcHist));
+fs.writeFileSync(path.join(dir, 'site', 'sources.json'), JSON.stringify(srcHist));
 fs.copyFileSync(path.join(dir, 'sw.js'), path.join(dir, 'site', 'sw.js'));
 
 // Ask Claude's slow (half-price) answers that came in during the last day: one notification each
