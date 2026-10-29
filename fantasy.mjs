@@ -4300,7 +4300,8 @@ document.addEventListener('pointerdown', ev => {
   // how far along his route each runner is, s seconds into the play: slowing down but still moving as the play fades out
   const run = s => 1 - (1 - Math.min(1, Math.max(0, (s - 0.5) / 5))) ** 2;
   const LANES = [0.3, 0.6, 0.9]; // where each play's line of scrimmage sits, as a share of the screen's height
-  let plays = [], last = -99;
+  const MIX = 1.2; // seconds each play fades out while the next one in its lane fades in
+  let plays = [], olds = [], last = -99;
   const newPlay = lane => {
     const w = innerWidth, h = innerHeight, u = Math.min(w, 520) / 36, c = 12 * u + Math.random() * Math.max(0, w - 24 * u), y0 = h * (lane + (Math.random() - 0.5) * 0.06);
     const path = (x, y, steps, flip) => [[x, y], ...steps.map(([dx, dy]) => [x + dx * u * flip, y + dy * u])];
@@ -4317,7 +4318,7 @@ document.addEventListener('pointerdown', ev => {
     for (let i = 0; i < seg.length; i++) { if (left <= seg[i]) { const k = seg[i] ? left / seg[i] : 0; return [p.slice(0, i + 1), [p[i][0] + (p[i + 1][0] - p[i][0]) * k, p[i][1] + (p[i + 1][1] - p[i][1]) * k]]; } left -= seg[i]; }
     return [p.slice(0, -1), p.at(-1)];
   };
-  const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; plays = []; if (still) { last = -99; draw(PLAY * 0.55 * 1000); } };
+  const size = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; plays = []; olds = []; if (still) { last = -99; draw(PLAY * 0.55 * 1000); } };
   const draw = now => {
     if (!still) requestAnimationFrame(draw);
     if (document.hidden || now - last < 33 || dragging.size || !document.documentElement.classList.contains('glass')) return;
@@ -4327,7 +4328,8 @@ document.addEventListener('pointerdown', ev => {
     yardLines();
     LANES.forEach((lane, i) => {
       // the first round starts part way through, so the three are never in step
-      if (!plays[i] || t - plays[i].start > PLAY) plays[i] = { ...newPlay(lane), start: still ? t - PLAY * 0.55 : t - (plays[i] ? 0 : i * PLAY / 3) };
+      if (!plays[i] || (!still && t - plays[i].start > PLAY - MIX)) { olds[i] = plays[i]; plays[i] = { ...newPlay(lane), start: still ? t - PLAY * 0.55 : t - (plays[i] ? 0 : i * PLAY / 3) }; }
+      if (olds[i] && t - olds[i].start < PLAY) drawPlay(olds[i], t - olds[i].start);
       drawPlay(plays[i], t - plays[i].start);
     });
     cx.globalAlpha = 1;
@@ -4381,7 +4383,7 @@ document.addEventListener('pointerdown', ev => {
     }
   };
   const drawPlay = ({ u, runners, line, qb, d, to }, s) => {
-    const fade = Math.min(1, s / 0.4, (PLAY - s) / 0.9), f = run(s);
+    const fade = Math.min(1, s / MIX, (PLAY - s) / MIX), f = run(s);
     cx.globalAlpha = Math.max(0, fade); cx.lineCap = cx.lineJoin = 'round'; cx.lineWidth = 2;
     const ring = ([x, y], a) => { cx.strokeStyle = 'rgba(255,255,255,' + a + ')'; cx.beginPath(); cx.arc(x, y, u * 0.6, 0, 7); cx.stroke(); };
     for (const p of line) ring(p, 0.3);
