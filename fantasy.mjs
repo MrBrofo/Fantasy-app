@@ -1256,19 +1256,33 @@ for (const gid of new Set(starters(me).filter(p => soon(p, 2)).map(p => pro.find
   const d = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${gid}`)).json();
   for (const t of d.injuries ?? []) for (const x of t.injuries ?? []) if (x.details?.fantasyStatus?.abbreviation === 'INACTIVE') inactive.add(+x.athlete?.id);
 } catch (err) { console.warn('Inactive list skipped:', err.message); }
-const swapped = new Map(); // starter id -> who went in for him
+// Who replaces starter p: the best bench player who can play his spot, or, if it adds more, a starter who can play his
+// spot slides over (a flex WR into the WR spot) and the bench player takes that starter's spot instead (a RB or TE into
+// the flex). Only players whose games haven't started can move. Returns [the starter who slides or null, spot the bench
+// player goes to, bench player], or [] when nobody can come in. A tie goes to the plain swap.
+function swapPick(p, roster, used, moved) {
+  const slot = SLOT_ID[p.slot], fresh = x => notStarted(x) && !HURT.includes(x.status) && x.status !== 'DOUBTFUL' && !inactive.has(x.id);
+  const bench = roster.filter(b => b.slot === 'Bench' && fresh(b) && b.bye !== week && !used.has(b.id) && weekValue(b) > 0);
+  const slides = roster.filter(s => s !== p && s.slot !== 'Bench' && s.slot !== 'IR' && fresh(s) && !moved.has(s.id) && SLOT_POS[slot]?.includes(s.pos));
+  return [[null, slot], ...slides.map(s => [s, SLOT_ID[s.slot]])]
+    .flatMap(([s, to]) => bench.filter(b => SLOT_POS[to]?.includes(b.pos)).map(b => [s, to, b]))
+    .sort((a, b) => weekValue(b[2]) - weekValue(a[2]) || !!a[0] - !!b[0])[0] ?? [];
+}
+const swapped = new Map(), moved = new Set(); // starter id -> [who went in for him, the starter who slid over or null]; starters already slid
+const swapText = id => { const [sub, mid] = swapped.get(id); return `started ${sub.name}${mid ? ` (moving ${mid.name} into his spot)` : ''} on ESPN.`; };
 for (const p of starters(me)) {
   const gone = HURT.includes(p.status) || inactive.has(p.id), doubt = !gone && p.status === 'DOUBTFUL' && soon(p, 1);
   if (!(gone && soon(p, 2)) && !doubt) continue;
-  const slot = SLOT_ID[p.slot], sub = me.roster.filter(b => b.slot === 'Bench' && notStarted(b) && !HURT.includes(b.status) && b.status !== 'DOUBTFUL' && b.bye !== week &&
-    SLOT_POS[slot]?.includes(b.pos) && ![...swapped.values()].includes(b) && weekValue(b) > 0).sort((a, b) => weekValue(b) - weekValue(a))[0];
+  const slot = SLOT_ID[p.slot], [mid, to, sub] = swapPick(p, me.roster, new Set([...swapped.values()].map(v => v[0].id)), moved);
   if (!sub || (doubt && weekValue(sub) <= (p.proj ?? 0))) continue;
   const r = await fetch(`https://lm-api-writes.fantasy.espn.com/apis/v3/games/ffl/seasons/${SEASON}/segments/0/leagues/${LEAGUE_ID}/transactions/`, {
     method: 'POST', headers: { ...H, 'content-type': 'application/json' },
     body: JSON.stringify({ isLeagueManager: false, teamId: me.id, type: 'ROSTER', scoringPeriodId: league.scoringPeriodId, executionType: 'EXECUTE',
-      items: [{ playerId: p.id, type: 'LINEUP', fromLineupSlotId: slot, toLineupSlotId: SLOT_ID.Bench }, { playerId: sub.id, type: 'LINEUP', fromLineupSlotId: SLOT_ID.Bench, toLineupSlotId: slot }] }),
+      items: [{ playerId: p.id, type: 'LINEUP', fromLineupSlotId: slot, toLineupSlotId: SLOT_ID.Bench },
+        ...(mid ? [{ playerId: mid.id, type: 'LINEUP', fromLineupSlotId: to, toLineupSlotId: slot }] : []),
+        { playerId: sub.id, type: 'LINEUP', fromLineupSlotId: SLOT_ID.Bench, toLineupSlotId: to }] }),
   }).catch(err => ({ ok: false, json: async () => ({ messages: [err.message] }) }));
-  if (r.ok) { swapped.set(p.id, sub); console.log(`Auto swap: benched ${p.name} (${inactive.has(p.id) ? 'inactive' : p.status}), started ${sub.name}`); continue; }
+  if (r.ok) { swapped.set(p.id, [sub, mid]); if (mid) moved.add(mid.id); console.log(`Auto swap: benched ${p.name} (${inactive.has(p.id) ? 'inactive' : p.status}), started ${sub.name}${mid ? `, moved ${mid.name} into his spot` : ''}`); continue; }
   const why = await r.json().catch(() => ({}));
   console.warn(`Auto swap of ${p.name} failed:`, why.details?.[0]?.type ?? why.messages?.[0] ?? r.status);
   alerts.push([`autofail:${week}:${p.id}`, `Bench ${p.name} now`, `He's out, and the app couldn't swap him for ${sub.name} on ESPN. Do it in the ESPN app before his game starts.`, true]);
@@ -1281,13 +1295,13 @@ for (const p of me.roster) {
   const starting = p.slot !== 'Bench';
   alerts.push(!p.status
     ? [`q:${week}:${p.id}:${p.status}`, `${p.name} is playing`, bestIds.has(p.id) ? (starting ? 'He\'s in your lineup. Keep him there.' : 'Start him: he\'s in your best lineup.') : (starting ? 'He\'s playing, but someone on your bench is expected to score more. Check your to-do list.' : 'Keep him on your bench.'), true]
-    : [`q:${week}:${p.id}:${p.status}`, `${p.name} ${p.status === 'DOUBTFUL' ? 'probably won\'t play' : p.status === 'OUT' ? 'is out' : 'won\'t play'}`, swapped.has(p.id) ? `The app benched him and started ${swapped.get(p.id).name} on ESPN.` : starting ? `He's in your lineup, so swap him out in the ESPN app${soon(p, 2) ? ' now' : ', or the app will 2 hours before his game'}.` : 'He\'s on your bench, so there\'s nothing to do.', true]);
+    : [`q:${week}:${p.id}:${p.status}`, `${p.name} ${p.status === 'DOUBTFUL' ? 'probably won\'t play' : p.status === 'OUT' ? 'is out' : 'won\'t play'}`, swapped.has(p.id) ? `The app benched him and ${swapText(p.id)}` : starting ? `He's in your lineup, so swap him out in the ESPN app${soon(p, 2) ? ' now' : ', or the app will 2 hours before his game'}.` : 'He\'s on your bench, so there\'s nothing to do.', true]);
 }
 memo.q = Object.fromEntries(me.roster.filter(p => ['QUESTIONABLE', 'DOUBTFUL'].includes(p.status) && notStarted(p)).map(p => [p.id, p.status]));
 // Starter who won't play (bye, out, doubtful, IR, suspended)
 for (const p of starters(me)) {
   const bye = p.bye === week;
-  if (swapped.has(p.id) && !decided.has(p.id)) { alerts.push([`auto:${week}:${p.id}`, `${p.name} is out`, `The app benched him and started ${swapped.get(p.id).name} on ESPN.`, true]); continue; }
+  if (swapped.has(p.id) && !decided.has(p.id)) { alerts.push([`auto:${week}:${p.id}`, `${p.name} is out`, `The app benched him and ${swapText(p.id)}`, true]); continue; }
   if (decided.has(p.id) || !(bye || (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && notStarted(p)))) continue;
   alerts.push([`out:${week}:${p.id}`, `Bench ${p.name}`, `${bye ? 'His team has no game this week, so he\'d score 0.' : `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`} Your to-do list shows who to start instead.`, !bye && soon(p, 3)]);
 }

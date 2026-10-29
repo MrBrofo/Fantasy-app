@@ -366,3 +366,13 @@ console.log('ok');
   const k2 = { ...consts, slotCounts: { 2: 2, 20: 0, 21: 0 }, allFa: [fa] };
   const r2 = new Function(...Object.keys(k2), 'me', 'Date', code)(...Object.values(k2), { roster: ros }, { now: () => NOW });
   assert.equal(r2.bestSwap(ros, r2.seasonValue).length, 0); console.log('week cost ok'); }
+// auto swap: an out WR is replaced by sliding the flex WR over and putting the better bench RB in the flex,
+// a plain swap when a bench WR is just as good, and a started flex WR can't slide
+{ const pick = new Function('SLOT_ID', 'SLOT_POS', 'HURT', 'week', 'inactive', 'notStarted', 'weekValue', cut('function swapPick(', '\n}') + '\nreturn swapPick;')(
+    { QB: 0, RB: 2, WR: 4, TE: 6, FLEX: 23, Bench: 20, IR: 21 }, consts.SLOT_POS, consts.HURT, 7, new Set(), p => p.proTeamId !== 1, p => p.proj);
+  const out = pl(60, 'WR', 'WR', 15, 2, 'OUT'), flex = pl(61, 'WR', 'FLEX', 14, 2), wr = pl(62, 'WR', 'Bench', 6, 2), rb = pl(63, 'RB', 'Bench', 11, 2);
+  const [mid, to, sub] = pick(out, [out, flex, wr, rb], new Set(), new Set());
+  assert.ok(mid === flex && to === 23 && sub === rb, 'flex WR slides, RB takes the flex');
+  assert.equal(pick(out, [out, flex, { ...wr, proj: 11 }, rb], new Set(), new Set())[0], null, 'tie: plain swap');
+  assert.equal(pick(out, [out, { ...flex, proTeamId: 1 }, wr, rb], new Set(), new Set())[2].id, 62, 'started flex stays put');
+  console.log('auto swap ok'); }
