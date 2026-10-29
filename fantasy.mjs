@@ -2261,12 +2261,10 @@ html.glass .sheet-bg{background:rgba(0,0,0,.4)}
 html.glass .sheet-card{left:8px;right:8px;bottom:8px;border-radius:34px;background:rgba(28,28,30,.55);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}
 /* top edge: the page fades and softens as it scrolls under the status bar, instead of a hard bar */
 html.glass body::before{height:calc(env(safe-area-inset-top) + 28px);background:linear-gradient(rgba(0,0,0,.8),transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
-/* behind the page: a football field seen from above, faint yard lines and hash marks under a soft stadium light, with plays
-   drawing themselves on top (the chalkboard canvas), so the glass has something moving to bend */
+/* behind the page: a soft stadium light; the yard lines, hash marks and plays are drawn on the chalkboard canvas, so the
+   glass can bend them */
 html.glass::before{content:'';position:fixed;left:0;right:0;top:-80px;bottom:0;z-index:-1;pointer-events:none;
-background:radial-gradient(90% 55% at 50% 0%,rgba(255,255,255,.09),transparent 70%),
-repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 30% 0/10px 100% repeat-y,repeating-linear-gradient(180deg,rgba(255,255,255,.11) 0 1px,transparent 1px 16px) 70% 0/10px 100% repeat-y,
-repeating-linear-gradient(180deg,transparent 0 79px,rgba(255,255,255,.1) 79px 80px);
+background:radial-gradient(90% 55% at 50% 0%,rgba(255,255,255,.09),transparent 70%);
 -webkit-mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent)}
 /* glow, like Terminal: the picked tab, its bubble, win chances, the bars, coloured numbers and chips, and the main button */
 html.glass nav a.on{text-shadow:0 0 10px rgba(10,132,255,.8)}html.glass nav a.on svg{filter:drop-shadow(0 0 6px rgba(10,132,255,.9))}
@@ -4235,12 +4233,61 @@ document.addEventListener('pointerdown', ev => {
     last = now;
     const t = now / 1000;
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, innerWidth, innerHeight);
+    yardLines();
     LANES.forEach((lane, i) => {
       // the first round starts part way through, so the three are never in step
       if (!plays[i] || t - plays[i].start > PLAY) plays[i] = { ...newPlay(lane), start: still ? t - PLAY * 0.55 : t - (plays[i] ? 0 : i * PLAY / 3) };
       drawPlay(plays[i], t - plays[i].start);
     });
     cx.globalAlpha = 1;
+    bend();
+  };
+  // yard lines every 80px and two columns of hash marks, fading out at the sides
+  const yardLines = () => {
+    const w = innerWidth, h = innerHeight, g = cx.createLinearGradient(0, 0, w, 0);
+    for (const [k, a] of [[0, 0], [0.15, 1], [0.85, 1], [1, 0]]) g.addColorStop(k, 'rgba(255,255,255,' + a + ')');
+    cx.fillStyle = g;
+    cx.globalAlpha = 0.1; for (let y = 79; y < h; y += 80) cx.fillRect(0, y, w, 1);
+    cx.globalAlpha = 0.11; for (const x of [0.3 * (w - 10), 0.7 * (w - 10)]) for (let y = 0; y < h; y += 16) cx.fillRect(x, y, 10, 1);
+    cx.globalAlpha = 1;
+  };
+  // The tab bar and switch bars bend the field under them like a drop of water: near the edge each spot shows the field
+  // from a little farther out (squeezed in), and red, green and blue bend by different amounts, so lines split into a thin
+  // rainbow there. iPhone Safari can't bend what's behind a page element, so the bending is drawn into the field itself.
+  const maps = new Map();
+  const lensMap = (w, h, r, band, push) => { // in device pixels: each edge pixel, and where its red, green and blue come from
+    const key = [w, h, r].join(), hit = maps.get(key);
+    if (hit) return hit;
+    const m = Math.ceil(push * 1.15) + 1, W = w + 2 * m, idx = [], src = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const px = x + 0.5 - w / 2, py = y + 0.5 - h / 2, qx = Math.abs(px) - (w / 2 - r), qy = Math.abs(py) - (h / 2 - r);
+      const ox = Math.max(qx, 0), oy = Math.max(qy, 0), out = Math.hypot(ox, oy), d = r - out - Math.min(Math.max(qx, qy), 0); // d: how far in from the edge
+      if (d < 0 || d >= band) continue;
+      let nx = out > 0 ? ox / out : qx > qy ? 1 : 0, ny = out > 0 ? oy / out : qx > qy ? 0 : 1; // outward, away from the middle
+      nx *= Math.sign(px) || 1; ny *= Math.sign(py) || 1;
+      const k = (1 - d / band) ** 2 * push;
+      idx.push((y + m) * W + x + m);
+      for (const c of [1.15, 1, 0.85]) src.push(Math.round(y + m + ny * k * c) * W + Math.round(x + m + nx * k * c));
+    }
+    const v = { m, idx: Int32Array.from(idx), src: Int32Array.from(src) };
+    if (maps.size > 20) maps.clear();
+    maps.set(key, v);
+    return v;
+  };
+  const bend = () => {
+    for (const el of [document.querySelector('nav'), ...document.querySelectorAll('.seg')]) {
+      const b = el?.getBoundingClientRect();
+      if (!b?.width || b.bottom < 0 || b.top > innerHeight) continue;
+      const x = Math.round(b.left * dpr), y = Math.round(b.top * dpr), w = Math.round(b.width * dpr), h = Math.round(b.height * dpr);
+      const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, b.width / 2, b.height / 2) * dpr;
+      const L = lensMap(w, h, Math.round(r), Math.min(16 * dpr, h / 2), 12 * dpr), m = L.m;
+      const img = cx.getImageData(x - m, y - m, w + 2 * m, h + 2 * m), s = img.data, o = new Uint8ClampedArray(s);
+      for (let i = 0, j = 0; i < L.idx.length; i++, j += 3) {
+        const t = L.idx[i] * 4, R = L.src[j] * 4, G = L.src[j + 1] * 4, B = L.src[j + 2] * 4;
+        o[t] = s[R]; o[t + 1] = s[G + 1]; o[t + 2] = s[B + 2]; o[t + 3] = Math.max(s[R + 3], s[G + 3], s[B + 3]);
+      }
+      img.data.set(o); cx.putImageData(img, x - m, y - m);
+    }
   };
   const drawPlay = ({ u, runners, line, qb, d, to }, s) => {
     const fade = Math.min(1, s / 0.4, (PLAY - s) / 0.9), f = ease((s - 0.5) / 2.2);
