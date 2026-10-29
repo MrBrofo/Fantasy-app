@@ -2954,9 +2954,12 @@ function render(p) {
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
     // tap the expected number: where it comes from and what's moving it this week
     (p.sources || p.notes.length ? '<div id="projwhy"' + (pwOpen ? '' : ' hidden') + '><div class="group">Why ' + e(p.proj) + '</div>' +
-      (p.projLine?.length ? '<p class="why" style="margin:0">ESPN’s ' + e(p.espnProj) + ' adds up from:</p><ul class="pline">' + p.projLine.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
-      (p.projVs ? '<p class="why" style="margin:8px 0 6px"><b>' + e(p.projVs) + '</b></p>' : '') +
-      [...p.notes, p.sources].filter(Boolean).map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') + '</div>' : '') +
+      // the reasons first; the stat line and where the number comes from fold under More info
+      (p.projVs ? '<p class="why" style="margin:0 0 6px"><b>' + e(p.projVs) + '</b></p>' : '') +
+      p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') +
+      (p.projLine?.length || p.sources ? '<details class="plays"><summary><b>More info</b></summary>' +
+        (p.projLine?.length ? '<p class="why" style="margin:0">ESPN’s ' + e(p.espnProj) + ' adds up from:</p><ul class="pline">' + p.projLine.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
+        (p.sources ? '<p class="why" style="margin:6px 0 0">' + e(p.sources) + '</p>' : '') + '</details>' : '') + '</div>' : '') +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
     (p.hit ? '<div class="group">How often he connects</div><p class="why" style="margin:0">' + e(p.hit) + '</p>' : '') +
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
