@@ -2091,9 +2091,17 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .bars div{flex:1;text-align:center}.bars i{display:block;background:var(--accent);border-radius:4px 4px 0 0;margin:0 auto 4px;width:70%}
 .bars b{display:block;font-size:13px}.bars small{font-size:11px;color:var(--muted)}
 .lgw{display:block;overflow-x:auto;direction:rtl}.lgw>div{direction:ltr}.lg{display:block;width:100%;height:auto;overflow:visible}.lg path{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
-.lg path.p{stroke:var(--muted);stroke-width:2;stroke-dasharray:5 4}.lg circle{fill:var(--accent)}.lg text{fill:var(--fg);font-size:11px;font-weight:700;text-anchor:middle}
+.lg .gl{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.lg stop{stop-color:var(--accent);stop-opacity:.28}.lg stop+stop{stop-opacity:0}
+.lg .area{fill:url(#lgfill);stroke:none;animation:lgfade .9s ease-out both}.lg .glow{stroke-width:8;opacity:.18}
+.lg .a,.lg .glow{stroke-dasharray:1;animation:lgdraw .9s cubic-bezier(.3,.7,.2,1) both}
+.lg path.p{stroke:#dfe4ec;stroke-width:2;stroke-dasharray:5 5;opacity:.75;animation:lgfade .9s ease-out both}
+.lg circle{fill:var(--card);stroke:var(--accent);stroke-width:2.5}.lg .up circle{stroke:var(--good)}.lg .dn circle{stroke:var(--bad)}
+.lg text{fill:var(--fg);font:700 11px var(--num);text-anchor:middle}.lg .up text{fill:var(--good)}.lg .dn text{fill:var(--bad)}
+.lg .dot{animation:lgfade .35s ease-out both}
+@keyframes lgdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes lgfade{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.lg *{animation:none!important}}
 .lgx{display:flex;margin-top:4px}.lgx div{flex:1;text-align:center}.lgx small{display:block}
-.lgk{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px}.lgk i{display:inline-block;width:16px;border-top:2.5px solid var(--accent);vertical-align:middle;margin-right:6px}.lgk i.p{border-top:2px dashed var(--muted)}
+.lgk{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px}.lgk i{display:inline-block;width:16px;border-top:2.5px solid var(--accent);vertical-align:middle;margin-right:6px}.lgk i.p{border-top:2px dashed #dfe4ec;opacity:.75}
 .news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
 .news b{display:block;font-size:14px;font-weight:600}.news .nsnip{display:block;font-size:13px;color:var(--muted);margin:3px 0 2px}.news small{color:var(--muted);font-size:12px}
 details.news>summary,details.news[open]>summary{display:block;font-weight:400;margin:0;list-style:none;cursor:pointer}details.news>summary::after{content:none}details.news>summary::-webkit-details-marker{display:none}
@@ -2883,15 +2891,22 @@ const P = JSON.parse(document.getElementById('pdata').textContent);
 const sheet = document.getElementById('sheet'), body = sheet.querySelector('.sheet-body');
 const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let gcOpen = false; // the Watch view is open on this sheet
-// last games as a line chart: what he scored (solid, numbers on the dots) and what he was projected (dashed)
+// last games as a line chart: what he scored (solid, glowing, shaded under, numbers on the dots: green when he beat his
+// projection, red when he fell short) and what he was projected (dashed). The line draws itself in when the sheet opens.
 function chart(G) {
   const all = G.flatMap(g => [g.pts, g.proj]).filter(v => v != null), lo = Math.min(0, ...all), hi = Math.max(1, ...all);
-  const W = Math.max(300, G.length * 56), x = i => (i + 0.5) * W / G.length, y = v => 18 + (hi - v) / (hi - lo || 1) * 70;
-  // a game with no number (bye, didn't play) is skipped: the line runs straight on to the next one
-  const d = k => G.flatMap((g, i) => g[k] == null ? [] : [x(i).toFixed(1) + ',' + y(g[k]).toFixed(1)]).map((q, i) => (i ? 'L' : 'M') + q).join('');
-  return '<div class="lgk"><span><i></i>Scored</span><span><i class="p"></i>Projected</span></div><div class="bars lgw"><div style="min-width:' + W + 'px"><svg class="lg" viewBox="0 0 ' + W + ' 96">' +
-    '<path class="p" d="' + d('proj') + '"/><path d="' + d('pts') + '"/>' +
-    G.map((g, i) => g.pts == null ? '' : '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(g.pts).toFixed(1) + '" r="4"/><text x="' + x(i).toFixed(1) + '" y="' + (y(g.pts) - 8).toFixed(1) + '">' + g.pts.toFixed(1) + '</text>').join('') +
+  const W = Math.max(300, G.length * 62), x = i => (i + 0.5) * W / G.length, y = v => 22 + (hi - v) / (hi - lo || 1) * 74, f = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+  // a game with no number (bye, didn't play) is skipped: the line runs on to the next one. Smooth curves through the dots.
+  const pts = k => G.flatMap((g, i) => g[k] == null ? [] : [[x(i), y(g[k])]]);
+  const smooth = P => P.length ? 'M' + f(P[0]) + P.slice(1).map((p, i) => { const a = P[i - 1] ?? P[i], b = P[i], d = P[i + 2] ?? p;
+    return 'C' + f([b[0] + (p[0] - a[0]) / 6, b[1] + (p[1] - a[1]) / 6]) + ' ' + f([p[0] - (d[0] - b[0]) / 6, p[1] - (d[1] - b[1]) / 6]) + ' ' + f(p); }).join('') : '';
+  const S = pts('pts'), line = smooth(S), base = y(lo);
+  return '<div class="lgk"><span><i></i>Scored</span><span><i class="p"></i>Projected</span></div><div class="bars lgw"><div style="min-width:' + W + 'px"><svg class="lg" viewBox="0 0 ' + W + ' 104">' +
+    '<defs><linearGradient id="lgfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0"/><stop offset="1"/></linearGradient></defs>' +
+    [hi, (hi + lo) / 2, lo].map(v => '<line class="gl" x1="0" x2="' + W + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>').join('') +
+    (S.length > 1 ? '<path class="area" d="' + line + 'L' + f([S.at(-1)[0], base]) + 'L' + f([S[0][0], base]) + 'Z"/>' : '') +
+    '<path class="p" d="' + smooth(pts('proj')) + '"/><path class="glow" pathLength="1" d="' + line + '"/><path class="a" pathLength="1" d="' + line + '"/>' +
+    G.map((g, i) => g.pts == null ? '' : '<g class="dot ' + (g.proj == null ? '' : g.pts >= g.proj ? 'up' : 'dn') + '" style="animation-delay:' + (0.15 + 0.6 * i / G.length).toFixed(2) + 's"><circle cx="' + x(i).toFixed(1) + '" cy="' + y(g.pts).toFixed(1) + '" r="4.5"/><text x="' + x(i).toFixed(1) + '" y="' + (y(g.pts) - 10).toFixed(1) + '">' + g.pts.toFixed(1) + '</text></g>').join('') +
     '</svg><div class="lgx">' + G.map(g => '<div><small>' + (g.pts == null ? '<b>' + e(g.note) + '</b>' : g.proj == null ? '&nbsp;' : 'proj ' + g.proj.toFixed(1)) + '</small><small>wk ' + g.wk + '</small></div>').join('') + '</div></div></div>';
 }
 function render(p) {
@@ -3802,6 +3817,20 @@ for (let i = 0; i < ids.length; i += 50) {
   });
   for (const x of d.players) card.set(x.player.id, x.player);
 }
+// The league's answer may leave out past weeks' projections; then take ESPN's public ones. They come in standard and PPR
+// scoring only, so this league's half PPR is the average of the two.
+if (week > 1 && ![...card.values()].some(c => c.stats?.some(x => x.statSourceId === 1 && x.scoringPeriodId < week))) {
+  for (let i = 0; i < ids.length; i += 50) {
+    const f = { players: { filterIds: { value: ids.slice(i, i + 50) }, filterStatsForTopScoringPeriodIds: { value: 1, additionalValue: Array.from({ length: week - 1 }, (_, w) => `11${SEASON}${w + 1}`) } } };
+    const [std, ppr] = await Promise.all([1, 3].map(s => get(`${BASE}/segments/0/leaguedefaults/${s}?view=kona_playercard&scoringPeriodId=${week}`, f).catch(() => null)));
+    for (const x of ppr?.players ?? []) {
+      const c = card.get(x.player.id), s1 = std?.players.find(y => y.player.id === x.player.id)?.player.stats ?? [];
+      if (c) for (const s of x.player.stats ?? []) if (s.statSourceId === 1 && s.scoringPeriodId < week && s.appliedTotal != null)
+        (c.stats ??= []).push({ ...s, appliedTotal: (s.appliedTotal + (s1.find(y => y.id === s.id)?.appliedTotal ?? s.appliedTotal)) / 2 });
+    }
+  }
+}
+console.log('Past-week projections:', [...card.values()].filter(c => c.stats?.some(x => x.statSourceId === 1 && x.scoringPeriodId < week)).length, 'of', card.size, 'players');
 // Plain-English tag for a Rotowire player update, read from its headline. First match wins, so "ruled out" beats "questionable".
 const NEWS_TAGS = [
   ['Out for season', 'bad', /season-ending|out for the (rest of the )?season|miss the rest of the season|\btorn (acl|achilles|patellar)|\btore (his )?((left|right) )?(acl|achilles|patellar)/i],
@@ -4513,7 +4542,7 @@ for (const [id, p] of shown) {
   const games = [];
   for (let wk = 1; wk < week; wk++) { // every week so far for the chart; the write-ups only for the last 5
     const s = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk);
-    const proj = p.bye === wk ? null : c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk)?.appliedTotal ?? null;
+    const proj = p.bye === wk ? null : c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk)?.appliedTotal || null;
     games.push({ wk, pts: s?.appliedTotal ?? null, proj, note: p.bye === wk ? 'bye' : '–', line: wk < week - 5 ? [] : scoring(s), why: p.bye === wk || wk < week - 5 ? [] : whyWeek(p, wk, s?.appliedTotal ?? null, proj) });
   }
   // this week so far, once his game has started
