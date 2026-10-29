@@ -2044,6 +2044,8 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .sheet-card.closing{animation:down .2s cubic-bezier(.4,0,1,1) forwards}
 @keyframes up{from{transform:translateY(100%)}}@keyframes down{to{transform:translateY(100%)}}
 .sheet-body{overflow-y:auto;overflow-x:hidden;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
+.sheet-grab{position:absolute;top:0;left:0;right:0;height:24px;z-index:1;touch-action:none}.sheet-grab::after{content:'';position:absolute;top:8px;left:50%;width:38px;height:5px;margin-left:-19px;border-radius:3px;background:var(--muted);opacity:.5}
+html.term .sheet-grab::after{border-radius:0}
 .sheet-x{position:absolute;top:10px;right:12px;width:34px;height:34px;border-radius:50%;border:0;background:var(--chip);color:var(--fg);font-size:22px;line-height:1;cursor:pointer;z-index:1}
 .sheet-x::after{content:'';position:absolute;inset:-5px}/* 44px tap area around the 34px close button */
 .sh-top{display:flex;gap:14px;align-items:center;margin-bottom:14px;padding-right:40px}.sh-top .pic{width:64px;height:64px}
@@ -2567,7 +2569,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 </div>
-<div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
+<div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><div class="sheet-grab"></div><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
 <script type="application/json" id="pdata">__PDATA__</script>
 <script type="application/json" id="rdata">__RDATA__</script>
 <script type="application/json" id="snap">${JSON.stringify(snap).replace(/</g, '\\u003c')}</script>
@@ -3272,11 +3274,44 @@ function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; sheet.
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
-  const done = () => { sheet.hidden = true; closeTimer = null; document.body.style.overflow = ''; };
+  const card = sheet.querySelector('.sheet-card');
+  const done = () => { sheet.hidden = true; closeTimer = null; document.body.style.overflow = ''; card.style.transform = card.style.transition = ''; };
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
-  sheet.querySelector('.sheet-card').classList.add('closing');
+  card.classList.add('closing'); // slides down from wherever a swipe left it
   closeTimer = setTimeout(done, 200);
 }
+// Swipe down to close: drag from the top of the sheet, or pull down when it's scrolled to the top.
+// Let go past a quarter of the way (or flick it) and it closes; otherwise it springs back.
+(() => {
+  const card = sheet.querySelector('.sheet-card');
+  let x0, y0 = null, dy = 0, t0 = 0, drag = false;
+  sheet.addEventListener('touchstart', ev => {
+    y0 = null;
+    if (ev.touches.length > 1 || !ev.target.closest('.sheet-card') || ev.target.closest('input,textarea,select,#gc')) return;
+    const top = ev.touches[0].clientY - card.getBoundingClientRect().top < 56;
+    if (!top && body.scrollTop > 0) return;
+    x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; dy = 0; t0 = Date.now(); drag = false;
+  }, { passive: true });
+  sheet.addEventListener('touchmove', ev => {
+    if (y0 == null) return;
+    dy = ev.touches[0].clientY - y0;
+    if (!drag) {
+      if (dy < -6 || Math.abs(ev.touches[0].clientX - x0) > Math.abs(dy) + 6) { y0 = null; return; } // scrolling up or sideways
+      if (dy < 8) return;
+      drag = true; card.style.transition = 'none';
+    }
+    ev.preventDefault();
+    card.style.transform = 'translateY(' + Math.max(0, dy) + 'px)';
+  }, { passive: false });
+  const end = () => {
+    if (y0 == null) return;
+    y0 = null;
+    if (!drag) return;
+    if (dy > card.offsetHeight / 4 || (dy > 40 && dy / (Date.now() - t0) > 0.5)) return closeSheet();
+    card.style.transition = 'transform .3s cubic-bezier(.32,.72,0,1)'; card.style.transform = '';
+  };
+  sheet.addEventListener('touchend', end); sheet.addEventListener('touchcancel', end);
+})();
 
 // What changed since you last tapped "Got it". The last-seen copy lives only in this browser.
 const SNAP = JSON.parse(document.getElementById('snap').textContent);
