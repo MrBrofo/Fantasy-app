@@ -2963,7 +2963,7 @@ const weekText = g => {
   const d = g.proj == null ? null : g.pts - g.proj;
   const vs = d == null ? '' : Math.abs(d) < 3 ? 'About what he was projected (' + g.proj.toFixed(1) + ').' : Math.abs(d).toFixed(1) + (d > 0 ? ' more' : ' less') + ' than projected (' + g.proj.toFixed(1) + ').';
   // the biggest source of points, from the stat line ("Receiving yards: 84 (+8.4)")
-  const top = g.line.map(x => x.match(/^(.*?)(?::[^(]*)? \(\+?(-?[\d.]+)\)$/)).filter(m => m && +m[2] > 0)[0];
+  const top = g.line.map(x => x.match(/^(.*?)(?::[^(]*)? \\(\\+?(-?[\\d.]+)\\)$/)).filter(m => m && +m[2] > 0)[0];
   const from = top && g.pts > 0 ? ' Most came from ' + top[1].toLowerCase() + ' (' + Math.round(+top[2] / g.pts * 100) + '% of his points).' : '';
   return '<b>Week ' + g.wk + ': ' + g.pts.toFixed(1) + ' pts.</b> ' + vs + from + ' ' + e(g.why.filter(t => !t.startsWith('Expected about')).join(' ')) +
     (g.line.length ? '<br><small class="lgstat">' + e(g.line.join(' · ')) + '</small>' : '');

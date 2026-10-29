@@ -382,3 +382,10 @@ console.log('ok');
   assert.equal(pick(out, [out, flex, { ...wr, proj: 11 }, rb], new Set(), new Set())[0], null, 'tie: plain swap');
   assert.equal(pick(out, [out, { ...flex, proTeamId: 1 }, wr, rb], new Set(), new Set())[2].id, 62, 'started flex stays put');
   console.log('auto swap ok'); }
+
+// the page's own script parses: it sits inside a template string in fantasy.mjs, where a lone backslash
+// (a regex like /\d/) silently disappears and breaks the whole page
+{ const from = src.indexOf('<script>', src.indexOf('id="live"')) + 8, to = src.indexOf('</script></body></html>`', from);
+  const page = new Function('ctx', 'with (ctx) { return `' + src.slice(from, to) + '`; }')(new Proxy({}, { has: (t, k) => k !== 'undefined', get: () => 'X' }));
+  new Function(page); // throws on a syntax error
+  console.log('page script ok'); }
