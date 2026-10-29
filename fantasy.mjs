@@ -2949,7 +2949,10 @@ function render(p) {
       '<div><b>' + e(p.rank) + '</b><small>' + e(p.rankWhy || 'rank at his position') + '</small></div>' +
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
     // tap the expected number: where it comes from and what's moving it this week
-    (p.sources || p.notes.length ? '<div id="projwhy"' + (pwOpen ? '' : ' hidden') + '><div class="group">Why ' + e(p.proj) + '</div>' + [p.sources, ...p.notes].filter(Boolean).map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') + '</div>' : '') +
+    (p.sources || p.notes.length ? '<div id="projwhy"' + (pwOpen ? '' : ' hidden') + '><div class="group">Why ' + e(p.proj) + '</div>' +
+      (p.projLine?.length ? '<p class="why" style="margin:0">ESPN’s ' + e(p.espnProj) + ' adds up from:</p><ul class="pline">' + p.projLine.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
+      (p.projVs ? '<p class="why" style="margin:8px 0 6px"><b>' + e(p.projVs) + '</b></p>' : '') +
+      [...p.notes, p.sources].filter(Boolean).map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') + '</div>' : '') +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
     (p.hit ? '<div class="group">How often he connects</div><p class="why" style="margin:0">' + e(p.hit) + '</p>' : '') +
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
@@ -3833,7 +3836,7 @@ const ids = [...shown.keys()];
 const card = new Map();
 for (let i = 0; i < ids.length; i += 50) {
   const d = await get(`${LEAGUE}?view=kona_playercard&scoringPeriodId=${week}`, {
-    players: { filterIds: { value: ids.slice(i, i + 50) }, filterStatsForTopScoringPeriodIds: { value: week, additionalValue: [`00${SEASON}`, ...Array.from({ length: week - 1 }, (_, i) => `11${SEASON}${i + 1}`)] } }, // + what he was projected each past week
+    players: { filterIds: { value: ids.slice(i, i + 50) }, filterStatsForTopScoringPeriodIds: { value: week, additionalValue: [`00${SEASON}`, ...Array.from({ length: week }, (_, i) => `11${SEASON}${i + 1}`)] } }, // + what he was projected each week, this one too
   });
   for (const x of d.players) card.set(x.player.id, x.player);
 }
@@ -3841,12 +3844,14 @@ for (let i = 0; i < ids.length; i += 50) {
 // scoring only, so this league's half PPR is the average of the two.
 if (week > 1 && ![...card.values()].some(c => c.stats?.some(x => x.statSourceId === 1 && x.scoringPeriodId < week))) {
   for (let i = 0; i < ids.length; i += 50) {
-    const f = { players: { filterIds: { value: ids.slice(i, i + 50) }, filterStatsForTopScoringPeriodIds: { value: 1, additionalValue: Array.from({ length: week - 1 }, (_, w) => `11${SEASON}${w + 1}`) } } };
+    const f = { players: { filterIds: { value: ids.slice(i, i + 50) }, filterStatsForTopScoringPeriodIds: { value: 1, additionalValue: Array.from({ length: week }, (_, w) => `11${SEASON}${w + 1}`) } } };
     const [std, ppr] = await Promise.all([1, 3].map(s => get(`${BASE}/segments/0/leaguedefaults/${s}?view=kona_playercard&scoringPeriodId=${week}`, f).catch(() => null)));
     for (const x of ppr?.players ?? []) {
       const c = card.get(x.player.id), s1 = std?.players.find(y => y.player.id === x.player.id)?.player.stats ?? [];
-      if (c) for (const s of x.player.stats ?? []) if (s.statSourceId === 1 && s.scoringPeriodId < week && s.appliedTotal != null)
-        (c.stats ??= []).push({ ...s, appliedTotal: (s.appliedTotal + (s1.find(y => y.id === s.id)?.appliedTotal ?? s.appliedTotal)) / 2 });
+      if (c) for (const s of x.player.stats ?? []) if (s.statSourceId === 1 && s.scoringPeriodId <= week && s.appliedTotal != null && !c.stats?.some(y => y.id === s.id)) {
+        const t = s1.find(y => y.id === s.id), half = (a, b) => (a + (b ?? a)) / 2;
+        (c.stats ??= []).push({ ...s, appliedTotal: half(s.appliedTotal, t?.appliedTotal), appliedStats: Object.fromEntries(Object.entries(s.appliedStats ?? {}).map(([k, v]) => [k, half(v, t?.appliedStats?.[k])])) });
+      }
     }
   }
 }
@@ -4576,6 +4581,9 @@ for (const [id, p] of shown) {
   const recent = played.length ? played.reduce((s, g) => s + g.pts, 0) / played.length : null;
   const trend = recent == null || !p.avg || played.length < 2 ? '' : recent > p.avg * 1.25 ? `Hot: ${n(recent)} per game over his last ${played.length} games, better than his season average.`
     : recent < p.avg * 0.75 ? `Cold: ${n(recent)} per game over his last ${played.length} games, worse than his season average.` : '';
+  const pc = p.bye === week ? null : c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === week);
+  const projLine = pc ? scoring(pc) : [], d = (p.proj ?? 0) - (p.avg ?? 0);
+  const projVs = p.proj == null || !p.avg ? '' : Math.abs(d) < 2 ? `About his usual: he averages ${n(p.avg)} a game.` : `${d > 0 ? 'More' : 'Less'} than his usual ${n(p.avg)} a game.`;
   const sources = [
     p.bye === week ? 'No game this week (bye), so no projection.' : p.roto != null || p.cbs != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
     p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Betting odds have his team scoring about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
@@ -4586,7 +4594,7 @@ for (const [id, p] of shown) {
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? '#' + p.rank : '-', rankWhy: p.rank ? rankWhy(p) + ' (this season)' : '', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
-    trend, hit: hitLine(p)?.[1] ?? '', sources, games, now, plays: plays.get(id) ?? [], notes: notes(p),
+    trend, hit: hitLine(p)?.[1] ?? '', sources, projLine, projVs, espnProj: pc ? n(pc.appliedTotal) : null, games, now, plays: plays.get(id) ?? [], notes: notes(p),
     rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye} (done).` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}.`,
   };
