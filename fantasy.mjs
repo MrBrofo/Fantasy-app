@@ -4389,10 +4389,10 @@ document.addEventListener('pointerdown', ev => {
   if (!still) requestAnimationFrame(draw);
 })();
 
-// Glass background: a coach's chalkboard on the field. Three plays run at once (top, middle and bottom of the screen, each
-// starting a third of a play after the last, at a random spot across) so the whole board is busy. Each play: the offense lines up,
-// each receiver's route grows out with a glowing runner on its tip, the defenders follow, the QB's pass arcs to one of
-// them (in blue), and it all fades for the next play. ~30 frames a second, nothing while the app is hidden; with reduce
+// Glass background: a coach's chalkboard on the field. Three plays run together (top, middle and bottom of the screen, each
+// at a random spot across) so the whole board is busy. Each play: the offense lines up, each receiver's route grows out
+// with a glowing runner on its tip, the defenders follow, the QB's pass arcs to one of them (in blue). Then the whole board
+// crossfades into the next three, like switching pages. ~30 frames a second, nothing while the app is hidden; with reduce
 // motion on, one play stands still.
 (() => {
   const cv = document.getElementById('bg-field');
@@ -4405,7 +4405,7 @@ document.addEventListener('pointerdown', ev => {
   // how far along his route each runner is, s seconds into the play: slowing down but still moving as the play fades out
   const run = s => 1 - (1 - Math.min(1, Math.max(0, (s - 0.5) / 5))) ** 2;
   const LANES = [0.3, 0.6, 0.9]; // where each play's line of scrimmage sits, as a share of the screen's height
-  const MIX = 1.2; // seconds each play fades out while the next one in its lane fades in
+  const MIX = 0.8; // seconds the whole board fades out while the next one fades in
   let plays = [], olds = [], last = -99;
   const newPlay = lane => {
     const w = innerWidth, h = innerHeight, u = Math.min(w, 520) / 36, c = 12 * u + Math.random() * Math.max(0, w - 24 * u), y0 = h * (lane + (Math.random() - 0.5) * 0.06);
@@ -4432,8 +4432,7 @@ document.addEventListener('pointerdown', ev => {
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, innerWidth, innerHeight);
     yardLines();
     LANES.forEach((lane, i) => {
-      // the first round starts part way through, so the three are never in step
-      if (!plays[i] || (!still && t - plays[i].start > PLAY - MIX)) { olds[i] = plays[i]; plays[i] = { ...newPlay(lane), start: still ? t - PLAY * 0.55 : t - (plays[i] ? 0 : i * PLAY / 3) }; }
+      if (!plays[i] || (!still && t - plays[i].start > PLAY - MIX)) { olds[i] = plays[i]; plays[i] = { ...newPlay(lane), start: still ? t - PLAY * 0.55 : t }; }
       if (olds[i] && t - olds[i].start < PLAY) drawPlay(olds[i], t - olds[i].start);
       drawPlay(plays[i], t - plays[i].start);
     });
