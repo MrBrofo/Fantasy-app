@@ -1843,7 +1843,7 @@ const tier = (v, p, kind) => { const c = p && tierCut[`${kind}|${p.pos}`]; retur
 // status (the same average of ESPN, Rotowire and CBS, times wind, times his chance to play). Not for bye weeks or games underway.
 const liveBig = p => (p.bye === week || locked(p) || p.slot === 'IR' ? ''
   : ` data-big="${p.id}" data-st="${p.status || 'ACTIVE'}" data-espn="${p.espn ?? ''}" data-roto="${p.roto ?? ''}" data-cbs="${p.cbs ?? ''}" data-wind="${p.wind ?? 1}" data-odds="${playOdds(p, p.inj?.type)?.pct ?? 100}" data-v="${n(weekValue(p))}"${me.roster.includes(p) ? ` data-mine${p.slot !== 'Bench' ? ' data-start' : ''}` : ''}`);
-const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"><b${t ? ` class="t-${t[0]}"` : ''}${kind === 'week' && p ? liveBig(p) : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
+const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"${kind === 'week' && p?.id ? ` data-why="${p.id}"` : ''}><b${t ? ` class="t-${t[0]}"` : ''}${kind === 'week' && p ? liveBig(p) : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
 
 // Playoff seeding, ESPN's way: with divisions, each division winner takes a top seed; the rest go by record.
 // Ties: total points (ESPN's default tiebreak). A tie game counts as half a win.
@@ -2105,6 +2105,9 @@ nav{view-transition-name:nav}#seg{view-transition-name:seg}#bg-field{view-transi
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.3s}
 ::view-transition-old(nav),::view-transition-old(seg),::view-transition-old(bg){display:none}::view-transition-new(nav),::view-transition-new(seg),::view-transition-new(bg){animation:none}
 ::view-transition-group(nav),::view-transition-group(seg),::view-transition-group(bg){animation:none}
+[data-why]{cursor:pointer}.whypop{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:16px;animation:lgfade .2s ease-out}
+.whypop>div{width:100%;max-width:440px;max-height:80vh;max-height:80dvh;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:4px 18px 16px;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+.wp-name{font-weight:700;font-size:17px;margin-top:14px}.whypop .group{margin-top:6px}html.term .whypop>div{border-radius:0}
 .lgx{display:flex;margin-top:4px}.lgx div{flex:1;text-align:center;cursor:pointer}.lgx .on small{color:var(--fg);font-weight:700}
 .lg .hit{fill:var(--fg);opacity:0;cursor:pointer}.lg .hit.on{opacity:.06}html.term .lg .hit{rx:0}.lg .dot,.lg path,.lg line{pointer-events:none}.lgwhy{margin:8px 0 0}.lgx small{display:block}
 .lgk{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px}.lgk i{display:inline-block;width:16px;border-top:2.5px solid var(--accent);vertical-align:middle;margin-right:6px}.lgk i.p{border-top:2px dashed #dfe4ec;opacity:.75}
@@ -2899,6 +2902,24 @@ const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 let gcOpen = false; // the Watch view is open on this sheet
 // last games as a line chart: what he scored (solid, glowing, shaded under, numbers on the dots: green when he beat his
 // projection, red when he fell short) and what he was projected (dashed). The line draws itself in when the sheet opens.
+// why he's expected to score what he is: the reasons first; the stat line and where the number comes from fold under More info
+const whyBody = p => '<div class="group">Why ' + e(p.proj) + '</div>' +
+  (p.projVs ? '<p class="why" style="margin:0 0 6px"><b>' + e(p.projVs) + '</b></p>' : '') +
+  p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') +
+  (p.projLine?.length || p.sources ? '<details class="plays"><summary><b>More info</b></summary>' +
+    (p.projLine?.length ? '<p class="why" style="margin:0">ESPN’s ' + e(p.espnProj) + ' adds up from:</p><ul class="pline">' + p.projLine.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
+    (p.sources ? '<p class="why" style="margin:6px 0 0">' + e(p.sources) + '</p>' : '') + '</details>' : '');
+// the same, popped up over the page when you tap a player's number on a card; tap outside it to close
+function whyPop(id) {
+  const p = P[id];
+  if (!p || !(p.sources || p.notes.length)) return false;
+  const box = document.createElement('div');
+  box.className = 'whypop';
+  box.innerHTML = '<div role="dialog" aria-modal="true" aria-label="' + e(p.name) + '"><div class="wp-name">' + e(p.name) + '</div>' + whyBody(p) + '</div>';
+  box.addEventListener('click', ev => { if (ev.target === box) box.remove(); });
+  document.body.append(box);
+  return true;
+}
 let pwOpen = false; // the "Why" under the expected number is open
 document.addEventListener('click', ev => {
   const t = ev.target.closest('#sheet [data-projwhy]');
@@ -2953,13 +2974,7 @@ function render(p) {
       '<div><b>' + e(p.rank) + '</b><small>' + e(p.rankWhy || 'rank at his position') + '</small></div>' +
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
     // tap the expected number: where it comes from and what's moving it this week
-    (p.sources || p.notes.length ? '<div id="projwhy"' + (pwOpen ? '' : ' hidden') + '><div class="group">Why ' + e(p.proj) + '</div>' +
-      // the reasons first; the stat line and where the number comes from fold under More info
-      (p.projVs ? '<p class="why" style="margin:0 0 6px"><b>' + e(p.projVs) + '</b></p>' : '') +
-      p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') +
-      (p.projLine?.length || p.sources ? '<details class="plays"><summary><b>More info</b></summary>' +
-        (p.projLine?.length ? '<p class="why" style="margin:0">ESPN’s ' + e(p.espnProj) + ' adds up from:</p><ul class="pline">' + p.projLine.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
-        (p.sources ? '<p class="why" style="margin:6px 0 0">' + e(p.sources) + '</p>' : '') + '</details>' : '') + '</div>' : '') +
+    (p.sources || p.notes.length ? '<div id="projwhy"' + (pwOpen ? '' : ' hidden') + '>' + whyBody(p) + '</div>' : '') +
     (p.trend ? '<p class="why"><b>' + e(p.trend) + '</b></p>' : '') +
     (p.hit ? '<div class="group">How often he connects</div><p class="why" style="margin:0">' + e(p.hit) + '</p>' : '') +
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
@@ -3614,6 +3629,9 @@ document.addEventListener('click', ev => {
     if (d) { if (d.tagName === 'DETAILS') d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     return;
   }
+  // a player's number on a card: why he's expected that, in a pop-up
+  const wy = ev.target.closest('[data-why]');
+  if (wy && whyPop(wy.dataset.why)) return;
   // a name or bar in this week's matchup: that team's page (yours opens the Team tab)
   const tm = ev.target.closest('[data-tm]');
   if (tm) return +tm.dataset.tm === R.me ? (showTab('team', true), scrollTo(0, 0)) : openTeam(tm.dataset.tm); // yours: the Team tab
