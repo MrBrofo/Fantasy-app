@@ -2068,8 +2068,10 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .bars{display:flex;gap:8px;align-items:flex-end;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
 .bars div{flex:1;text-align:center}.bars i{display:block;background:var(--accent);border-radius:4px 4px 0 0;margin:0 auto 4px;width:70%}
 .bars b{display:block;font-size:13px}.bars small{font-size:11px;color:var(--muted)}
-a.news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
-a.news b{display:block;font-size:14px;font-weight:600}a.news .nsnip{display:block;font-size:13px;color:var(--muted);margin:3px 0 2px}a.news small{color:var(--muted);font-size:12px}
+.news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
+.news b{display:block;font-size:14px;font-weight:600}.news .nsnip{display:block;font-size:13px;color:var(--muted);margin:3px 0 2px}.news small{color:var(--muted);font-size:12px}
+.news summary{list-style:none;cursor:pointer}.news summary::-webkit-details-marker{display:none}.news .nmore{display:inline-block;transition:transform .2s}.news[open] .nmore{transform:rotate(90deg)}
+.news[open] .nsnip{display:none}.nfull{margin:8px 0 2px;font-size:14px;line-height:1.5;white-space:pre-line}
 .wp{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}.wp b{font:600 44px/1 var(--num);letter-spacing:-.04em}
 .live{display:inline-block;background:var(--badbg);color:var(--bad);font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
 .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat div{background:var(--chip);border-radius:12px;padding:10px}.stat b{display:block;font:600 20px var(--num)}.stat small{color:var(--muted);font-size:12px}
@@ -2178,9 +2180,9 @@ html.term section>h2::before,html.term details.fold>summary h2::before{content:'
 html.term .group,html.term .match h2,html.term .sh-q small{letter-spacing:.2em;font-size:10px}
 html.term .sub,html.term .why,html.term .tag,html.term .meta{font-size:12.5px}
 /* square edges everywhere */
-html.term .card,html.term .match,html.term details.fold,html.term .seg,html.term .seg button,html.term .btn,html.term .chip,html.term .lvl,html.term .lv,html.term .pos,html.term .gain,html.term .live,html.term .stat div,html.term .sh-q,html.term .bars,html.term a.news,html.term .sel,html.term .cmp-slot,html.term .pitch,html.term .chg,html.term .worder span,html.term [class^=verdict-],html.term #gloss,html.term #refresh,html.term .card.row .slot,html.term .bar,html.term .bar i{border-radius:0!important}
+html.term .card,html.term .match,html.term details.fold,html.term .seg,html.term .seg button,html.term .btn,html.term .chip,html.term .lvl,html.term .lv,html.term .pos,html.term .gain,html.term .live,html.term .stat div,html.term .sh-q,html.term .bars,html.term .news,html.term .sel,html.term .cmp-slot,html.term .pitch,html.term .chg,html.term .worder span,html.term [class^=verdict-],html.term #gloss,html.term #refresh,html.term .card.row .slot,html.term .bar,html.term .bar i{border-radius:0!important}
 html.term .list .card:first-child,html.term .list .card:last-child,html.term .list .card:only-child{border-radius:0}
-html.term .card,html.term .match,html.term details.fold,html.term a.news,html.term .sh-q{background:var(--card);border-color:var(--line)}
+html.term .card,html.term .match,html.term details.fold,html.term .news,html.term .sh-q{background:var(--card);border-color:var(--line)}
 html.term .match{border-color:#ffffff59;box-shadow:none;position:relative}
 html.term .wp b{text-shadow:0 0 18px currentColor}
 html.term .bar{height:2px}html.term .bar i{box-shadow:0 0 8px currentColor}
@@ -2231,8 +2233,8 @@ html.glass body{background:transparent;font-family:-apple-system,'SF Pro Text',G
 html.glass button,html.glass .btn,html.glass .seg button,html.glass #refresh{font-family:inherit}
 html.glass header{background:none}html.glass h1{font-size:34px;letter-spacing:-.02em}
 /* the page: solid, flat, iOS grouped lists */
-html.glass .card,html.glass .match,html.glass details.fold,html.glass a.news,html.glass .sh-q{background:var(--card);border:0;box-shadow:none}
-html.glass .card,html.glass details.fold,html.glass .match{border-radius:26px}html.glass .sh-q,html.glass a.news{border-radius:20px}
+html.glass .card,html.glass .match,html.glass details.fold,html.glass .news,html.glass .sh-q{background:var(--card);border:0;box-shadow:none}
+html.glass .card,html.glass details.fold,html.glass .match{border-radius:26px}html.glass .sh-q,html.glass .news{border-radius:20px}
 html.glass .sh-q.yes{border-left:4px solid var(--good)}html.glass .sh-q.no{border-left:4px solid var(--bad)}html.glass .sh-q.maybe{border-left:4px solid var(--warn)}
 html.glass .list .card{border-radius:0}html.glass .list .card+.card{border-top:.5px solid var(--line)}
 html.glass .list .card:first-child{border-radius:26px 26px 0 0}html.glass .list .card:last-child{border-radius:0 0 26px 26px}html.glass .list .card:only-child{border-radius:26px}
@@ -2890,7 +2892,8 @@ function render(p) {
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' +
       p.games.filter(g => g.why.length || g.line.length).map(g => '<p class="why" style="margin:8px 0 0"><b>Week ' + g.wk + (g.pts == null ? '' : ' (' + g.pts.toFixed(1) + ' pts)') + ':</b> ' + e(g.line.join(', ')) + (g.line.length && g.why.length ? '. ' : '') + e(g.why.join(' ')) + '</p>').join('') : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
-    (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
+    (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => x.f ? '<details class="news"><summary><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' <span class="nmore">&rsaquo;</span></small></summary><p class="nfull">' + e(x.f) + '</p></details>'
+      : '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
 // Watch: his game right now, like ESPN's gamecast. Score, down, a field with the drive, the last play,
@@ -3779,6 +3782,12 @@ const NEWS_TAGS = [
 const newsTag = h => NEWS_TAGS.find(([, , re]) => re.test(h)) ?? null;
 const blurbs = new Map(); // player id -> his Rotowire updates: { id, h (headline), s (first lines of the story), t (published ms), tag }
 // First two sentences of a news story, so news like a teammate getting hurt shows the day it happens, not only the headline
+// the whole story, as plain text with its paragraphs, so a news card can open in the app instead of on ESPN
+const fullStory = story => {
+  const txt = String(story ?? '').replace(/<\/p>|<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&rsquo;|&lsquo;/g, "'")
+    .replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n\n').trim();
+  return txt.length > 3000 ? txt.slice(0, 2997).replace(/\s+\S*$/, '') + '...' : txt;
+};
 const snip = (story, h = '') => {
   const txt = String(story ?? '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   if (!txt || txt.startsWith(h.slice(0, 40))) return '';
@@ -3802,7 +3811,7 @@ const news = new Map(await Promise.all(ids.filter(id => id > 0).map(async id => 
     // player notes (his name in the headline) before general articles that only mention him
     const items = feed.filter(x => x.headline && (x.headline + ' ' + (x.story ?? '')).toLowerCase().includes(last))
       .sort((a, b) => b.headline.toLowerCase().includes(last) - a.headline.toLowerCase().includes(last)).slice(0, 2);
-    return [id, items.map(x => ({ h: x.headline, s: snip(x.story, x.headline), url: x.links?.web?.href || `https://www.espn.com/nfl/player/_/id/${id}`, when: new Date(x.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }))];
+    return [id, items.map(x => ({ h: x.headline, s: snip(x.story, x.headline), f: fullStory(x.story), url: x.links?.web?.href || `https://www.espn.com/nfl/player/_/id/${id}`, when: new Date(x.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }))];
   } catch { return [id, []]; }
 })));
 const owner = new Map(teams.flatMap(t => t.roster.map(p => [p.id, t])));
