@@ -455,7 +455,8 @@ const weekValue = p => (playable(p) && !(locked(p) && !isStarter(p)) ? (p.proj ?
 // Long-term value: rest-of-season points per game (average of the sources), else his average so far
 const rate = p => p.ros ?? p.avg ?? 0;
 // out this week isn't out for the season: only IR or out-for-season takes him to 0 (his rest-of-season projection covers the rest)
-const seasonValue = p => (p.slot !== 'IR' && p.status !== 'INJURY_RESERVE' && !p.inj?.season ? rate(p) : 0);
+const outLong = p => p.slot === 'IR' || p.status === 'INJURY_RESERVE' || !!p.inj?.season;
+const seasonValue = p => (outLong(p) ? 0 : rate(p));
 const score = (players, value) => bestLineup(players, value).total;
 const starters = t => t.roster.filter(p => p.slot !== 'Bench' && p.slot !== 'IR');
 // A questionable player is a fine start when a healthy bench player at his position plays at the same time or later:
@@ -564,30 +565,42 @@ const weakness = (p, roster = me.roster) => { if (p.inj?.season) return -1;
 // A long-term keeper: 1.5+ a game better rest of season than the best free agent at his position, so he'd be
 // hard to get back. Never dropped for a one-week gain (pickup plan, and the check on pending claims).
 const isKeeper = p => { const o = faBest.find(o => o.pos === p.pos); return seasonValue(p) >= (o ? seasonValue(o) : 0) + 1.5; };
-function bestSwap(roster, value, used = new Set()) {
-  const sc = r => (value === weekValue ? weekScore(r) : score(r, value));
-  const base = sc(roster);
-  const seasonBase = score(roster, seasonValue), weekBase = weekScore(roster);
-  // the next 2 weeks with byes taken out: never drop a bye-week fill-in (a second defense picked up for next
-  // week looked free to drop, since it doesn't start this week or in the season-long lineup)
-  const byeBase = byeScore(roster);
-  // the league locks transactions: a player whose game has kicked off can't be added or dropped until next week.
-  // A this-week pickup only uses a spare bench spot: a long-term keeper is never dropped for one week.
-  const drops = roster.filter(p => p.slot !== 'IR' && (!HURT.includes(p.status) || p.inj?.season) && !used.has(p.id) && !locked(p) && !(value === weekValue && isKeeper(p)));
+// A move's worth, week by week for the rest of the regular season: this week as weekScore counts it, each later week
+// with ESPN's projection for that week (0 on bye), else his rest-of-season number. So a pickup that's great this week
+// and worse after, or a trade that costs this week and wins later, is judged on both. now = this week,
+// later = average a week after, total = every week added up.
+// ponytail: playoff weeks aren't counted, and later weeks assume no other moves (a streamer could be swapped again)
+const futureWeeks = Array.from({ length: Math.max(0, lastWeek - week) }, (_, i) => week + 1 + i);
+const weekPts = w => p => (p.bye === w || outLong(p) ? 0 : rosSaved.future?.by?.[p.id]?.[w - week - 1] ?? rate(p));
+const futureScores = r => futureWeeks.map(w => score(r, weekPts(w)));
+function horizon(after, before, nowBase = weekScore(before), laterBase = futureScores(before), now = weekScore(after) - nowBase) {
+  const later = futureScores(after).reduce((t, x, i) => t + x - laterBase[i], 0);
+  return { now, later: futureWeeks.length ? later / futureWeeks.length : 0, total: now + later };
+}
+// a step that's mostly this week's points is a this-week pickup; gain is what its card leads with
+const kindOf = s => Object.assign(s, s.later * futureWeeks.length >= s.now ? { kind: 'season', gain: s.later } : { kind: 'week', gain: s.now });
+// "+6.0 this week · +2.0 a week after"
+const sign = v => `${v >= 0 ? '+' : ''}${n(v)}`;
+const gainText = (now, later) => `${sign(now)} this week${futureWeeks.length ? ` · ${sign(later)} a week after` : ''}`;
+function bestSwap(roster, used = new Set()) {
+  const nowBase = weekScore(roster), laterBase = futureScores(roster);
+  // the league locks transactions: a player whose game has kicked off can't be added or dropped until next week
+  const drops = roster.filter(p => p.slot !== 'IR' && (!HURT.includes(p.status) || p.inj?.season) && !used.has(p.id) && !locked(p));
   const out = [];
   for (const add of allFa) {
-    if (value(add) <= 0 || used.has(add.id) || locked(add)) continue;
+    if ((weekValue(add) <= 0 && seasonValue(add) <= 0) || used.has(add.id) || locked(add)) continue;
     let top = null;
     for (const drop of drops) {
-      const next = [...roster.filter(p => p !== drop), add];
-      // a rest-of-season pickup also pays for points it costs this week (dropping someone who'd start this week), and the reverse
-      const gain = sc(next) - base + (value === seasonValue ? Math.min(0, weekScore(next) - weekBase) : Math.min(0, score(next, seasonValue) - seasonBase)) + Math.min(0, byeScore(next) - byeBase);
+      const g = horizon([...roster.filter(p => p !== drop), add], roster, nowBase, laterBase);
+      // a long-term keeper is only dropped for someone a point a week better after this week
+      if (g.later < 1 && isKeeper(drop)) continue;
       // on a tie, drop the weaker player
-      if (!top || gain > top.gain + 0.05 || (gain > top.gain - 0.05 && weakness(drop, roster) < weakness(top.drop, roster))) top = { add, drop, gain };
+      if (!top || g.total > top.total + 0.05 || (g.total > top.total - 0.05 && weakness(drop, roster) < weakness(top.drop, roster))) top = { add, drop, ...g };
     }
-    if (top && top.gain >= 1) out.push(top); // under a point isn't worth a roster move
+    // under a point, this week or a week after, isn't worth a roster move
+    if (top && top.total > 0 && Math.max(top.now, top.later) >= 1) out.push(kindOf(top));
   }
-  return out.sort((a, b) => b.gain - a.gain).slice(0, 5);
+  return out.sort((a, b) => b.total - a.total).slice(0, 5);
 }
 
 // --- Trades. Managers judge a player by "value over replacement": how much better he is than the
@@ -605,14 +618,18 @@ const startersText = ps => ps.map(p => `${esc(p.name)} (${n(rate(p))})`).join(',
 const faBest = allFa.filter(playable).sort((a, b) => seasonValue(b) - seasonValue(a));
 const refill = (after, before) => (after.length < before.length ? [...after, ...faBest.slice(0, before.length - after.length)] : after);
 // Effect of a trade on both teams. give = players I send, take = players I get.
+let myLater; // my lineup's later weeks as is, worked out once
 function judge(give, take, them) {
   const mineAfter = [...me.roster.filter(p => !give.includes(p)), ...take];
   const theirsAfter = [...them.roster.filter(p => !take.includes(p)), ...give];
+  // this week: a starter of mine whose game has kicked off already scored for me, traded or not; a player
+  // I'd get counts like a bench player (0 once his game has kicked off)
+  const mineWeek = weekScore([...me.roster.filter(p => !give.includes(p) || (locked(p) && isStarter(p))), ...take.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(me.roster);
+  const h = horizon(refill(mineAfter, me.roster), me.roster, 0, myLater ??= futureScores(me.roster), mineWeek);
   return {
-    mine: score(refill(mineAfter, me.roster), seasonValue) - score(me.roster, seasonValue),
-    // this week: a starter of mine whose game has kicked off already scored for me, traded or not; a player
-    // I'd get counts like a bench player (0 once his game has kicked off)
-    mineWeek: weekScore([...me.roster.filter(p => !give.includes(p) || (locked(p) && isStarter(p))), ...take.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(me.roster),
+    // per week over the rest of the season, this week included
+    mine: h.total / (futureWeeks.length + 1),
+    mineWeek, mineLater: h.later,
     theirs: score(refill(theirsAfter, them.roster), seasonValue) - score(them.roster, seasonValue),
     vorGive: give.reduce((s, p) => s + vor(p), 0), vorTake: take.reduce((s, p) => s + vor(p), 0),
     after: mineAfter,
@@ -779,15 +796,13 @@ const plan = [];
 {
   let roster = [...baseRoster];
   const used = new Set([...claims.flatMap(m => m.add.map(a => a.id)), ...fills.map(f => f.add.id)]);
-  for (const [kind, value] of [['week', weekValue], ['season', seasonValue]]) {
-    while (plan.length < 5) {
-      const opts = bestSwap(roster, value, used);
-      if (!opts.length) break;
-      const s = opts[0];
-      plan.push({ ...s, kind, alts: opts.slice(1).filter(o => o.add.pos === s.add.pos).slice(0, 2) });
-      used.add(s.add.id);
-      roster = [...roster.filter(p => p !== s.drop), { ...s.add, slot: 'Bench' }];
-    }
+  while (plan.length < 5) {
+    const opts = bestSwap(roster, used);
+    if (!opts.length) break;
+    const s = opts[0];
+    plan.push({ ...s, alts: opts.slice(1).filter(o => o.add.pos === s.add.pos).slice(0, 2) });
+    used.add(s.add.id);
+    roster = [...roster.filter(p => p !== s.drop), { ...s.add, slot: 'Bench' }];
   }
   // Same set of drops, but paired with a same-position add where possible so steps read
   // naturally (defense for defense), then each step's gain is recounted in that order.
@@ -797,16 +812,15 @@ const plan = [];
   const recount = () => {
     roster = [...baseRoster];
     for (const s of plan) {
-      const value = s.kind === 'week' ? weekValue : seasonValue;
       const next = [...roster.filter(p => p !== s.drop), { ...s.add, slot: 'Bench' }];
-      s.gain = (value === weekValue ? weekScore(next) - weekScore(roster) : score(next, value) - score(roster, value));
+      kindOf(Object.assign(s, horizon(next, roster)));
       roster = next;
     }
   };
   recount();
-  if (plan.some(s => s.gain < 1)) { plan.forEach((s, i) => { s.drop = original[i]; }); recount(); }
+  if (plan.some(s => s.total <= 0 || Math.max(s.now, s.later) < 1)) { plan.forEach((s, i) => { s.drop = original[i]; }); recount(); }
 }
-const weekPlanGain = plan.filter(s => s.kind === 'week').reduce((t, s) => t + s.gain, 0);
+const weekPlanGain = plan.reduce((t, s) => t + s.now, 0);
 
 // --- Trade partners: what each team is short on and has extra of.
 // "Short" = their worst starter at a position is below the league's typical (median) starter there.
@@ -1104,7 +1118,7 @@ for (const f of fills) todo.push([f.week >= 1 ? 'urgent' : 'week', f.byeFor.leng
   `You have an open roster spot.${f.week >= 0.5 ? ` Adds about ${n(f.week)} points this week.` : ''}${byeText(f)} ${f.add.pos === 'D/ST' ? 'They\'re' : 'He\'s'} expected ${n(rate(f.add))} per game the rest of the season${f.season >= 0.5 ? `, which makes your lineup about ${n(f.season)} better per week` : f.rest >= 1 ? `. As a backup ${f.add.pos === 'D/ST' ? 'they add' : 'he adds'} about ${Math.round(f.rest)} points over the next two weeks covering byes` : ', a backup for injuries'}.${f.add.wa ? ' On waivers, so it\'s a claim.' : ''}${f.claim ? ` You also have a claim in for ${f.claim.add[0].name}. Keep trying for him, but make that claim drop ${f.add.name} (steps under Pending): win it and ${f.claim.add[0].name} replaces ${they(f.add) === 'they' ? 'them' : 'him'}, lose it and you still have ${f.add.name}.` : ''}`, fillMove(f), [f.add]]);
 for (const [i, s] of plan.entries()) {
   todo.push([i === 0 && s.kind === 'week' && sitOut.length > benchIn.length ? 'urgent' : 'week', `Pickup step ${i + 1}: add ${s.add.name}, drop ${s.drop.name}`,
-    (s.kind === 'week' ? `About +${n(s.gain)} points this week.` : `About +${n(s.gain)} points a week for the rest of the season.`) + alsoText(s.alts.map(a => a.add), s.kind === 'week' ? weekValue : rate), locked(s.add) || locked(s.drop) ? null : pickupMove(s), [s.add, s.drop]]);
+    `${gainText(s.now, s.later)}.` + alsoText(s.alts.map(a => a.add), s.kind === 'week' ? weekValue : rate), locked(s.add) || locked(s.drop) ? null : pickupMove(s), [s.add, s.drop]]);
 }
 // A better backup: free, and a backup 2+ a game better covers injuries and byes better. Only the best one, and only when the
 // pickup plan doesn't already touch either player
@@ -1330,11 +1344,11 @@ for (const tx of myFailed) {
 const wplan = plan.find(x => x.add.wa);
 if (etDay === waiverEve && etHour >= 18 && wplan) {
   const s = wplan;
-  alerts.push([`wrem:${week}`, `Waivers run ${cap(waiverDay)}`, `Claim ${s.add.name} and drop ${s.drop.name}: ${s.kind === 'week' ? `about ${n(s.gain)} more points this week` : `about ${n(s.gain)} more points per week`}. More ideas in the app.`, false]);
+  alerts.push([`wrem:${week}`, `Waivers run ${cap(waiverDay)}`, `Claim ${s.add.name} and drop ${s.drop.name}: ${gainText(s.now, s.later)}. More ideas in the app.`, false]);
 }
 // Someone available beats a player you have, or fills an empty spot: tell me once per player per week, as soon as it shows up
 for (const s of plan) alerts.push([`pickup:${week}:${s.add.id}`, `${s.add.name} is better than ${s.drop.name}`,
-  `${s.kind === 'week' ? `About ${n(s.gain)} more points this week` : `About ${n(s.gain)} more points per week`}. ${s.add.wa ? 'On waivers, so put in a claim' : 'Free agent, so you can add him now'}.`, s.kind === 'week']);
+  `${gainText(s.now, s.later)}. ${s.add.wa ? 'On waivers, so put in a claim' : 'Free agent, so you can add him now'}.`, s.kind === 'week']);
 for (const x of benchUps) alerts.push([`bench:${week}:${x.add.id}`, `Better backup: ${x.add.name}`,
   `${n(rate(x.add))} a game vs ${x.drop.name}'s ${n(rate(x.drop))}, rest of season. ${x.add.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'} Small upgrade; details in Pickups.`, false]);
 // only worth a buzz when there's something to do about it: a free agent to add now in case the claim is lost
@@ -2391,9 +2405,9 @@ ${fillIns.length ? `<div class="group">Injury fill-ins: grab them first</div><p 
   <p class="why">${lnk(f.starter)} ${esc(f.word)}${f.long ? ' and will be out a while' : ''}, so ${esc(f.name)} is next up (${esc(f.owner.name)} has ${esc(f.starter.name)}). ${f.gain >= 0.5 ? `As the starter he'd add about ${n(f.gain)} a week to your lineup.` : 'He wouldn\'t start for you, but adding him keeps him from a rival who needs him.'}${f.p ? ` ${f.p.wa ? 'On waivers, so it\'s a claim.' : 'Free agent: yours right away.'}` : ' Search his name in the ESPN app to add him.'}${f.drop ? ` To make room: drop ${esc(f.drop.name)}.` : ''}</p>
   ${MOVE_URL && addMove(f.p, f.drop) ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...addMove(f.p, f.drop), week: league.scoringPeriodId }))}">${esc(addMove(f.p, f.drop).label)}</button>` : ''}</div>`).join('')}</div>` : ''}
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
-  <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'this week only (uses a spare bench spot)' : 'long-term upgrade'}</div>
+  <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'mostly this week' : 'long-term upgrade'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'this week' : 'per game, rest of season', null, s.add, wk ? 'week' : 'season')}</div>
-  <p class="why"><span class="gain">+${n(s.gain)}</span> ${wk ? 'more points this week' : 'more points per week'}. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
+  <p class="why"><span class="gain">${gainText(s.now, s.later)}</span>. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
   <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
   ${s.add.wa ? (() => { const r = rivalsFor(s.add, wk ? weekValue : seasonValue); return r.length
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
@@ -2438,9 +2452,7 @@ ${pending.length ? pending.map(m => {
   return `<div class="card"><div class="vhead"><span class="tag">${m.mineOffer ? 'You offered' : 'Offered to you by'} <b>${esc(m.them.name)}</b></span><span class="verdict-${v[0]}">${esc(v[1])}</span></div>
   <div class="swap"><div class="arrow">you give</div>${m.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div>${m.take.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
-  <p class="why"><b style="color:var(--${v[0] === 'meh' ? 'fg' : v[0]})">${Math.abs(m.mine) < 1 ? 'About even for you' : `You'd ${m.mine > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.mine))} point${Math.round(Math.abs(m.mine)) === 1 ? '' : 's'} a week`} for the rest of the season.</b>
-  ${Math.abs(m.mineWeek) >= 1 ? `This week alone: ${m.mineWeek > 0 ? '+' : ''}${n(m.mineWeek)} points.` : ''} They'd ${Math.abs(m.theirs) < 1 ? 'come out about even' : `${m.theirs > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.theirs))} a week`}.
-  ${m.mineWeek > 2 && m.mine < -1 ? '<br><b>Trap:</b> it only helps this week (your players are on bye or hurt). After that you\'re worse off.' : ''}
+  <p class="why"><b style="color:var(--${v[0] === 'meh' ? 'fg' : v[0]})">For you: ${gainText(m.mineWeek, m.mineLater)}.</b> They'd ${Math.abs(m.theirs) < 1 ? 'come out about even' : `${m.theirs > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.theirs))} a week`}.
   ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
   ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p>
   ${exBtns(m.give, m.take, true)}
@@ -2455,7 +2467,7 @@ ${pending.length ? pending.map(m => {
   <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game, rest of season', null, t.give, 'season')}</div>
   <div class="arrow">for</div>
   <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
-  <p class="why"><span class="gain">+${n(t.mine)}</span> points per week for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
+  <p class="why"><span class="gain">${gainText(t.mineWeek, t.mineLater)}</span> for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
   <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p>${exBtns([t.give], [t.take], true)}</div>`; }).join('')}${poolEmpty}</div>
 ${poolMore}
 </section>

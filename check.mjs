@@ -10,7 +10,7 @@ const code = cut('function bestLineup(', 'const lineupProj = t => weekLine(t).re
   + '\n' + cut('const best = bestLineup(me.roster,', 'const sitOut = starters(me).filter(p => !bestIds.has(p.id));')
   + '\n' + cut('const weekScore = ', '.lineup.reduce((t, x) => t + weekValue(x.player), 0);')
   + '\n' + cut('const faBest = ', '    after: mineAfter,\n  };\n}')
-  + '\n' + cut('const weakness = ', '  return out.sort((a, b) => b.gain - a.gain).slice(0, 5);\n}')
+  + '\n' + cut('const weakness = ', '  return out.sort((a, b) => b.total - a.total).slice(0, 5);\n}')
   + '\n' + cut('const SLOT_ID = ', 'const bestMove = lineupMove();')
   + '\nreturn { weekValue, seasonValue, locked, best, benchIn, sitOut, judge, bestSwap, bestMove, weakness };';
 
@@ -22,10 +22,10 @@ const consts = {
   slotCounts: { 0: 1, 2: 2, 4: 2, 6: 1, 23: 1, 16: 0, 17: 0, 20: 6, 21: 1 }, FA_SLOT: { QB: 0, RB: 2, WR: 4, TE: 6, K: 17, 'D/ST': 16 },
   SLOT: { 0: 'QB', 2: 'RB', 4: 'WR', 6: 'TE', 23: 'FLEX', 20: 'Bench', 21: 'IR' },
   SLOT_POS: { 0: ['QB'], 2: ['RB'], 4: ['WR'], 6: ['TE'], 23: ['RB', 'WR', 'TE'] },
-  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, playOdds: p => ({ DOUBTFUL: { pct: 7 }, QUESTIONABLE: { pct: 71 } })[p.status] ?? null, pro, vor: () => 0, byeScore: () => 0,
+  HURT: ['OUT', 'INJURY_RESERVE', 'SUSPENSION'], week: 7, lastWeek: 7, rosSaved: {}, playOdds: p => ({ DOUBTFUL: { pct: 7 }, QUESTIONABLE: { pct: 71 } })[p.status] ?? null, pro, vor: () => 0, byeScore: () => 0,
   allFa: [pl(30, 'RB', 'FA', 30, 1), { ...pl(31, 'RB', 'FA', 20, 2), ros: 5 }], // 30 already played (locked), 31 plays later
 };
-const run = roster => new Function(...Object.keys(consts), 'me', 'Date', code)(...Object.values(consts), { roster }, { now: () => NOW });
+const run = (roster, more = {}) => { const c = { ...consts, ...more }; return new Function(...Object.keys(c), 'me', 'Date', code)(...Object.values(c), { roster }, { now: () => NOW }); };
 const ids = list => list.map(p => p.id).sort();
 
 const base = [
@@ -58,7 +58,7 @@ assert.equal(r.judge([], [pl(21, 'RB', 'RB', 25, 2)], them).mineWeek, 25 - 10, '
 assert.equal(r.judge([base[1]], [], them).mineWeek, 0, 'trading away a starter who already played loses nothing this week');
 assert.equal(r.judge([base[2]], [], them).mineWeek, -(12 - 9), 'trading away one who plays later: the bench RB (9) steps in');
 // 2 for 1: the open roster spot gets the best free agent (31, worth 5 a game), so getting one player isn't undervalued
-assert.equal(r.judge([base[2], base[3]], [{ ...pl(40, 'RB', 'RB', 0, 2), ros: 3 }], them).mine, 3 + 5, 'open spot filled from free agents');
+assert.equal(run(base, { lastWeek: 8 }).judge([base[2], base[3]], [{ ...pl(40, 'RB', 'RB', 0, 2), ros: 3 }], them).mineLater, 3 + 5, 'open spot filled from free agents');
 
 // questionable: start him when a bench player at his position plays at the same time or later (swap him if he's inactive)
 {
@@ -105,19 +105,25 @@ assert(Math.abs(mean) < 0.03 && Math.abs(sd - 1) < 0.03, `bell curve off: mean $
 assert.equal(sim()(), sim()(), 'same week, same numbers');
 
 // transaction locking: no pickup of a player who already played, no drop of one either
-const swaps = r.bestSwap(base, r.weekValue);
+const swaps = r.bestSwap(base);
 assert(swaps.length && swaps.every(x => x.add.id === 31), 'only the free agent who plays later');
 assert(swaps.every(x => !r.locked(x.drop)), 'never drops a player whose game has started');
 // a long-term keeper (rest of season well above any free agent) is never dropped for a one-week pickup
 {
   const keep = swaps[0].drop, roster = base.map(p => (p.id === keep.id ? { ...p, ros: 20 } : p));
-  assert(r.bestSwap(roster, r.weekValue).every(x => x.drop.id !== keep.id), 'kept the long-term player');
+  assert(r.bestSwap(roster).every(x => x.drop.id !== keep.id), 'kept the long-term player');
 }
-// a bye-week fill-in (worth points only in the next 2 weeks) is never the drop
+// a bye-week fill-in (worth points only next week) is never the drop
 {
-  const keep = swaps[0].drop, guarded = { ...consts, byeScore: roster => (roster.some(p => p.id === keep.id) ? 10 : 0) };
-  const r2 = new Function(...Object.keys(guarded), 'me', 'Date', code)(...Object.values(guarded), { roster: base }, { now: () => NOW });
-  assert(r2.bestSwap(base, r2.weekValue).every(x => x.drop.id !== keep.id), 'kept the player needed for an upcoming bye');
+  const keep = swaps[0].drop, r2 = run(base, { lastWeek: 8, rosSaved: { future: { by: { [keep.id]: [15] } } } });
+  assert(r2.bestSwap(base).every(x => x.drop.id !== keep.id), 'kept the player needed for an upcoming bye');
+}
+// this week and later weeks both count: a steady player (8 a week after) beats a one-week boom (20 now, 1 after)
+{
+  const boom = { ...pl(50, 'RB', 'FA', 20, 2), ros: 1 }, steady = { ...pl(51, 'RB', 'FA', 11, 2), ros: 8 };
+  const out = run(base, { lastWeek: 9, allFa: [boom, steady] }).bestSwap(base);
+  assert.deepEqual(out.map(x => [x.add.id, x.kind]), [[51, 'season'], [50, 'week']]);
+  assert.deepEqual(out.map(x => [x.now, x.later]), [[1, 8], [10, 1]], 'this week: they push out the 10; later weeks: the rest of the lineup is 0');
 }
 // lineup move sent to ESPN: legal slots, gives exactly the best lineup, never moves a locked player
 const applyMove = (roster, move) => roster.map(p => { const x = move?.items.find(i => i.playerId === p.id); return x ? { ...p, slot: consts.SLOT[x.to] } : p; });
@@ -363,9 +369,9 @@ console.log('ok');
   assert.ok(w(ks[2]) < w(rb) && w(ks[1]) < w(rb) && w(ks[0]) > w(rb)); console.log('spare kicker ok'); }
 // a rest-of-season pickup that drops this week's starter pays for the points lost this week
 { const ros = [{ ...pl(50, 'RB', 'RB', 20, 2), ros: 5 }, { ...pl(51, 'RB', 'RB', 15, 2), ros: 12 }], fa = { ...pl(52, 'RB', 'FA', 3, 4), ros: 8 };
-  const k2 = { ...consts, slotCounts: { 2: 2, 20: 0, 21: 0 }, allFa: [fa] };
+  const k2 = { ...consts, lastWeek: 8, slotCounts: { 2: 2, 20: 0, 21: 0 }, allFa: [fa] };
   const r2 = new Function(...Object.keys(k2), 'me', 'Date', code)(...Object.values(k2), { roster: ros }, { now: () => NOW });
-  assert.equal(r2.bestSwap(ros, r2.seasonValue).length, 0); console.log('week cost ok'); }
+  assert.equal(r2.bestSwap(ros).length, 0); console.log('week cost ok'); }
 // auto swap: an out WR is replaced by sliding the flex WR over and putting the better bench RB in the flex,
 // a plain swap when a bench WR is just as good, and a started flex WR can't slide
 { const pick = new Function('SLOT_ID', 'SLOT_POS', 'HURT', 'week', 'inactive', 'notStarted', 'weekValue', cut('function swapPick(', '\n}') + '\nreturn swapPick;')(
