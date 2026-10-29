@@ -1901,7 +1901,10 @@ const recordOdds = Object.entries(byRecord).filter(([, [, c]]) => c >= SIMS * 0.
 const fixedProj = best.total;
 // projected score after pending claims and the to-do list (best lineup from that roster)
 const planProj = weekScore(baseRoster) + weekPlanGain;
-const lineupRows = [...me.roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
+const bySlot = roster => [...roster].sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
+const lineupRows = bySlot(me.roster);
+// one roster row, the same on My team and on every other team's page
+const lineRow = p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p, nowPts(p))}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`;
 // the matchup line under the scores: 'final' = all games over, 'decided' = ESPN gives 0% or 100%
 const verdictText = (win, by, how) => how === 'final' ? `<b style="color:var(--${win ? 'good' : 'bad'})">You ${win ? 'won' : 'lost'}</b> by ${by} points. Final.`
   : how === 'decided' ? `<b style="color:var(--${win ? 'good' : 'bad'})">${win ? 'Locked up' : 'Out of reach'}:</b> you'll ${win ? 'win' : 'lose'} by about ${by} points. ESPN gives ${win ? 'them' : 'you'} no chance with the games left.`
@@ -2348,7 +2351,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <section id="lineup"><h2>My team</h2>
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
   const ps = lineupRows.filter(f);
-  const rows = ps.map(p => `<div class="card row"><span class="slot">${p.slot === 'Bench' || p.slot === 'IR' ? '' : p.slot}</span>${player(p, nowPts(p))}${big(weekValue(p), 'this week', weekValue(p) > 0 ? p.ceiling : null, p, 'week')}</div>`).join('');
+  const rows = ps.map(lineRow).join('');
   // starters show; bench and injured reserve fold to one line
   return !ps.length ? '' : label === 'Starting' ? `<div class="group">${label}</div><div class="list">${rows}</div>` : `<details class="fold"><summary class="group">${label} (${ps.length})</summary><div class="list">${rows}</div></details>`;
 }).join('')}
@@ -3793,23 +3796,12 @@ const rosterOf = teamId => R.teams.find(t => t.id === teamId).ids.map(plOf).filt
 // (live every 30s, same as your players), and what each player is expected to score
 function teamPage(tid) {
   const t = R.teams.find(x => x.id === +tid);
-  if (!t || !t.rows) return '';
-  const row = r => {
-    const [id, slot, now, pro, st, clock, proj] = r, x = plOf(id);
-    if (!x) return '';
-    const game = st === 'bye' ? 'Bye week: no game' : st === 'pre' ? e(clock) : '';
-    const pts = st === 'in' || st === 'post' ? '<b>' + now.toFixed(1) + ' pts</b> ' + (st === 'post' ? 'final' : 'so far &middot; ' + e(clock)) : '';
-    return '<div class="card row"><span class="slot">' + (slot === 'Bench' || slot === 'IR' ? '' : e(slot)) + '</span><div class="player"' + (P[id] ? ' data-pid="' + id + '"' : '') + '>' + photo(x) +
-      '<div class="who"><div class="name">' + e(x.name) + '</div><div class="meta"><span class="pos pos-' + x.pos.replace('/', '') + '">' + x.pos + '</span> ' + e(x.team || '') + '</div>' +
-      (x.status === 'healthy' || x.status === 'on bye this week' ? '' : '<span class="chip ' + (/^(might|day)/.test(x.status) ? 'warn' : 'bad') + '">' + e(x.status[0].toUpperCase() + x.status.slice(1)) + '</span>') +
-      (game ? '<div class="nowpts">' + game + '</div>' : '') + (st === 'bye' ? '' : '<div class="nowpts" data-live="' + id + '" data-pro="' + pro + '"' + (pts ? '>' + pts : ' hidden>') + '</div>') +
-      '</div></div><div class="big"><b>' + proj.toFixed(1) + '</b><small>expected</small></div></div>';
-  };
-  const start = t.rows.filter(r => r[1] !== 'Bench' && r[1] !== 'IR'), bench = t.rows.filter(r => r[1] === 'Bench' || r[1] === 'IR');
+  if (!t || !t.start) return '';
+  const { start, bench } = t; // rows built on the server, same as My team
   return '<div class="sh-top"><div><div class="sh-name">' + e(t.id === R.me ? 'You' : t.name) + '</div><div class="tag">' + t.rec + ' record</div></div></div>' +
     '<div class="stat"><div><b data-teamnow="' + t.id + '">' + (t.now == null ? '0.0' : t.now.toFixed(1)) + '</b><small>points so far this week</small></div><div><b>' + (t.proj == null ? '-' : t.proj.toFixed(1)) + '</b><small>expected final score</small></div></div>' +
-    '<div class="group">Starting</div><div class="list">' + start.map(row).join('') + '</div>' +
-    (bench.length ? '<details class="fold" style="margin-top:12px"><summary class="group">Bench (' + bench.length + ')</summary><div class="list">' + bench.map(row).join('') + '</div></details>' : '');
+    '<div class="group">Starting</div><div class="list">' + start.join('') + '</div>' +
+    (bench.length ? '<details class="fold" style="margin-top:12px"><summary class="group">Bench (' + bench.length + ')</summary><div class="list">' + bench.join('') + '</div></details>' : '');
 }
 function openTeam(tid) {
   const html = teamPage(tid);
@@ -4359,6 +4351,8 @@ document.addEventListener('click', async ev => {
     alert('ESPN did not make the move: ' + (WHY[err.message] || err.message) + '.');
   }
 });`;
+// every team's rows, built before the player pages below so each of their players gets one
+const teamRows = new Map(teams.map(t => [t, bySlot(t.roster).map(p => [isStarter(p), lineRow(p)])]));
 const pdata = {};
 for (const [id, p] of shown) {
   const c = card.get(id), inj = p.inj ?? (c?.injuryDetails && { type: c.injuryDetails.type, season: c.injuryDetails.outForSeason, back: c.injuryDetails.expectedReturnDate && new Date(c.injuryDetails.expectedReturnDate[0], c.injuryDetails.expectedReturnDate[1] - 1, c.injuryDetails.expectedReturnDate[2]) });
@@ -4423,7 +4417,7 @@ const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
-    rows: [...t.roster].sort((a, c) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(c.slot)).map(p => { const g = gameNow[TEAM(p.team)]; return [p.id, p.slot, p.now ?? 0, p.proTeamId ?? 0, p.bye === week ? 'bye' : g?.state ?? '', g?.text ?? '', +(p.proj ?? 0).toFixed(1)]; }) }; }), fa: faList.map(p => p.id),
+    start: teamRows.get(t).filter(r => r[0]).map(r => r[1]), bench: teamRows.get(t).filter(r => !r[0]).map(r => r[1]) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
