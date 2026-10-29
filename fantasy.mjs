@@ -3549,23 +3549,29 @@ try { askSlowOn = localStorage.getItem('askSlowOn') === '1'; } catch {}
 askSlowBox.classList.toggle('on', askSlowOn);
 askSlowBox.onclick = () => { askSlowOn = !askSlowOn; askSlowBox.classList.toggle('on', askSlowOn); try { localStorage.setItem('askSlowOn', askSlowOn ? '1' : '0'); } catch {} };
 // credits left: the API can't tell the page the balance, so it's typed in once (from console.anthropic.com > Billing)
-// and each answer's cost, worked out by the Worker from the tokens it used, comes off it. Saved on this phone only
+// and each answer's cost, worked out by the Worker from the tokens it used, comes off it. The Worker keeps the one
+// number for every device; this phone keeps a copy to show right away
 const money = x => x < 0.995 ? (x * 100).toFixed(x < 0.1 ? 2 : 1) + '¢' : '$' + x.toFixed(2);
 const balGet = () => { try { const b = parseFloat(localStorage.getItem('askBal')); return isNaN(b) ? null : b; } catch { return null; } };
 const balShow = spent => { const b = balGet(); document.getElementById('askbal').textContent = (b == null ? 'Set credits' : '$' + b.toFixed(2) + ' left') + (spent != null ? ' (−' + money(spent) + ')' : ''); };
+const balKeep = b => { try { b == null ? localStorage.removeItem('askBal') : localStorage.setItem('askBal', String(b)); } catch {} };
+// ask the Worker (set: a new amount, or null to clear); keeps the copy and shows it
+const balSync = (body = {}) => LIVE && fetch(LIVE.url.replace(/[/]$/, '') + '/bal', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify(body) })
+  .then(r => r.ok ? r.json() : null).then(d => { if (d && 'bal' in d) { balKeep(d.bal); balShow(); } }).catch(() => {});
 document.getElementById('askbal').onclick = () => {
   const v = prompt('How much Anthropic credit is left? (console.anthropic.com, Billing)', balGet()?.toFixed(2) ?? '');
   if (v == null) return;
   const b = parseFloat(v.replace('$', ''));
-  try { isNaN(b) ? localStorage.removeItem('askBal') : localStorage.setItem('askBal', String(b)); } catch {}
-  balShow();
+  balKeep(isNaN(b) ? null : b); balShow();
+  balSync({ set: isNaN(b) ? null : b });
 };
-balShow();
+balShow(); balSync();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') balSync(); });
 // Ask: the Worker asks Claude (paid from the Anthropic credits) and the answer shows here. No Worker: open claude.ai
 // answers come short; Tell me more asks again for the full version (the league facts are cached by then, so it's mostly
 // the longer writing you pay for), with the short answer so it builds on it
 let askLast = '', askCtl = null;
-const askPaid = c => { if (typeof c !== 'number') return; const b = balGet(); if (b != null) try { localStorage.setItem('askBal', String(b - c)); } catch {} balShow(c); };
+const askPaid = (c, bal) => { if (typeof c !== 'number') return; if (bal !== undefined) balKeep(bal); else { const b = balGet(); if (b != null) balKeep(b - c); } balShow(c); };
 const askDone = (d, more) => askHtml(d.answer || 'No answer came back.') + (d.cut ? '<p class="tag">The answer was cut off. Ask a narrower question for the rest.</p>' : '') + (more || !d.answer ? '' : '<button type="button" id="askmore" class="linkbtn">Tell me more</button>');
 // Slow (half price): the Worker hands back a batch id, saved on this phone and checked every 30 seconds while the app is
 // open and again whenever it's opened; the site's update sends a notification when it's in.
@@ -3603,7 +3609,7 @@ const slowCheck = async () => {
     if (slowGet()?.id !== p.id) return; // cancelled or replaced while this check was out
     try { localStorage.removeItem('askSlow'); } catch {}
     askReady();
-    askPaid(d.cost);
+    askPaid(d.cost, d.bal);
     if (!p.more) askLast = d.answer || '';
     histAdd(p.q + (p.more ? ' (more)' : ''), d.answer);
     out.innerHTML = '<p class="tag">' + e(p.q) + '</p>' + askDone(d, p.more);
@@ -3620,7 +3626,7 @@ const askRun = async more => {
   try {
     const r = await fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ text: facts, fixed: askFixed(), q: document.getElementById('askq').value.trim(), mode: askMode, slow: askSlowOn }), signal: askCtl.signal });
     const d = await r.json().catch(() => ({}));
-    askPaid(d.cost);
+    askPaid(d.cost, d.bal);
     if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
     if (d.batch) {
       try { localStorage.setItem('askSlow', JSON.stringify({ id: d.batch, q: document.getElementById('askq').value.trim(), more })); } catch {}

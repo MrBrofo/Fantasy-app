@@ -6,6 +6,21 @@
 //   ANTHROPIC_API_KEY (Ask Claude; paid per question from the Anthropic Console's credits).
 // It only ever touches TEAM_ID, and only these move types, whatever the request says.
 import Anthropic from '@anthropic-ai/sdk';
+import { DurableObject } from 'cloudflare:workers';
+
+// Credits left for Ask, one number for every phone and computer: typed in on the site (from the Anthropic Console),
+// and each answer's cost comes off it here. A half-price answer is charged once, however many times it's fetched.
+export class Ledger extends DurableObject {
+  async read() { return (await this.ctx.storage.get('bal')) ?? null; }
+  async set(b) { await (b == null ? this.ctx.storage.delete('bal') : this.ctx.storage.put('bal', b)); return b; }
+  async charge(cost, key) {
+    if (key && await this.ctx.storage.get('paid:' + key)) return this.read();
+    if (key) await this.ctx.storage.put('paid:' + key, Date.now());
+    const b = await this.read();
+    return b == null ? null : this.set(b - cost);
+  }
+}
+const ledger = env => env.LEDGER.get(env.LEDGER.idFromName('credits'));
 
 const SITE = 'https://mrbrofo.github.io';
 const cors = { 'Access-Control-Allow-Origin': SITE, 'Access-Control-Allow-Headers': 'content-type,x-key,x-live', 'Access-Control-Allow-Methods': 'GET,POST' };
@@ -124,12 +139,22 @@ async function slow(req, env) {
   return reply(200, { done: page.data.filter(b => b.processing_status === 'ended' && b.request_counts.succeeded > 0 && Date.now() - Date.parse(b.ended_at) < 864e5).map(b => b.id) });
 }
 
+// The site reads the credits left, or sets them ({ set: dollars }, or null to clear)
+async function bal(req, env) {
+  if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
+  const m = await req.json().catch(() => ({}));
+  if ('set' in m && m.set !== null && !(typeof m.set === 'number' && isFinite(m.set) && m.set >= 0 && m.set < 1e5)) return reply(400, { error: 'Bad amount' });
+  return reply(200, { bal: 'set' in m ? await ledger(env).set(m.set) : await ledger(env).read() });
+}
+
 async function ask(req, env) {
   if (!env.SITE_PASSWORD || req.headers.get('x-live') !== await hex(env.SITE_PASSWORD + ':live')) return reply(401, { error: 'Wrong password' });
   if (!env.ANTHROPIC_API_KEY) return reply(500, { error: 'No ANTHROPIC_API_KEY on the Worker' });
   let m;
   try { m = await req.json(); } catch { return reply(400, { error: 'Bad request' }); }
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  // the reply, with its cost taken off the shared credits (key: a half-price answer is only charged once)
+  const done = async (body, key) => reply(200, { ...body, cost, bal: await ledger(env).charge(cost, key).catch(() => undefined) });
   // what this question cost, from the tokens each call used ($ per million: input, output, cache write, cache read), so
   // the page can take it off the credits it shows
   const PRICE = { sonnet: [2, 10, 2.5, 0.2], haiku: [0.1, 0.5, 0.125, 0.01] };
@@ -145,8 +170,8 @@ async function ask(req, env) {
       if (x.result.type !== 'succeeded') return reply(200, { answer: "The slow answer didn't come back (" + x.result.type + '). Ask again.' });
       const r = x.result.message, which = /haiku/.test(r.model) ? 'haiku' : 'sonnet';
       bill(which, r.usage); cost /= 2;
-      if (r.stop_reason === 'refusal') return reply(200, { answer: 'Coach would not answer that one. Try asking it a different way.' });
-      return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: which === 'haiku' ? 'Haiku' : 'Sonnet', cost });
+      if (r.stop_reason === 'refusal') return done({ answer: 'Coach would not answer that one. Try asking it a different way.' }, m.batch);
+      return done({ answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: which === 'haiku' ? 'Haiku' : 'Sonnet' }, m.batch);
     }
     return reply(200, { answer: 'The slow answer came back empty. Ask again.' });
   }
@@ -213,7 +238,7 @@ async function ask(req, env) {
       system: SYS.replace('; if a fact you need is in a drawer, open it with look_up before answering', ''),
       messages: [{ role: 'user', content: fixed ? [...core, ...pick.map(n => drawers[n])].join('\n\n') + '\n\n' + m.text.slice(fixed).replace(/^\n+/, '') : m.text }],
     } }] });
-    return reply(200, { batch: b.id, cost });
+    return done({ batch: b.id });
   }
   const tools = names.length ? [{
     name: 'look_up',
@@ -246,14 +271,15 @@ async function ask(req, env) {
     if (res.length) res[res.length - 1].cache_control = { type: 'ephemeral' };
     msgs.push({ role: 'user', content: res });
   }
-  if (r.stop_reason === 'refusal') return reply(200, { answer: 'Coach would not answer that one. Try asking it a different way.', cost });
-  return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Sonnet' : 'Haiku', cost });
+  if (r.stop_reason === 'refusal') return done({ answer: 'Coach would not answer that one. Try asking it a different way.' });
+  return done({ answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Sonnet' : 'Haiku' });
 }
 
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
     if (req.method === 'POST' && new URL(req.url).pathname === '/ask') return ask(req, env).catch(err => reply(500, { error: err.message }));
+    if (req.method === 'POST' && new URL(req.url).pathname === '/bal') return bal(req, env).catch(err => reply(500, { error: err.message }));
     if (req.method === 'POST' && new URL(req.url).pathname === '/slow') return slow(req, env).catch(err => reply(500, { error: err.message }));
     if (req.method === 'GET') return live(req, env).catch(err => reply(500, { error: err.message }));
     if (req.method !== 'POST') return reply(405, { error: 'GET or POST only' });

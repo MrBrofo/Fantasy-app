@@ -4,3 +4,12 @@ name = "fantasy-workers"
 main = "worker.js"
 compatibility_date = "2025-01-01"
 keep_vars = true
+
+# Ask's credits left, shared by every device (the Ledger class in worker.js); SQLite-backed, so free-plan friendly
+[[durable_objects.bindings]]
+name = "LEDGER"
+class_name = "Ledger"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Ledger"]
