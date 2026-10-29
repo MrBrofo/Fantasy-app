@@ -73,7 +73,7 @@ const lastWeek = league.settings.scheduleSettings?.matchupPeriodCount ?? 14;
 // --- Second opinions, so one site's guess doesn't decide everything. Any that fail are left out (and named on the page).
 // Players are matched by name + NFL team (positions differ between sites); defenses by team.
 const norm = s => s.toLowerCase().replace(/[^a-z ]/g, '').replace(/ (jr|sr|ii|iii|iv|v)$/, '').trim();
-const TEAM = t => ({ WSH: 'WAS' }[t?.toUpperCase()] ?? t?.toUpperCase());
+const TEAM = t => ({ WSH: 'WAS', JAC: 'JAX' }[t?.toUpperCase()] ?? t?.toUpperCase());
 const pkey = (name, pos, team) => (pos === 'D/ST' ? `dst|${TEAM(team)}` : `${norm(name)}|${TEAM(team)}`);
 // Sources that failed this run; the page shows a warning banner listing them
 const down = [];
@@ -388,10 +388,10 @@ function row(p, ratings) {
   const season = stat(p, 0, 0);
   const proj = stat(p, 1, 1);
   const pos = POS[p.defaultPositionId] ?? '?', team = proAbbr[p.proTeamId] ?? 'FA';
-  // expected points = average of ESPN, Rotowire and CBS, whichever have a number (none if ESPN has none, e.g. bye)
+  // expected points = average of ESPN, Rotowire, CBS and FantasyPros, whichever have a number (none if ESPN has none, e.g. bye)
   const espn = proj?.appliedTotal ?? null, k = team === 'FA' && pos !== 'D/ST' ? [...sleeper.keys(), ...cbs.keys()].find(x => x.startsWith(`${norm(p.fullName)}|`)) ?? pkey(p.fullName, pos, team) : pkey(p.fullName, pos, team);
-  const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null;
-  const all = [espn, roto, cb].filter(v => v != null), wind = windFactor(pos, rosSaved.weather?.[TEAM(team)]);
+  const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null, fx = espn == null ? null : fp.get(k) ?? null;
+  const all = [espn, roto, cb, fx?.[0]].filter(v => v != null), wind = windFactor(pos, rosSaved.weather?.[TEAM(team)]);
   // ESPN's rest-of-season projection is statSourceId 1, statSplitTypeId 0 (per game = appliedAverage)
   const rosBy = [stat(p, 1, 0)?.appliedAverage ?? null, rosRoto.get(k) ?? null, rosCbs.get(k) ?? null];
   const rosAll = rosBy.filter(v => v != null);
@@ -401,11 +401,31 @@ function row(p, ratings) {
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
     now: stat(p, 0, 1)?.appliedTotal ?? null, nowLine: scoring(stat(p, 0, 1)),
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
-    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length * wind : null, wind, espn, roto, cbs: cb, split: split(all), vegas: vegas[TEAM(team)] ?? null,
+    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length * wind : null, wind, espn, roto, cbs: cb, fp: fx?.[0] ?? null, experts: fx, split: split(all), vegas: vegas[TEAM(team)] ?? null,
     ros: rosAll.length ? rosAll.reduce((s, v) => s + v, 0) / rosAll.length : null, rosBy,
     owned: p.ownership?.percentOwned ?? null, trend: p.ownership?.percentChange ?? 0, rank: ratings?.[0]?.positionalRanking || null,
   };
 }
+
+// FantasyPros: this week's expert consensus (25 or so experts) from their rankings pages' own data: rank at the position,
+// the best and worst any expert has him, a start/sit grade, and a half-PPR projection (a 4th source for expected points).
+// Fetched at most once an hour (kept in ros.json). Defenses are skipped like CBS: their scoring differs from this league's.
+// ponytail: scraped from their page, not an official feed; if they change it or block us, the other sources carry on
+const fp = new Map(); // key -> [points, pos rank like "WR4", best rank, worst rank, grade, experts]
+const FP_PAGE = { QB: 'qb', RB: 'half-point-ppr-rb', WR: 'half-point-ppr-wr', TE: 'half-point-ppr-te', K: 'k' };
+if (!rosSaved.fp) try {
+  const rows = [];
+  for (const [pos, page] of Object.entries(FP_PAGE)) {
+    const r = await fetch(`https://www.fantasypros.com/nfl/rankings/${page}.php`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) throw new Error(`${r.status} on ${pos}`);
+    const d = JSON.parse((await r.text()).match(/var ecrData = (\{.*?\});/)?.[1] ?? 'null');
+    if (!d?.players) throw new Error(`no rankings on ${pos}, page layout probably changed`);
+    if (+d.week !== week) { console.warn(`FantasyPros skipped: their week is ${d.week}, this is week ${week}`); rows.length = 0; break; }
+    for (const x of d.players) rows.push([x.player_name, pos, x.player_team_id, Number(x.r2p_pts), x.pos_rank, x.rank_min, x.rank_max, x.start_sit_grade ?? '', d.total_experts]);
+  }
+  if (rows.length) rosSaved.fp = rows;
+} catch (err) { console.warn('FantasyPros skipped:', err.message); down.push('FantasyPros'); }
+for (const [name, pos, team, ...rest] of rosSaved.fp ?? []) if (Number.isFinite(rest[0])) fp.set(pkey(name, pos, team), rest);
 
 const names = {};
 const teams = league.teams.map(t => {
@@ -1047,9 +1067,9 @@ const nextRun = runMin == null ? '' : (() => {
 })();
 const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day except ${noProc.map(cap).join(' and ')}` : `on ${[...procDays].map(cap).join(', ')}`;
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
-const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
+const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs], ['FantasyPros', p.fp]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
 // The (i) button on a suggestion: every number behind it and where it came from
-const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper) and CBS Sports projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the three. Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024, moved by each player's own record when listed (nflverse injury reports and snap counts, last 5 seasons). Rosters, waiver order and claims: your ESPN league.";
+const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper), CBS Sports and FantasyPros (expert consensus) projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the three. Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024, moved by each player's own record when listed (nflverse injury reports and snap counts, last 5 seasons). Rosters, waiver order and claims: your ESPN league.";
 const srcLine = p => {
   const ros = ['ESPN', 'Rotowire', 'CBS'].map((s, i) => (p.rosBy?.[i] != null ? `${s} ${n(p.rosBy[i])}` : '')).filter(Boolean).join(', '), odds = playOdds(p, p.inj?.type);
   return `<b>${esc(p.name)}</b>: this week ${esc(srcText(p) || 'no projection (bye or not playing)')}${srcText(p).includes(',') ? `, average ${n(p.proj)}` : ''}` +
@@ -2621,7 +2641,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <span class="pos pos-K">K</span> Kicker: kicks field goals and extra points.<br>
 <span class="pos pos-DST">D/ST</span> Defense: a whole team's defense. Scores for sacks, turnovers and holding the other team to few points.<br>
 <b>FLEX</b>: one extra spot that can be an RB, WR or TE.</dd>
-<dt>Expected points</dt><dd>How many points a player should score this week: the average of ESPN's, Rotowire's and CBS's guesses.</dd>
+<dt>Expected points</dt><dd>How many points a player should score this week: the average of ESPN's, Rotowire's, CBS's and FantasyPros' guesses.</dd>
 <dt>Top starter, starter, below starter</dt><dd>How a number compares with the players who start at that position across your league. <b>Top starter</b>: top third of them. <b>Starter</b>: good enough to start on a typical team. <b>Below starter</b>: less than that. You may still have to start him if he is your best option.</dd>
 <dt>"Up to" number</dt><dd>What he'd score if he has a great game. A big gap between expected and "up to" means he's boom-or-bust.</dd>
 <dt>Win chance</dt><dd>How likely you are to win this week, worked out from the same averaged projections (ESPN, Rotowire, CBS) as the scores. Once games start it switches to ESPN's live estimate, which follows the real score.</dd>
@@ -2632,7 +2652,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Phone widget</dt><dd>The Home Screen widget (Scriptable) reads <code style="overflow-wrap:anywhere">https://mrbrofo.github.io/Fantasy-app/${WIDGET}</code>. The name is secret so only you can read it; it changes if the site password changes.</dd>
 <dt>Waivers vs free agents</dt><dd>Recently dropped players go on <b>waivers</b> for about a day. Your league processes claims ${procText}${runMin != null ? `, starting as early as ${clock(runMin)} Pacific (get claims in before then)` : ''}. Everyone can claim them, and the team with the best waiver # gets him. After that he's a <b>free agent</b>: first to add him gets him.</dd>
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
-<dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's and CBS Sports' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach them.</dd>
+<dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's, CBS Sports' and FantasyPros' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach them.</dd>
 </dl></div>
 <div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><dl id="dict"></dl></div>
 <details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
@@ -2930,6 +2950,7 @@ let gcOpen = false; // the Watch view is open on this sheet
 // why he's expected to score what he is: the reasons first; the stat line and where the number comes from fold under More info
 const whyBody = p => '<div class="group">Why ' + e(p.proj) + '</div>' +
   (p.projVs ? '<p class="why" style="margin:0 0 6px"><b>' + e(p.projVs) + '</b></p>' : '') +
+  (p.experts ? '<p class="why" style="margin:0 0 6px">' + e(p.experts) + '</p>' : '') +
   p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') +
   (p.projLine?.length || p.sources ? '<details class="plays"><summary><b>More info</b></summary>' +
     (p.projLine?.length ? '<p class="why" style="margin:0">ESPN’s ' + e(p.espnProj) + ' adds up from:</p><ul class="pline">' + p.projLine.map(x => '<li>' + e(x) + '</li>').join('') + '</ul>' : '') +
@@ -4714,9 +4735,11 @@ for (const [id, p] of shown) {
     : recent < p.avg * 0.75 ? `Cold: ${n(recent)} per game over his last ${played.length} games, worse than his season average.` : '';
   const pc = p.bye === week ? null : c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === week);
   const projLine = pc ? scoring(pc) : [], d = (p.proj ?? 0) - (p.avg ?? 0);
+  const ex = p.bye === week ? null : p.experts; // [points, "WR4", best, worst, grade, experts]
+  const experts = ex ? `Experts rank him ${ex[1].replace(/(\D+)(\d+)/, '$1 #$2')} this week (${ex[5]} experts, from #${ex[2]} to #${ex[3]})${ex[4] ? `, start grade ${ex[4]}` : ''}.` : '';
   const projVs = p.proj == null || !p.avg ? '' : Math.abs(d) < 2 ? `About his usual: he averages ${n(p.avg)} a game.` : `${d > 0 ? 'More' : 'Less'} than his usual ${n(p.avg)} a game.`;
   const sources = [
-    p.bye === week ? 'No game this week (bye), so no projection.' : p.roto != null || p.cbs != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
+    p.bye === week ? 'No game this week (bye), so no projection.' : p.roto != null || p.cbs != null || p.fp != null ? `${srcText(p)}. We use the average. ${p.split ? 'They disagree a lot, so he\'s a riskier start than the number looks.' : 'They mostly agree.'}` : p.espn != null ? `Only ESPN has a number for him (${n(p.espn)}).` : '',
     p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Betting odds have his team scoring about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
   ].filter(Boolean).join(' ');
   pdata[id] = {
@@ -4725,7 +4748,7 @@ for (const [id, p] of shown) {
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? '#' + p.rank : '-', rankWhy: p.rank ? rankWhy(p) + ' (this season)' : '', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
-    trend, hit: hitLine(p)?.[1] ?? '', sources, projLine, projVs, espnProj: pc ? n(pc.appliedTotal) : null, games, now, plays: plays.get(id) ?? [], notes: notes(p),
+    trend, hit: hitLine(p)?.[1] ?? '', sources, projLine, projVs, experts, espnProj: pc ? n(pc.appliedTotal) : null, games, now, plays: plays.get(id) ?? [], notes: notes(p),
     rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye} (done).` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}.`,
   };
