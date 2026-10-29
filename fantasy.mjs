@@ -383,22 +383,6 @@ function qbSplit(k, qbK, weeks = rosSaved.weeks ?? {}) {
   return { ratio, games: wo.length, with: avg(w), without: avg(wo) };
 }
 
-// Each source's projection and what the player then scored, to weight the sources by how close they've been in
-// this league's scoring. srcHist.weeks[wk][id] = [espn, roto, cbs, fp, actual]. Kept in state/ (Actions cache), with
-// site/sources.json as the copy to fall back on if the cache is ever lost.
-const histFile = path.join(dir, 'state', 'sources.json');
-let srcHist = null;
-try { srcHist = fs.existsSync(histFile) ? JSON.parse(fs.readFileSync(histFile, 'utf8')) : await (await fetch(`https://mrbrofo.github.io/Fantasy-app/sources.json?t=${Date.now()}`)).json(); } catch {}
-if (srcHist?.season !== SEASON) srcHist = { season: SEASON, weeks: {} };
-// weight = 1 / average miss, compared only on players every source projected, once 3 past weeks have scores
-// ponytail: one weight per source for every position; per-position weights once there's a full season of rows
-const srcWeights = (() => {
-  const rows = Object.entries(srcHist.weeks).filter(([wk]) => +wk < week).flatMap(([, r]) => Object.values(r)).filter(r => r[4] != null && r.slice(0, 4).every(v => v != null));
-  if (new Set(Object.entries(srcHist.weeks).filter(([wk, r]) => +wk < week && Object.values(r).some(x => x[4] != null)).map(([wk]) => wk)).size < 3 || rows.length < 100) return null;
-  return [0, 1, 2, 3].map(i => rows.length / Math.max(rows.length, rows.reduce((s, r) => s + Math.abs(r[i] - r[4]), 0))); // miss of at least 1 point
-})();
-const blend = v => { const w = v.map((x, i) => x == null ? 0 : srcWeights?.[i] ?? 1), tw = w.reduce((s, x) => s + x, 0); return tw ? v.reduce((s, x, i) => s + (x ?? 0) * w[i], 0) / tw : null; };
-
 // ratings[0] = season-long; positionalRanking = e.g. 14th-best QB so far
 function row(p, ratings) {
   const season = stat(p, 0, 0);
@@ -460,6 +444,48 @@ if (!rosSaved.fpRos) try {
   rosSaved.fpRos = rows;
 } catch (err) { console.warn('FantasyPros rest of season skipped:', err.message); }
 for (const [name, pos, team, ...rest] of rosSaved.fpRos ?? []) if (Number.isFinite(rest[0])) fpRos.set(pkey(name, pos, team), rest);
+
+// Each source's projection and what the player then scored, to weight the sources by how close they've been.
+// srcHist.weeks[wk][espnId] = [espn, roto, cbs, fp, actual], half PPR. Kept in state/ (Actions cache), with
+// site/sources.json as the copy to fall back on if the cache is ever lost.
+const histFile = path.join(dir, 'state', 'sources.json');
+let srcHist = null;
+try { srcHist = fs.existsSync(histFile) ? JSON.parse(fs.readFileSync(histFile, 'utf8')) : await (await fetch(`https://mrbrofo.github.io/Fantasy-app/sources.json?t=${Date.now()}`)).json(); } catch {}
+if (srcHist?.season !== SEASON) srcHist = { season: SEASON, weeks: {} };
+// Past weeks it wasn't saving yet, filled in once: ESPN's public standard and PPR numbers (projection and actual,
+// half PPR = their average), Rotowire's from Sleeper and FantasyPros' rankings for that week. CBS keeps no past weeks.
+for (let wk = 1; wk < week; wk++) if (!srcHist.weeks[wk]) try {
+  const f = { players: { filterSlotIds: { value: [0, 2, 4, 6, 17] }, sortPercOwned: { sortPriority: 1, sortAsc: false }, limit: 400, filterStatsForTopScoringPeriodIds: { value: 17, additionalValue: [`11${SEASON}${wk}`] } } }; // his last 17 games + that week's projection
+  const [std, ppr] = await Promise.all([1, 3].map(async s => (await (await fetch(`${BASE}/segments/0/leaguedefaults/${s}?view=kona_player_info&scoringPeriodId=${wk}`, { headers: { 'x-fantasy-filter': JSON.stringify(f) } })).json()).players));
+  const roto = new Map(), fpw = new Map();
+  for (const x of await (await fetch(`https://api.sleeper.app/projections/nfl/${SEASON}/${wk}?season_type=regular&${['QB', 'RB', 'WR', 'TE', 'K'].map(p => `position[]=${p}`).join('&')}`)).json())
+    if (x.stats?.pts_half_ppr != null) roto.set(pkey(`${x.player.first_name} ${x.player.last_name}`, x.player.position, x.team), x.stats.pts_half_ppr);
+  for (const [pos, page] of Object.entries(FP_PAGE)) {
+    const d = JSON.parse((await (await fetch(`https://www.fantasypros.com/nfl/rankings/${page}.php?week=${wk}`, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text()).match(/var ecrData = (\{.*?\});/)?.[1] ?? 'null');
+    if (+d?.week === wk) for (const x of d.players) fpw.set(pkey(x.player_name, pos, x.player_team_id), Number(x.r2p_pts));
+  }
+  const half = (p, src) => { const a = p.stats?.find(s => s.seasonId === SEASON && s.statSourceId === src && s.statSplitTypeId === 1 && s.scoringPeriodId === wk)?.appliedTotal, b = std.find(y => y.player.id === p.id)?.player.stats?.find(s => s.seasonId === SEASON && s.statSourceId === src && s.statSplitTypeId === 1 && s.scoringPeriodId === wk)?.appliedTotal; return a == null ? null : Math.round((a + (b ?? a)) / 2 * 10) / 10; };
+  const rows = {};
+  for (const { player: p } of ppr) {
+    const k = pkey(p.fullName, POS[p.defaultPositionId], proAbbr[p.proTeamId]), espn = half(p, 1), actual = half(p, 0), r = roto.get(k) ?? null, x = fpw.get(k) ?? null;
+    if (espn != null && actual != null && (r != null || x != null)) rows[p.id] = [espn, r, null, Number.isFinite(x) ? x : null, actual];
+  }
+  srcHist.weeks[wk] = rows;
+  console.log(`Source history: week ${wk} filled in, ${Object.keys(rows).length} players`);
+} catch (err) { console.warn(`Source history for week ${wk} skipped:`, err.message); }
+// Each source against ESPN on the same players (so a source missing some weeks or players is still compared fairly):
+// weight = ESPN's average miss / its average miss. Starts once 3 past weeks have scores.
+// ponytail: one weight per source for every position; per-position weights once there's a full season of rows
+const srcWeights = (() => {
+  const rows = Object.entries(srcHist.weeks).filter(([wk]) => +wk < week).flatMap(([, r]) => Object.values(r)).filter(r => r[4] != null && r[0] != null);
+  if (new Set(Object.entries(srcHist.weeks).filter(([wk, r]) => +wk < week && Object.values(r).some(x => x[4] != null)).map(([wk]) => wk)).size < 3) return null;
+  return [0, 1, 2, 3].map(i => {
+    const both = rows.filter(r => r[i] != null), miss = j => Math.max(1, both.reduce((s, r) => s + Math.abs(r[j] - r[4]), 0) / both.length);
+    return both.length < 100 ? 1 : miss(0) / miss(i);
+  });
+})();
+if (srcWeights) console.log('Source weights (ESPN, Rotowire, CBS, FantasyPros):', srcWeights.map(w => w.toFixed(2)).join(', '));
+const blend = v => { const w = v.map((x, i) => x == null ? 0 : srcWeights?.[i] ?? 1), tw = w.reduce((s, x) => s + x, 0); return tw ? v.reduce((s, x, i) => s + (x ?? 0) * w[i], 0) / tw : null; };
 
 const names = {};
 const teams = league.teams.map(t => {
