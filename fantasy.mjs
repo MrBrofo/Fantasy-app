@@ -977,11 +977,10 @@ const claudePrompt = f => `Write a short text (1-2 sentences) in my voice to my 
   f.theirWeek >= 1 ? `it would add about ${Math.round(f.theirWeek)} projected points to their lineup this week` : '',
 ].filter(Boolean).join('; ')}. Give me 3 different versions.`;
 // a trade card's compare/check buttons, text to send, and propose on ESPN
-const offerButtons = f => `${exBtns(f.give, [f.take], true)}
-  <div class="group">Text to send</div><p class="pitch">${esc(f.texts[0])}</p>
+const offerButtons = f => `<p class="pitch">${esc(f.texts[0])}</p>
   <div class="tools2"><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-copy="${esc(f.texts[0])}">Copy text</button>${f.texts.length > 1 ? `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-versions="${esc(JSON.stringify(f.texts))}">Another version</button>` : ''}</div>
-  <button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it (copies the facts, opens Claude)</button>
-  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Propose ${f.give.map(p => p.name).join(' + ')} for ${f.take.name} on ESPN`, type: 'TRADE_PROPOSAL', other: f.d.t.id, sms: f.d.t.name, items: [...f.give.map(p => ({ type: 'GIVE', playerId: p.id })), { type: 'GET', playerId: f.take.id }], week: league.scoringPeriodId }))}">Propose on ESPN, then text them</button>` : ''}`;
+  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Propose ${f.give.map(p => p.name).join(' + ')} for ${f.take.name} on ESPN`, type: 'TRADE_PROPOSAL', other: f.d.t.id, sms: f.d.t.name, items: [...f.give.map(p => ({ type: 'GIVE', playerId: p.id })), { type: 'GET', playerId: f.take.id }], week: league.scoringPeriodId }))}">Propose on ESPN, then text them</button>` : ''}
+  <details class="all"><summary>More</summary><div class="tools2">${cmpBtn(f.give[0], f.take)}${tcBtn(f.give, [f.take])}</div><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it</button></details>`;
 
 // --- Luck check: "all-play" record = your record if you'd played every team every week
 const weekly = {}; // week -> { teamId: points }
@@ -2486,8 +2485,7 @@ ${poolMore}
 <div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">${gainText(f.mineWeek, f.mineLater)}${f.alt ? ', not a fleece' : ''}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
-  <p class="tag" style="margin:6px 0 0">Their situation: ${esc(situation(f.d.t))}. ${esc(profiles.get(f.d.t)?.say[0] ?? '')}</p>
-  <p class="why">${f.alt ? 'No clear fleece for him; this is your best offer. ' : ''}Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, ${f.theirs < -0.2 ? `they lose about ${n(-f.theirs)} a week` : f.theirs > 0.2 ? `it helps them too, about ${n(f.theirs)} a week` : 'it comes out about even for them'}.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
+  <p class="why">${situation(f.d.t) ? esc(situation(f.d.t)) + '. ' : ''}${f.alt ? 'Not a fleece, just your best offer. ' : ''}Looks ${f.looks >= 0.5 ? 'good for them' : 'even'} by points so far; ${f.theirs < -0.2 ? `they lose about ${n(-f.theirs)} a week going forward` : f.theirs > 0.2 ? `it helps them too going forward (+${n(f.theirs)} a week)` : 'about even for them going forward'}.${f.give.length > 1 ? " They'd have to drop a bench player." : ''}</p>
   ${offerButtons(f)}</div>`).join('')}${poolEmpty}</div>
 ${poolMore}
 </section>
