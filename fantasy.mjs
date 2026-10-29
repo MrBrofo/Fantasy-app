@@ -2071,7 +2071,7 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
 .news b{display:block;font-size:14px;font-weight:600}.news .nsnip{display:block;font-size:13px;color:var(--muted);margin:3px 0 2px}.news small{color:var(--muted);font-size:12px}
 details.news>summary,details.news[open]>summary{display:block;font-weight:400;margin:0;list-style:none;cursor:pointer}details.news>summary::after{content:none}details.news>summary::-webkit-details-marker{display:none}
-.news[open] .nsnip{display:none}.nfull{margin:8px 0 2px;font-size:14px;line-height:1.5;white-space:pre-line}
+.news[open] .nsnip:not(.nfull),.news:not([open]) .nfull{display:none}.nfull{white-space:pre-line}
 .wp{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}.wp b{font:600 44px/1 var(--num);letter-spacing:-.04em}
 .live{display:inline-block;background:var(--badbg);color:var(--bad);font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
 .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat div{background:var(--chip);border-radius:12px;padding:10px}.stat b{display:block;font:600 20px var(--num)}.stat small{color:var(--muted);font-size:12px}
@@ -2892,7 +2892,7 @@ function render(p) {
       '<div><i style="height:' + (g.pts == null ? 0 : Math.max(4, g.pts / max * 64)) + 'px"></i><b>' + (g.pts == null ? e(g.note) : g.pts.toFixed(1)) + '</b><small>wk ' + g.wk + '</small></div>').join('') + '</div>' +
       p.games.filter(g => g.why.length || g.line.length).map(g => '<p class="why" style="margin:8px 0 0"><b>Week ' + g.wk + (g.pts == null ? '' : ' (' + g.pts.toFixed(1) + ' pts)') + ':</b> ' + e(g.line.join(', ')) + (g.line.length && g.why.length ? '. ' : '') + e(g.why.join(' ')) + '</p>').join('') : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
-    (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => x.f ? '<details class="news"><summary><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' &rsaquo;</small></summary><p class="nfull">' + e(x.f) + '</p></details>'
+    (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => x.f ? '<details class="news"><summary><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<span class="nsnip nfull">' + e(x.f) + '</span><small>' + e(x.when) + ' &rsaquo;</small></summary></details>'
       : '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
     (p.id > 0 ? '<a class="news" href="https://www.espn.com/nfl/player/_/id/' + p.id + '" target="_blank" rel="noopener"><b>Full stats and news on ESPN</b><small>opens ESPN &rsaquo;</small></a>' : '') + toolBtns(p) + addHim(p);
 }
