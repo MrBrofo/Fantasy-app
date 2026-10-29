@@ -4268,6 +4268,9 @@ document.addEventListener('pointerdown', ev => {
   const ROUTES = [[[0, -16]], [[0, -3], [6, -9]], [[0, -8], [5, -15]], [[0, -7], [-5, -7]], [[0, -9], [1, -7]], [[0, -8], [-5, -14]], [[0, -8], [7, -8]]];
   const WHEEL = [[-3, -1], [-5, -4], [-5, -14]], FLAT = [[-4, -1], [-7, -2]];
   const PLAY = 5.5, ease = x => 1 - (1 - Math.min(1, Math.max(0, x))) ** 3, pick = a => a[Math.floor(Math.random() * a.length)];
+  // how far along his route each runner is, s seconds into the play: a quick start, a steady run, and past the end of the
+  // route he keeps going at a jog until the play fades, so nothing ever stands still
+  const run = s => { const x = (s - 0.5) / 2.2; return x <= 0 ? 0 : x < 0.2 ? x * x / 0.4 : x < 1.1 ? x - 0.1 : 1 + (x - 1.1) * 0.6; };
   const LANES = [0.3, 0.6, 0.9]; // where each play's line of scrimmage sits, as a share of the screen's height
   let plays = [], last = -99;
   const newPlay = lane => {
@@ -4279,8 +4282,10 @@ document.addEventListener('pointerdown', ev => {
     const d = runners.slice(0, 4).map(r => [r[0][0] + (Math.random() - 0.5) * 3 * u, y0 - (6 + Math.random() * 5) * u]);
     return { u, runners, line, qb, d, to: Math.floor(Math.random() * runners.length) };
   };
-  // the point a fraction f along a path, and the path drawn up to there
+  // the point a fraction f along a path, and the path drawn up to there; past 1 the last leg runs on straight
   const along = (p, f) => {
+    if (f > 1) { const a = p.at(-2), b = p.at(-1), total = p.slice(1).reduce((t, q, i) => t + Math.hypot(q[0] - p[i][0], q[1] - p[i][1]), 0), k = (f - 1) * total / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1);
+      return [p, [b[0] + (b[0] - a[0]) * k, b[1] + (b[1] - a[1]) * k]]; }
     const seg = p.slice(1).map((q, i) => Math.hypot(q[0] - p[i][0], q[1] - p[i][1])), total = seg.reduce((a, b) => a + b, 0);
     let left = f * total;
     for (let i = 0; i < seg.length; i++) { if (left <= seg[i]) { const k = seg[i] ? left / seg[i] : 0; return [p.slice(0, i + 1), [p[i][0] + (p[i + 1][0] - p[i][0]) * k, p[i][1] + (p[i + 1][1] - p[i][1]) * k]]; } left -= seg[i]; }
@@ -4350,7 +4355,7 @@ document.addEventListener('pointerdown', ev => {
     }
   };
   const drawPlay = ({ u, runners, line, qb, d, to }, s) => {
-    const fade = Math.min(1, s / 0.4, (PLAY - s) / 0.9), f = ease((s - 0.5) / 2.2);
+    const fade = Math.min(1, s / 0.4, (PLAY - s) / 0.9), f = run(s);
     cx.globalAlpha = Math.max(0, fade); cx.lineCap = cx.lineJoin = 'round'; cx.lineWidth = 2;
     const ring = ([x, y], a) => { cx.strokeStyle = 'rgba(255,255,255,' + a + ')'; cx.beginPath(); cx.arc(x, y, u * 0.6, 0, 7); cx.stroke(); };
     for (const p of line) ring(p, 0.3);
@@ -4365,17 +4370,17 @@ document.addEventListener('pointerdown', ev => {
     });
     // defenders: X's that drift toward the receiver they cover
     cx.strokeStyle = 'rgba(255,255,255,.22)';
-    d.forEach(([x, y], i) => { const h = along(runners[i], f)[1], X = x + (h[0] - x) * 0.45 * f, Y = y + (h[1] - y) * 0.3 * f, r = u * 0.45;
+    d.forEach(([x, y], i) => { const h = along(runners[i], f)[1], X = x + (h[0] - x) * 0.45 * Math.min(f, 1.6), Y = y + (h[1] - y) * 0.3 * Math.min(f, 1.6), r = u * 0.45;
       cx.beginPath(); cx.moveTo(X - r, Y - r); cx.lineTo(X + r, Y + r); cx.moveTo(X + r, Y - r); cx.lineTo(X - r, Y + r); cx.stroke(); });
     // the pass: a dashed arc from the QB to the target's spot, with the ball riding it
     const b = ease((s - 1.7) / 1.1);
     if (b > 0) {
-      const end = along(runners[to], Math.min(1, ease((1.7 + 1.1 - 0.5) / 2.2)))[1], ctl = [(qb[0] + end[0]) / 2, Math.min(qb[1], end[1]) - 5 * u];
+      const end = along(runners[to], run(1.7 + 1.1))[1], ctl = [(qb[0] + end[0]) / 2, Math.min(qb[1], end[1]) - 5 * u];
       const at = k => [(1 - k) ** 2 * qb[0] + 2 * (1 - k) * k * ctl[0] + k * k * end[0], (1 - k) ** 2 * qb[1] + 2 * (1 - k) * k * ctl[1] + k * k * end[1]];
       cx.setLineDash([3, 6]); cx.strokeStyle = 'rgba(10,132,255,.5)'; cx.beginPath(); cx.moveTo(...qb);
       for (let k = 0.05; k <= b; k += 0.05) cx.lineTo(...at(k));
       cx.stroke(); cx.setLineDash([]);
-      const [bx, by] = at(b); cx.fillStyle = '#fff'; cx.shadowColor = '#0a84ff'; cx.shadowBlur = 16;
+      const [bx, by] = b < 1 ? at(b) : along(runners[to], f)[1]; cx.fillStyle = '#fff'; cx.shadowColor = '#0a84ff'; cx.shadowBlur = 16;
       cx.beginPath(); cx.ellipse(bx, by, u * 0.32, u * 0.2, -0.6, 0, 7); cx.fill(); cx.shadowBlur = 0;
     }
     cx.globalAlpha = 1;
