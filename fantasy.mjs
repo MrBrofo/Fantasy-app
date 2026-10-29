@@ -2164,7 +2164,7 @@ dl{margin:0}dt{font-weight:700;margin-top:12px}dd{margin:2px 0 0;color:var(--mut
 details.intro{margin:-8px 0 12px}details.intro summary{display:inline;font-weight:600;font-size:13px;color:var(--accent)}
 details.intro summary::after{content:none}details.intro[open] summary{margin-bottom:4px;display:block}details.intro p{margin:0}
 .off{display:none!important}
-body:not(.home) header{display:none}body:not(.home) .match{display:none}
+body:not(.home) header{padding-bottom:22px}body:not(.home) .match{display:none}
 .sel{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--chip);color:var(--fg);font:16px Geist,system-ui,sans-serif;margin-bottom:6px}
 .tc-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pick{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:8px 0;border-bottom:1px solid var(--line);line-height:1.3}.pick input{margin-top:3px;flex:none}
