@@ -2057,6 +2057,7 @@ section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
 .todo{display:flex;gap:12px;align-items:flex-start;touch-action:pan-y}
 #todo,#todo details{position:relative}.card.todo{position:relative;z-index:1}
+.todo-back{background:none;border:0;padding:4px 0;color:var(--muted);font:inherit;font-size:14px;text-decoration:underline;cursor:pointer}
 .card.todo{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .todo-del{position:absolute;box-sizing:border-box;background:var(--bad);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;opacity:.75;transition:opacity .15s}
 .todo-del.go{opacity:1}html.term .todo-del{border-radius:0}
@@ -2402,6 +2403,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 ${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">Some advice may be off:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : ``}
 ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo" data-k="${esc(league.scoringPeriodId + '|' + title)}"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${/^(Pickup step|Better backup)/.test(title) && who.length === 2 ? exBtns([who[1]], [who[0]]) : ''}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
   return todo.slice(0, 3).map(card).join('') + (todo.length > 3 ? `<details class="all"><summary>${todo.length - 3} more to do</summary>${todo.slice(3).map(card).join('')}</details>` : ''); })() : '<div class="card empty">You\'re all set this week.</div>'}
+<button type="button" id="todo-back" class="todo-back" hidden></button>
 </section>
 
 <section id="changes" hidden><h2>What changed</h2>
@@ -4248,7 +4250,19 @@ function addHim(p) {
 }
 // Do now: slide a card left to remove it. Remembered on this phone (by week and title), so a page update doesn't bring it back.
 const goneKey = 'todoGone', gone = () => { try { return JSON.parse(localStorage.getItem(goneKey)) || []; } catch { return []; } };
-function hideGone() { const g = gone(); document.querySelectorAll('#todo .card.todo[data-k]').forEach(c => { c.hidden = g.includes(c.dataset.k); }); }
+function hideGone() {
+  const g = gone(), cards = [...document.querySelectorAll('#todo .card.todo[data-k]')];
+  cards.forEach(c => { c.hidden = g.includes(c.dataset.k); });
+  // removed by mistake? one tap brings them back
+  const n = cards.filter(c => c.hidden).length, b = document.getElementById('todo-back');
+  if (b) { b.hidden = !n; b.textContent = 'Show ' + n + ' removed'; }
+}
+document.addEventListener('click', ev => {
+  if (!ev.target.closest('#todo-back')) return;
+  const here = [...document.querySelectorAll('#todo .card.todo[data-k]')].map(c => c.dataset.k);
+  try { localStorage.setItem(goneKey, JSON.stringify(gone().filter(k => !here.includes(k)))); } catch {}
+  hideGone(); showTab(location.hash.slice(1), false);
+});
 hideGone();
 document.addEventListener('pointerdown', ev => {
   const c = ev.target.closest('#todo .card.todo[data-k]');
@@ -4276,7 +4290,7 @@ document.addEventListener('pointerdown', ev => {
     if (dx < -c.offsetWidth * 0.35) {
       c.style.transform = 'translateX(-110%)'; c.style.opacity = 0;
       try { localStorage.setItem(goneKey, JSON.stringify([...gone(), c.dataset.k].slice(-100))); } catch {}
-      setTimeout(() => { c.hidden = true; del.remove(); c.style.transform = c.style.opacity = c.style.transition = ''; showTab(location.hash.slice(1), false); }, 250);
+      setTimeout(() => { c.hidden = true; del.remove(); hideGone(); c.style.transform = c.style.opacity = c.style.transition = ''; showTab(location.hash.slice(1), false); }, 250);
     } else { c.style.transform = ''; c.style.opacity = ''; del.style.transition = 'left .25s ease-out, width .25s ease-out'; Object.assign(del.style, { left: c.offsetLeft + c.offsetWidth + 'px', width: 0 }); setTimeout(() => del.remove(), 250); }
   };
   addEventListener('pointermove', move); addEventListener('pointerup', end); addEventListener('pointercancel', end);
