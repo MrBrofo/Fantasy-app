@@ -1561,6 +1561,15 @@ function usageOf(k, team, pos, weeks = rosSaved.weeks ?? {}) {
   return { kind: pos === 'RB' ? 'carries' : 'targets', snapNow: snapAvg(now), snapBefore: before && snapAvg(before), shareNow: pct(sum(now, 'mine'), sum(now, 'all')),
     shareBefore: before && pct(sum(before, 'mine'), sum(before, 'all')), rz: sum(games, 'rzAll') >= 10 ? pct(sum(games, 'rz'), sum(games, 'rzAll')) : null };
 }
+// what the kickoff forecast means for him, in plain words. Only strong wind is counted in his number; rain and cold are small hits.
+function weatherEffect(p, w) {
+  const wet = w.rain >= 1, cold = w.temp <= 25, play = p.pos === 'K' ? 'kicking' : 'passing';
+  if (p.pos === 'RB') return w.wind >= 15 || wet ? ' Bad weather means more running, which can help him.' : ' Good weather, so no effect on him.';
+  if (p.wind < 1) return ` Wind over 15 mph cuts ${play}, so his number is lowered ${Math.round((1 - p.wind) * 100)}%.`;
+  const hits = [wet && (p.pos === 'K' ? 'a wet ball makes kicks less sure' : 'a wet ball means more drops and fumbles'), cold && `the cold makes ${play} a little harder`].filter(Boolean);
+  if (hits.length) return ` Not great: ${hits.join(' and ')}. A small hit for him.`;
+  return w.wind >= 10 ? ' A little wind, not enough to matter.' : ' Good weather, so no effect on him.';
+}
 function notes(p) {
   const team = TEAM(p.team), k = pkey(p.name, p.pos, p.team), out = [], me_ = statusOf(k);
   if (me_.out) {
@@ -1571,7 +1580,7 @@ function notes(p) {
   if (w && ['QB', 'RB', 'WR', 'TE', 'K'].includes(p.pos)) {
     if (w.indoor) out.push(`Indoor game${w.place ? ` (${w.place})` : ''}, so weather won't matter.`);
     else if (w.wind != null) out.push(`Forecast at kickoff${w.place ? ` (${w.place})` : ''}: ${w.wind} mph wind${w.gust >= w.wind + 8 ? `, gusts ${w.gust}` : ''}, ${w.temp}°F${w.rain >= 1 ? ', rain' : ''}.`
-      + (p.wind < 1 ? ` Wind over 15 mph cuts ${p.pos === 'K' ? 'kicking' : 'passing'}, so his number is lowered ${Math.round((1 - p.wind) * 100)}%.` : p.pos === 'RB' && w.wind >= 15 ? ' Windy games lean on the run, which can help him.' : ''));
+      + weatherEffect(p, w));
   }
   if (p.qbAdj) out.push(`His usual QB, ${p.qbAdj.qb}, is out and the experts haven't updated yet. In ${p.qbAdj.games} games without him this season he averaged ${n(p.qbAdj.without)} (vs ${n(p.qbAdj.with)} with him), so his number is changed from ${n(p.qbAdj.from)} to ${n(p.proj)}.`);
   if (!POS_PL[p.pos]) return out;
