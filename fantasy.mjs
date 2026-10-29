@@ -2050,7 +2050,8 @@ section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
 .todo{display:flex;gap:12px;align-items:flex-start;touch-action:pan-y}
 #todo,#todo details{position:relative}.card.todo{position:relative;z-index:1}
-.todo-del{position:absolute;box-sizing:border-box;border-radius:16px;background:var(--bad);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:flex-end;padding-right:20px;opacity:.75;transition:opacity .15s}
+.card.todo{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.todo-del{position:absolute;box-sizing:border-box;background:var(--bad);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;opacity:.75;transition:opacity .15s}
 .todo-del.go{opacity:1}html.term .todo-del{border-radius:0}
 .todo .lvl{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
@@ -4242,9 +4243,10 @@ document.addEventListener('pointerdown', ev => {
     dx = Math.min(0, e.clientX - x0);
     if (!sliding && Math.abs(e.clientY - y0) > 10 && Math.abs(e.clientY - y0) > -dx) return end(); // scrolling, not sliding
     if (!sliding && dx > -8) return;
-    // a red Delete behind the card, showing as it slides away
+    // a red Delete in the gap the card leaves as it slides (only the gap: Glass cards are see-through)
     if (!sliding) { del = document.createElement('div'); del.className = 'todo-del'; del.textContent = 'Delete';
-      Object.assign(del.style, { top: c.offsetTop + 'px', left: c.offsetLeft + 'px', width: c.offsetWidth + 'px', height: c.offsetHeight + 'px' }); c.before(del); }
+      Object.assign(del.style, { top: c.offsetTop + 'px', height: c.offsetHeight + 'px', borderRadius: getComputedStyle(c).borderRadius }); c.before(del); }
+    Object.assign(del.style, { left: c.offsetLeft + c.offsetWidth + dx + 8 + 'px', width: Math.max(0, -dx - 8) + 'px' });
     del.classList.toggle('go', dx < -c.offsetWidth * 0.35);
     sliding = true; c.style.transition = 'none';
     c.style.transform = 'translateX(' + dx + 'px)';
@@ -4259,7 +4261,7 @@ document.addEventListener('pointerdown', ev => {
       c.style.transform = 'translateX(-110%)'; c.style.opacity = 0;
       try { localStorage.setItem(goneKey, JSON.stringify([...gone(), c.dataset.k].slice(-100))); } catch {}
       setTimeout(() => { c.hidden = true; del.remove(); c.style.transform = c.style.opacity = c.style.transition = ''; showTab(location.hash.slice(1), false); }, 250);
-    } else { c.style.transform = ''; c.style.opacity = ''; setTimeout(() => del.remove(), 250); }
+    } else { c.style.transform = ''; c.style.opacity = ''; del.style.transition = 'left .25s ease-out, width .25s ease-out'; Object.assign(del.style, { left: c.offsetLeft + c.offsetWidth + 'px', width: 0 }); setTimeout(() => del.remove(), 250); }
   };
   addEventListener('pointermove', move); addEventListener('pointerup', end); addEventListener('pointercancel', end);
 });
