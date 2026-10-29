@@ -2101,6 +2101,10 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 @keyframes lgdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes lgfade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.lg *{animation:none!important}}
 .stat .pw{cursor:pointer;border:1px solid var(--accent)}.stat .pw .chev{display:inline-block;color:var(--accent);transition:transform .2s}.stat .pw.on .chev{transform:rotate(90deg)}html.term .stat .pw{border-color:var(--accent)}
+nav{view-transition-name:nav}#seg{view-transition-name:seg}#bg-field{view-transition-name:bg}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.3s}
+::view-transition-old(nav),::view-transition-old(seg),::view-transition-old(bg){display:none}::view-transition-new(nav),::view-transition-new(seg),::view-transition-new(bg){animation:none}
+::view-transition-group(nav),::view-transition-group(seg),::view-transition-group(bg){animation:none}
 .lgx{display:flex;margin-top:4px}.lgx div{flex:1;text-align:center;cursor:pointer}.lgx .on small{color:var(--fg);font-weight:700}
 .lg .hit{fill:var(--fg);opacity:0;cursor:pointer}.lg .hit.on{opacity:.06}html.term .lg .hit{rx:0}.lg .dot,.lg path,.lg line{pointer-events:none}.lgwhy{margin:8px 0 0}.lgx small{display:block}
 .lgk{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px}.lgk i{display:inline-block;width:16px;border-top:2.5px solid var(--accent);vertical-align:middle;margin-right:6px}.lgk i.p{border-top:2px dashed #dfe4ec;opacity:.75}
@@ -4197,7 +4201,13 @@ const navLinks = [...document.querySelectorAll('nav a')];
 const GROUPS = { home: ['home'], team: ['team'], moves: ['pickups', 'pending'], trades: ['trades', 'compare'], more: ['season', 'league', 'news', 'help', 'settings'] };
 const PAGE_NAME = { pickups: 'Pickups', pending: 'Pending', trades: 'Trade ideas', compare: 'Compare', season: 'Season', league: 'League', news: 'News', help: 'How it works', settings: 'Settings' };
 const lastPage = {};
+// Switching pages crossfades: the old page fades out while the new one fades in (the browser's view transition,
+// iOS 18+; older phones just switch). The tab bar, the switch and the background aren't part of it, so they stay live.
 function showTab(tab, jump) {
+  if (jump && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(() => setTab(tab, jump));
+  else setTab(tab, jump);
+}
+function setTab(tab, jump) {
   let g = Object.keys(GROUPS).find(k => GROUPS[k].includes(tab));
   if (!g) { g = GROUPS[tab] ? tab : 'home'; tab = lastPage[g] || GROUPS[g][0]; }
   lastPage[g] = tab;
