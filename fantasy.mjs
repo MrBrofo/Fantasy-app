@@ -636,9 +636,9 @@ function judge(give, take, them) {
   };
 }
 
-// Trade ideas: 1-for-1, worth 2+ points a week to me, and fair to them on value over replacement.
-// "Looser check" on the page also shows closer calls: 1+ a week to me, costing them up to 1.5.
-// ponytail: 1-for-1 only; add 2-for-1 if this gets used a lot.
+// 1-for-1 trades for the bench check (the best trade that sends a bench player away): worth 2+ a week to me
+// and fair to them on value over replacement, or 1+ to me costing them up to 1.5. The Trade ideas page uses the
+// fleece search below (1- or 2-for-1).
 const tradeable = p => playable(p) && !['K', 'D/ST'].includes(p.pos) && rate(p) > 0;
 const tradesOpen = !(league.settings.tradeSettings?.deadlineDate < Date.now());
 const tradeOk = (j, strict) => (strict ? j.mine >= 2 && j.theirs >= -0.5 : j.mine >= 1 && j.theirs >= -1.5);
@@ -652,12 +652,6 @@ for (const t of teams) {
   }
 }
 trades.sort((a, b) => b.mine + b.theirs - (a.mine + a.theirs));
-// up to 4 ideas per team (the page picks the team and how many show), at most 2 per player I give up
-const tradePool = [];
-for (const tr of trades) {
-  const same = tradePool.filter(x => x.team === tr.team);
-  if (same.length < 4 && same.filter(x => x.give === tr.give).length < 2) tradePool.push(tr);
-}
 // shared bits of the trade ideas and fleece lists (the page script shows/hides cards)
 const poolEmpty = `<div class="card empty pool-empty" hidden>${tradesOpen ? 'Nothing here with this check. Try the looser check or another team.' : 'The trade deadline has passed.'}</div>`;
 const poolMore = '<div class="tools2" style="margin-bottom:10px"><button type="button" class="btn" data-more>Show more</button><button type="button" class="btn" data-next>New batch</button></div>';
@@ -851,7 +845,7 @@ const partners = teams.filter(t => t !== me).map(depth).map(d => ({
 // ponytail: the other team's extra roster spot on a 2-for-1 isn't counted (they'd drop their worst bench player).
 const f1 = v => (v ?? 0).toFixed(1); // (n() is defined further down)
 const avgValue = p => (playable(p) ? p.avg ?? 0 : 0);
-const fleece = [];
+const fleece = [], ideas = [];
 // For picking any player on the page: per player, my best offer that helps me and looks fair to them, fleece or not
 const bestOffer = new Map();
 for (const d of tradesOpen ? partners : []) {
@@ -862,14 +856,15 @@ for (const d of tradesOpen ? partners : []) {
   for (const give of gives) for (const take of theirs) {
     const j = judge(give, [take], d.t);
     const best = bestOffer.get(take);
-    if (j.mine <= 0 || (j.mine < 1 || j.theirs > -0.5) && best && best.mine >= j.mine) continue;
+    if (j.mine <= 0 || j.mine < 1 && best && best.mine >= j.mine) continue;
     // what they'd see: their best lineup scored with season-so-far averages
     const looks = score([...d.t.roster.filter(p => p !== take), ...give], avgValue) - score(d.t.roster, avgValue);
     if (looks < -1) continue;
     const theirWeek = weekScore([...d.t.roster.filter(p => p !== take || (locked(p) && isStarter(p))), ...give.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(d.t.roster);
-    const f = { d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, theirs: j.theirs, looks, theirWeek, strict: j.mine >= 2 && j.theirs <= -1 && looks >= 0 };
+    const f = { d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, mineWeek: j.mineWeek, mineLater: j.mineLater, after: j.after, theirs: j.theirs, looks, theirWeek, strict: j.mine >= 2 && j.theirs <= -1 && looks >= 0 };
     if (!best || j.mine > best.mine) bestOffer.set(take, f);
     if (j.mine >= 1 && j.theirs <= -0.5) fleece.push(f);
+    else if (j.mine >= 1) ideas.push(f); // fair by the projections too: an easy yes
   }
 }
 fleece.sort((a, b) => b.mine - b.theirs - (a.mine - a.theirs));
@@ -886,6 +881,14 @@ for (const f of fleece) {
   if (extra && same.filter(x => x.take === f.take).length >= 3) continue;
   const pitch = pitches(f);
   if (pitch) fleecePool.push({ ...f, extra, texts: pitch.texts, strict: f.strict && pitch.strength >= 4 });
+}
+// Trade ideas: good for me and they don't lose by the projections. Best for both first, up to 4 per team,
+// a player I give at most twice; the normal check wants 2+ a week for me, the looser one 1+.
+const ideaPool = [];
+for (const f of ideas.sort((a, b) => b.mine + b.theirs - (a.mine + a.theirs))) {
+  const same = ideaPool.filter(x => x.d === f.d);
+  if (offered.has(tradeKey(f.d.t, f.give, [f.take])) || same.length >= 4 || f.give.some(g => same.filter(x => x.give.includes(g)).length >= 2)) continue;
+  ideaPool.push({ ...f, texts: pitches(f, true).texts, strict: f.mine >= 2 });
 }
 // Every other player: my best offer for him (not a fleece), shown only when I pick him
 const inPool = new Set(fleecePool.map(f => f.take));
@@ -973,6 +976,12 @@ const claudePrompt = f => `Write a short text (1-2 sentences) in my voice to my 
   f.d.short.length ? `their team is short at ${f.d.short.map(p => POS_NAME[p].toLowerCase()).join(', ')}` : '',
   f.theirWeek >= 1 ? `it would add about ${Math.round(f.theirWeek)} projected points to their lineup this week` : '',
 ].filter(Boolean).join('; ')}. Give me 3 different versions.`;
+// a trade card's compare/check buttons, text to send, and propose on ESPN
+const offerButtons = f => `${exBtns(f.give, [f.take], true)}
+  <div class="group">Text to send</div><p class="pitch">${esc(f.texts[0])}</p>
+  <div class="tools2"><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-copy="${esc(f.texts[0])}">Copy text</button>${f.texts.length > 1 ? `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-versions="${esc(JSON.stringify(f.texts))}">Another version</button>` : ''}</div>
+  <button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it (copies the facts, opens Claude)</button>
+  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Propose ${f.give.map(p => p.name).join(' + ')} for ${f.take.name} on ESPN`, type: 'TRADE_PROPOSAL', other: f.d.t.id, sms: f.d.t.name, items: [...f.give.map(p => ({ type: 'GIVE', playerId: p.id })), { type: 'GET', playerId: f.take.id }], week: league.scoringPeriodId }))}">Propose on ESPN, then text them</button>` : ''}`;
 
 // --- Luck check: "all-play" record = your record if you'd played every team every week
 const weekly = {}; // week -> { teamId: points }
@@ -2463,27 +2472,23 @@ ${pending.length ? pending.map(m => {
 <section id="trades"><h2>Trade ideas</h2>
 <div class="card"><select id="tp-team" class="sel" aria-label="Show trades with"><option value="">All teams</option>${teams.filter(t => t !== me).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
 <label class="pick" style="border:0;padding-bottom:0"><input type="checkbox" id="tp-loose"> Looser check: also show closer calls (trade ideas worth 1+ point a week to you, fleeces with a weaker pitch)</label></div>
-<div class="pool-list" data-step="6">${tradePool.map(t => { const s = myStartersAt(t.after, t.give.pos); return `<div class="card" data-team="${t.team.id}" data-strict="${t.strict ? 1 : 0}"><div class="tag" style="margin-bottom:8px">with <b>${esc(t.team.name)}</b></div><div class="swap">
-  <div class="row">${player(t.give, '')}${big(rate(t.give), 'per game, rest of season', null, t.give, 'season')}</div>
-  <div class="arrow">for</div>
-  <div class="row">${player(t.take, '')}${big(rate(t.take), 'per game, rest of season', null, t.take, 'season')}</div></div>
-  <p class="why"><span class="gain">${gainText(t.mineWeek, t.mineLater)}</span> for you. You get a ${POS_NAME[t.take.pos].toLowerCase()}; they get a ${POS_NAME[t.give.pos].toLowerCase()}${t.theirs > 0.2 ? `, which helps them too (+${n(t.theirs)})` : ''}.
-  <br>Your starting ${POS_NAME[t.give.pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p>${exBtns([t.give], [t.take], true)}</div>`; }).join('')}${poolEmpty}</div>
+<div class="pool-list" data-step="6">${ideaPool.map(f => { const s = myStartersAt(f.after, f.give[0].pos); return `<div class="card" data-team="${f.d.t.id}" data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">${gainText(f.mineWeek, f.mineLater)}</span></div>
+  <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
+  <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
+  <p class="why">For them: ${f.theirs > 0.2 ? `+${n(f.theirs)} a week` : 'about even'}.${f.give.length > 1 ? ' They\'d have to drop a bench player.' : ''}
+  <br>Your starting ${POS_NAME[f.give[0].pos].toLowerCase()}${s.length > 1 ? 's' : ''} after: ${s.length ? `${startersText(s)} per game, rest of season` : 'nobody, so you\'d need to pick one up'}.</p>
+  ${offerButtons(f)}</div>`; }).join('')}${poolEmpty}</div>
 ${poolMore}
 </section>
 
 <section id="fleece"><h2>Fleece finder</h2>
 <select id="tp-player" class="sel" aria-label="Player to get" hidden><option value="">Any player</option>${(tradesOpen ? teams : []).filter(t => t !== me).flatMap(t => t.roster.filter(tradeable).sort((a, b) => rate(b) - rate(a)).map(p => `<option value="${p.id}" data-team="${t.id}">${esc(p.name)} (${p.pos})</option>`)).join('')}</select>
-<div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">+${n(f.mine)} a week for you${f.alt ? ', not a fleece' : ''}</span></div>
+<div class="pool-list" data-step="5">${fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">${gainText(f.mineWeek, f.mineLater)}${f.alt ? ', not a fleece' : ''}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="tag" style="margin:6px 0 0">Their situation: ${esc(situation(f.d.t))}. ${esc(profiles.get(f.d.t)?.say[0] ?? '')}</p>
   <p class="why">${f.alt ? 'No clear fleece for him; this is your best offer. ' : ''}Why it looks fair to them: going by points per game so far, it ${f.looks >= 0.5 ? `helps their lineup by about ${n(f.looks)} a week` : 'comes out about even'}. Going by the rest-of-season projections, ${f.theirs < -0.2 ? `they lose about ${n(-f.theirs)} a week` : f.theirs > 0.2 ? `it helps them too, about ${n(f.theirs)} a week` : 'it comes out about even for them'}.${f.give.length > 1 ? ' They would also have to drop a bench player.' : ''}</p>
-  ${exBtns(f.give, [f.take], true)}
-  <div class="group">Text to send</div><p class="pitch">${esc(f.texts[0])}</p>
-  <div class="tools2"><button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-copy="${esc(f.texts[0])}">Copy text</button>${f.texts.length > 1 ? `<button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-versions="${esc(JSON.stringify(f.texts))}">Another version</button>` : ''}</div>
-  <button type="button" class="btn" style="background:var(--chip);color:var(--fg)" data-claude="${esc(claudePrompt(f))}">Have Claude write it (copies the facts, opens Claude)</button>
-  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Propose ${f.give.map(p => p.name).join(' + ')} for ${f.take.name} on ESPN`, type: 'TRADE_PROPOSAL', other: f.d.t.id, sms: f.d.t.name, items: [...f.give.map(p => ({ type: 'GIVE', playerId: p.id })), { type: 'GET', playerId: f.take.id }], week: league.scoringPeriodId }))}">Propose on ESPN, then text them</button>` : ''}</div>`).join('')}${poolEmpty}</div>
+  ${offerButtons(f)}</div>`).join('')}${poolEmpty}</div>
 ${poolMore}
 </section>
 
