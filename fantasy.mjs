@@ -2044,8 +2044,6 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .sheet-card.closing{animation:down .2s cubic-bezier(.4,0,1,1) forwards}
 @keyframes up{from{transform:translateY(100%)}}@keyframes down{to{transform:translateY(100%)}}
 .sheet-body{overflow-y:auto;overflow-x:hidden;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
-.sheet-grab{position:absolute;top:0;left:0;right:0;height:24px;z-index:1;touch-action:none}.sheet-grab::after{content:'';position:absolute;top:8px;left:50%;width:38px;height:5px;margin-left:-19px;border-radius:3px;background:var(--muted);opacity:.5}
-html.term .sheet-grab::after{border-radius:0}
 .sheet-x{position:absolute;top:10px;right:12px;width:34px;height:34px;border-radius:50%;border:0;background:var(--chip);color:var(--fg);font-size:22px;line-height:1;cursor:pointer;z-index:1}
 .sheet-x::after{content:'';position:absolute;inset:-5px}/* 44px tap area around the 34px close button */
 .sh-top{display:flex;gap:14px;align-items:center;margin-bottom:14px;padding-right:40px}.sh-top .pic{width:64px;height:64px}
@@ -2569,7 +2567,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 </div>
-<div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><div class="sheet-grab"></div><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
+<div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
 <script type="application/json" id="pdata">__PDATA__</script>
 <script type="application/json" id="rdata">__RDATA__</script>
 <script type="application/json" id="snap">${JSON.stringify(snap).replace(/</g, '\\u003c')}</script>
@@ -3280,7 +3278,7 @@ function closeSheet() {
   card.classList.add('closing'); // slides down from wherever a swipe left it
   closeTimer = setTimeout(done, 200);
 }
-// Swipe down to close: drag from the top of the sheet, or pull down when it's scrolled to the top.
+// Swipe down to close: drag from the top of the sheet (no bar shown), or pull down when it's scrolled to the top.
 // Let go past a quarter of the way (or flick it) and it closes; otherwise it springs back.
 (() => {
   const card = sheet.querySelector('.sheet-card');
