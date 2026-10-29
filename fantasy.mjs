@@ -393,7 +393,7 @@ function row(p, ratings) {
   const roto = espn == null ? null : sleeper.get(k) ?? null, cb = espn == null ? null : cbs.get(k) ?? null, fx = espn == null ? null : fp.get(k) ?? null;
   const all = [espn, roto, cb, fx?.[0]].filter(v => v != null), wind = windFactor(pos, rosSaved.weather?.[TEAM(team)]);
   // ESPN's rest-of-season projection is statSourceId 1, statSplitTypeId 0 (per game = appliedAverage)
-  const rosBy = [stat(p, 1, 0)?.appliedAverage ?? null, rosRoto.get(k) ?? null, rosCbs.get(k) ?? null];
+  const rosBy = [stat(p, 1, 0)?.appliedAverage ?? null, rosRoto.get(k) ?? null, rosCbs.get(k) ?? null, fpRos.get(k)?.[0] ?? null];
   const rosAll = rosBy.filter(v => v != null);
   return {
     id: p.id, name: p.fullName, pos, proTeamId: p.proTeamId,
@@ -401,7 +401,7 @@ function row(p, ratings) {
     status: p.injuryStatus && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : '',
     now: stat(p, 0, 1)?.appliedTotal ?? null, nowLine: scoring(stat(p, 0, 1)),
     pts: season?.appliedTotal ?? null, avg: season?.appliedAverage ?? null, ceiling: proj?.appliedTotalCeiling ?? null,
-    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length * wind : null, wind, espn, roto, cbs: cb, fp: fx?.[0] ?? null, experts: fx, split: split(all), vegas: vegas[TEAM(team)] ?? null,
+    proj: all.length ? all.reduce((s, v) => s + v, 0) / all.length * wind : null, wind, espn, roto, cbs: cb, fp: fx?.[0] ?? null, experts: fx, rosRank: fpRos.get(k)?.[1] ?? null, split: split(all), vegas: vegas[TEAM(team)] ?? null,
     ros: rosAll.length ? rosAll.reduce((s, v) => s + v, 0) / rosAll.length : null, rosBy,
     owned: p.ownership?.percentOwned ?? null, trend: p.ownership?.percentChange ?? 0, rank: ratings?.[0]?.positionalRanking || null,
   };
@@ -426,6 +426,24 @@ if (!rosSaved.fp) try {
   if (rows.length) rosSaved.fp = rows;
 } catch (err) { console.warn('FantasyPros skipped:', err.message); down.push('FantasyPros'); }
 for (const [name, pos, team, ...rest] of rosSaved.fp ?? []) if (Number.isFinite(rest[0])) fp.set(pkey(name, pos, team), rest);
+// Rest of season, from their rest-of-season rankings (fewer experts, about 6): the page gives a total through week 18,
+// so per game = that total over his games left (this week to 18, less his bye). Checked against Rotowire: within 4%.
+const fpRos = new Map(); // key -> [points per game, pos rank like "WR4"]
+if (!rosSaved.fpRos) try {
+  const rows = [];
+  for (const [pos, page] of Object.entries(FP_PAGE)) {
+    const r = await fetch(`https://www.fantasypros.com/nfl/rankings/ros-${page}.php`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) throw new Error(`${r.status} on ${pos}`);
+    const d = JSON.parse((await r.text()).match(/var ecrData = (\{.*?\});/)?.[1] ?? 'null');
+    if (!d?.players) throw new Error(`no rest-of-season rankings on ${pos}, page layout probably changed`);
+    for (const x of d.players) {
+      const games = Array.from({ length: Math.max(0, 19 - week) }, (_, i) => week + i).filter(w => w !== +x.player_bye_week).length;
+      if (games) rows.push([x.player_name, pos, x.player_team_id, Number(x.r2p_pts) / games, x.pos_rank]);
+    }
+  }
+  rosSaved.fpRos = rows;
+} catch (err) { console.warn('FantasyPros rest of season skipped:', err.message); }
+for (const [name, pos, team, ...rest] of rosSaved.fpRos ?? []) if (Number.isFinite(rest[0])) fpRos.set(pkey(name, pos, team), rest);
 
 const names = {};
 const teams = league.teams.map(t => {
@@ -1069,7 +1087,7 @@ const procText = !noProc.length ? 'every day' : procDays.size >= 4 ? `every day 
 // "ESPN 12.3, Rotowire 6.1, CBS 9.0" for whichever sources have a number
 const srcText = p => [['ESPN', p.espn], ['Rotowire', p.roto], ['CBS', p.cbs], ['FantasyPros', p.fp]].filter(([, v]) => v != null).map(([s, v]) => `${s} ${n(v)}`).join(', ');
 // The (i) button on a suggestion: every number behind it and where it came from
-const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper), CBS Sports and FantasyPros (expert consensus) projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the three. Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024, moved by each player's own record when listed (nflverse injury reports and snap counts, last 5 seasons). Rosters, waiver order and claims: your ESPN league.";
+const SOURCES_NOTE = "This week: average of ESPN, Rotowire (via Sleeper), CBS Sports and FantasyPros (expert consensus) projections. Later weeks: ESPN only (the others don't project that far ahead). Rest of season: average of the four (FantasyPros from their rest-of-season expert rankings). Injuries and bye weeks: ESPN. Practice reports: NFL.com; chance to play: Footballguys' count of injury reports, 2017-2024, moved by each player's own record when listed (nflverse injury reports and snap counts, last 5 seasons). Rosters, waiver order and claims: your ESPN league.";
 const srcLine = p => {
   const ros = ['ESPN', 'Rotowire', 'CBS'].map((s, i) => (p.rosBy?.[i] != null ? `${s} ${n(p.rosBy[i])}` : '')).filter(Boolean).join(', '), odds = playOdds(p, p.inj?.type);
   return `<b>${esc(p.name)}</b>: this week ${esc(srcText(p) || 'no projection (bye or not playing)')}${srcText(p).includes(',') ? `, average ${n(p.proj)}` : ''}` +
@@ -4749,7 +4767,7 @@ for (const [id, p] of shown) {
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
     avg: n(p.avg), rank: p.rank ? '#' + p.rank : '-', rankWhy: p.rank ? rankWhy(p) + ' (this season)' : '', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
     trend, hit: hitLine(p)?.[1] ?? '', sources, projLine, projVs, experts, espnProj: pc ? n(pc.appliedTotal) : null, games, now, plays: plays.get(id) ?? [], notes: notes(p),
-    rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}). Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
+    rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]], ['FantasyPros', p.rosBy[3]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}).${p.rosRank ? ` Experts rank him ${p.rosRank.replace(/(\D+)(\d+)/, '$1 #$2')} for the rest of the season.` : ''} Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
     byeText: !p.bye ? 'No bye listed.' : p.bye < week ? `Week ${p.bye} (done).` : p.bye === week ? 'This week. He won\'t play.' : `Week ${p.bye}.`,
   };
   // a defense is a whole team: "they", not "he"
