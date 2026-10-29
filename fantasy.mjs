@@ -1515,6 +1515,7 @@ function whyWeek(p, wk, pts, expected) {
   if (out.length === head) {
     if (bad) out.push('Nothing obvious: usual snaps, average defense, main teammates playing.');
     else if (good) out.push('Nothing unusual: just a big game.');
+    else out.push('A normal game for him: his usual playing time, an average defense, teammates playing.');
   }
   return out;
 }
@@ -2128,7 +2129,7 @@ nav{view-transition-name:nav}#seg{view-transition-name:seg}#bg-field{view-transi
 .whypop>div{width:100%;max-width:440px;max-height:80vh;max-height:80dvh;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:4px 18px 16px;box-shadow:0 20px 50px rgba(0,0,0,.5)}
 .wp-name{font-weight:700;font-size:17px;margin-top:14px}.whypop .group{margin-top:6px}html.term .whypop>div{border-radius:0}
 .lgx{display:flex;margin-top:4px}.lgx div{flex:1;text-align:center;cursor:pointer}.lgx .on small{color:var(--fg);font-weight:700}
-.lg .hit{fill:var(--fg);opacity:0;cursor:pointer}.lg .hit.on{opacity:.06}html.term .lg .hit{rx:0}.lg .dot,.lg path,.lg line{pointer-events:none}.lgwhy{margin:8px 0 0}.lgx small{display:block}
+.lg .hit{fill:var(--fg);opacity:0;cursor:pointer}.lg .hit.on{opacity:.06}html.term .lg .hit{rx:0}.lg .dot,.lg path,.lg line{pointer-events:none}.lgwhy{margin:8px 0 0}.lgstat{display:block;margin-top:4px;font-size:12px;opacity:.8}.lgx small{display:block}
 .lgk{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px}.lgk i{display:inline-block;width:16px;border-top:2.5px solid var(--accent);vertical-align:middle;margin-right:6px}.lgk i.p{border-top:2px dashed #dfe4ec;opacity:.75}
 .news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
 .news b{display:block;font-size:14px;font-weight:600}.news .nsnip{display:block;font-size:13px;color:var(--muted);margin:3px 0 2px}.news small{color:var(--muted);font-size:12px}
@@ -2956,8 +2957,17 @@ document.addEventListener('click', ev => {
   sheet.querySelectorAll('[data-lgwk]').forEach(x => x.classList.toggle('on', +x.dataset.lgwk === lgWk));
   sheet.querySelector('.lgwhy').innerHTML = weekText(G[lgPick(G)]);
 });
-const weekText = g => '<b>Week ' + g.wk + (g.pts == null ? '' : ': ' + g.pts.toFixed(1) + ' pts' + (g.proj == null ? '' : ', projected ' + g.proj.toFixed(1))) + '.</b> ' +
-  (g.note === 'bye' ? 'Bye week.' : g.pts == null ? 'Didn’t play.' : e(g.line.join(', ')) + (g.line.length && g.why.length ? '. ' : '') + e(g.why.join(' ')));
+// a week in plain words: how it compared to his projection, where the points came from, why; the stat line last, small
+const weekText = g => {
+  if (g.note === 'bye' || g.pts == null) return '<b>Week ' + g.wk + '.</b> ' + (g.note === 'bye' ? 'Bye week.' : 'Didn’t play.');
+  const d = g.proj == null ? null : g.pts - g.proj;
+  const vs = d == null ? '' : Math.abs(d) < 3 ? 'About what he was projected (' + g.proj.toFixed(1) + ').' : Math.abs(d).toFixed(1) + (d > 0 ? ' more' : ' less') + ' than projected (' + g.proj.toFixed(1) + ').';
+  // the biggest source of points, from the stat line ("Receiving yards: 84 (+8.4)")
+  const top = g.line.map(x => x.match(/^(.*?)(?::[^(]*)? \(\+?(-?[\d.]+)\)$/)).filter(m => m && +m[2] > 0)[0];
+  const from = top && g.pts > 0 ? ' Most came from ' + top[1].toLowerCase() + ' (' + Math.round(+top[2] / g.pts * 100) + '% of his points).' : '';
+  return '<b>Week ' + g.wk + ': ' + g.pts.toFixed(1) + ' pts.</b> ' + vs + from + ' ' + e(g.why.filter(t => !t.startsWith('Expected about')).join(' ')) +
+    (g.line.length ? '<br><small class="lgstat">' + e(g.line.join(' · ')) + '</small>' : '');
+};
 function chart(G, sel) {
   const all = G.flatMap(g => [g.pts, g.proj]).filter(v => v != null), lo = Math.min(0, ...all), hi = Math.max(1, ...all);
   const W = Math.max(300, G.length * 62), x = i => (i + 0.5) * W / G.length, y = v => 22 + (hi - v) / (hi - lo || 1) * 74, f = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
