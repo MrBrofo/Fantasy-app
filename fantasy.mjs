@@ -3333,14 +3333,14 @@ else {
   const out = [];
   for (const [id, now] of Object.entries(SNAP)) {
     const was = seenSnap[id];
-    if (!was) { out.push(['good', now.n + ' joined your team']); continue; }
-    if (was.s !== now.s) out.push([now.s === 'healthy' ? 'good' : 'bad', now.n + ': ' + was.s + ' → ' + now.s]);
-    if (was.slot !== now.slot) out.push(['meh', now.n + ': ' + was.slot + ' → ' + now.slot]);
-    if (Math.abs(was.pr - now.pr) >= 3) out.push([now.pr > was.pr ? 'good' : 'bad', now.n + ': expected points ' + was.pr + ' → ' + now.pr]);
+    if (!was) { out.push(['good', now.n + ' joined your team', id]); continue; }
+    if (was.s !== now.s) out.push([now.s === 'healthy' ? 'good' : 'bad', now.n + ': ' + was.s + ' → ' + now.s, id]);
+    if (was.slot !== now.slot) out.push(['meh', now.n + ': ' + was.slot + ' → ' + now.slot, id]);
+    if (Math.abs(was.pr - now.pr) >= 3) out.push([now.pr > was.pr ? 'good' : 'bad', now.n + ': expected points ' + was.pr + ' → ' + now.pr, id]);
   }
   for (const [id, was] of Object.entries(seenSnap)) if (!SNAP[id]) out.push(['meh', was.n + ' left your team']);
   if (out.length) {
-    document.getElementById('changelist').innerHTML = out.map(([k, t]) => '<div class="chg ' + k + '">' + e(t) + '</div>').join('');
+    document.getElementById('changelist').innerHTML = out.map(([k, t, id]) => '<div class="chg ' + k + '"' + (P[id] ? ' data-pid="' + id + '" role="button" tabindex="0">' + e(t) + ' <span class="more">&rsaquo;</span>' : '>' + e(t)) + '</div>').join('');
     document.getElementById('changes').hidden = false;
   }
 }
