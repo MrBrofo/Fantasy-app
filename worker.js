@@ -145,7 +145,7 @@ async function ask(req, env) {
       if (x.result.type !== 'succeeded') return reply(200, { answer: "The slow answer didn't come back (" + x.result.type + '). Ask again.' });
       const r = x.result.message, which = /haiku/.test(r.model) ? 'haiku' : 'sonnet';
       bill(which, r.usage); cost /= 2;
-      if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.' });
+      if (r.stop_reason === 'refusal') return reply(200, { answer: 'Coach would not answer that one. Try asking it a different way.' });
       return reply(200, { answer: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: which === 'haiku' ? 'Haiku' : 'Sonnet', cost });
     }
     return reply(200, { answer: 'The slow answer came back empty. Ask again.' });
@@ -246,7 +246,7 @@ async function ask(req, env) {
     if (res.length) res[res.length - 1].cache_control = { type: 'ephemeral' };
     msgs.push({ role: 'user', content: res });
   }
-  if (r.stop_reason === 'refusal') return reply(200, { answer: 'Claude would not answer that one. Try asking it a different way.', cost });
+  if (r.stop_reason === 'refusal') return reply(200, { answer: 'Coach would not answer that one. Try asking it a different way.', cost });
   return reply(200, { answer: r.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n').trim(), cut: r.stop_reason === 'max_tokens', model: smart ? 'Sonnet' : 'Haiku', cost });
 }
 
