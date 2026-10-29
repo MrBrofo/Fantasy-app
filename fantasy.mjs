@@ -2414,6 +2414,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <div style="display:flex;gap:6px;margin-top:10px"><div class="seg" id="askmode" style="margin:0;flex:1"><button type="button" data-mode="auto">Auto</button><button type="button" data-mode="quick">Quick</button><button type="button" data-mode="smart">Smart</button></div><div class="seg" style="margin:0"><button type="button" id="askslow" style="padding:9px 12px">Half price</button></div></div>
 
 <button type="button" id="askbtn" class="btn">Ask Coach</button><div id="askout" class="askout" hidden></div>
+<button type="button" id="askhist" class="linkbtn" hidden></button><div id="askhistout" hidden></div>
 <button type="button" id="askopen" class="linkbtn">Or open it in the Claude app</button></div></section>
 
 <section id="alerts" hidden><div class="card"><b>Phone alerts</b>
@@ -3578,6 +3579,15 @@ const slowCancel = () => {
   document.getElementById('askout').hidden = true; askReady();
   if (p && LIVE) fetch(LIVE.url.replace(/[/]$/, '') + '/ask', { method: 'POST', headers: { 'content-type': 'application/json', 'x-live': LIVE.token }, body: JSON.stringify({ cancel: p.id }) }).catch(() => {});
 };
+const histGet = () => { try { return JSON.parse(localStorage.getItem('askHist')) || []; } catch { return []; } };
+const histShow = () => {
+  const h = histGet(), b = document.getElementById('askhist'), box = document.getElementById('askhistout');
+  b.hidden = !h.length; b.textContent = box.hidden ? 'Past questions (' + h.length + ')' : 'Hide past questions';
+  if (!box.hidden) box.innerHTML = h.map(x => '<details class="plays"><summary><b>' + e(x.q) + '</b> <span class="tag">' + new Date(x.t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span></summary>' + askHtml(x.a) + '</details>').join('');
+};
+const histAdd = (q, a) => { if (!a) return; try { localStorage.setItem('askHist', JSON.stringify([{ q: q || 'Question', a, t: Date.now() }, ...histGet()].slice(0, 30))); } catch {} histShow(); };
+document.getElementById('askhist').onclick = () => { const box = document.getElementById('askhistout'); box.hidden = !box.hidden; histShow(); };
+histShow();
 const slowCheck = async () => {
   clearTimeout(slowT);
   const p = slowGet();
@@ -3594,6 +3604,7 @@ const slowCheck = async () => {
     askReady();
     askPaid(d.cost);
     if (!p.more) askLast = d.answer || '';
+    histAdd(p.q + (p.more ? ' (more)' : ''), d.answer);
     out.innerHTML = '<p class="tag">' + e(p.q) + '</p>' + askDone(d, p.more);
   } catch (err) { out.innerHTML = '<p class="tag">Couldn&#39;t check on the half-price answer (' + e(err.message) + '). Trying again in a minute.</p>'; slowT = setTimeout(slowCheck, 60000); }
 };
@@ -3615,6 +3626,7 @@ const askRun = async more => {
       setTimeout(slowCheck);
     } else {
       if (!more) askLast = d.answer || '';
+      histAdd(document.getElementById('askq').value.trim() + (more ? ' (more)' : ''), d.answer);
       out.innerHTML = askDone(d, more);
     }
   } catch (err) {
