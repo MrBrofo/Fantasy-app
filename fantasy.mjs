@@ -2049,6 +2049,9 @@ section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-
 .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
 .todo{display:flex;gap:12px;align-items:flex-start;touch-action:pan-y}
+#todo,#todo details{position:relative}.card.todo{position:relative;z-index:1}
+.todo-del{position:absolute;box-sizing:border-box;border-radius:16px;background:var(--bad);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:flex-end;padding-right:20px;opacity:.75;transition:opacity .15s}
+.todo-del.go{opacity:1}html.term .todo-del{border-radius:0}
 .todo .lvl{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
 details.info{margin-top:6px}details.info>summary{list-style:none;position:relative;display:inline-grid;place-items:center;place-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font:italic 700 13px/1 Georgia,serif;cursor:pointer}
@@ -4234,13 +4237,17 @@ document.addEventListener('pointerdown', ev => {
   const c = ev.target.closest('#todo .card.todo[data-k]');
   if (!c || ev.button) return;
   const x0 = ev.clientX, y0 = ev.clientY;
-  let dx = 0, sliding = false;
+  let dx = 0, sliding = false, del = null;
   const move = e => {
     dx = Math.min(0, e.clientX - x0);
     if (!sliding && Math.abs(e.clientY - y0) > 10 && Math.abs(e.clientY - y0) > -dx) return end(); // scrolling, not sliding
     if (!sliding && dx > -8) return;
+    // a red Delete behind the card, showing as it slides away
+    if (!sliding) { del = document.createElement('div'); del.className = 'todo-del'; del.textContent = 'Delete';
+      Object.assign(del.style, { top: c.offsetTop + 'px', left: c.offsetLeft + 'px', width: c.offsetWidth + 'px', height: c.offsetHeight + 'px' }); c.before(del); }
+    del.classList.toggle('go', dx < -c.offsetWidth * 0.35);
     sliding = true; c.style.transition = 'none';
-    c.style.transform = 'translateX(' + dx + 'px)'; c.style.opacity = 1 + dx / c.offsetWidth;
+    c.style.transform = 'translateX(' + dx + 'px)';
   };
   const end = () => {
     removeEventListener('pointermove', move); removeEventListener('pointerup', end); removeEventListener('pointercancel', end);
@@ -4251,8 +4258,8 @@ document.addEventListener('pointerdown', ev => {
     if (dx < -c.offsetWidth * 0.35) {
       c.style.transform = 'translateX(-110%)'; c.style.opacity = 0;
       try { localStorage.setItem(goneKey, JSON.stringify([...gone(), c.dataset.k].slice(-100))); } catch {}
-      setTimeout(() => { c.hidden = true; c.style.transform = c.style.opacity = c.style.transition = ''; showTab(location.hash.slice(1), false); }, 250);
-    } else { c.style.transform = ''; c.style.opacity = ''; }
+      setTimeout(() => { c.hidden = true; del.remove(); c.style.transform = c.style.opacity = c.style.transition = ''; showTab(location.hash.slice(1), false); }, 250);
+    } else { c.style.transform = ''; c.style.opacity = ''; setTimeout(() => del.remove(), 250); }
   };
   addEventListener('pointermove', move); addEventListener('pointerup', end); addEventListener('pointercancel', end);
 });
