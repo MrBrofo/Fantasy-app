@@ -3541,9 +3541,9 @@ document.addEventListener('click', ev => {
     if (d) { if (d.tagName === 'DETAILS') d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     return;
   }
-  // a name or bar in this week's matchup: that team's page
+  // a name or bar in this week's matchup: that team's page (yours opens the Team tab)
   const tm = ev.target.closest('[data-tm]');
-  if (tm) return openTeam(tm.dataset.tm);
+  if (tm) return +tm.dataset.tm === R.me ? (showTab('team', true), scrollTo(0, 0)) : openTeam(tm.dataset.tm); // yours: the Team tab
   const el = (!ev.target.closest('.sheet-body') || sheet.dataset.team) && ev.target.closest('[data-pid]');
   if (el) openSheet(el.dataset.pid);
 });
