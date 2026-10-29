@@ -1115,7 +1115,7 @@ function claimCheck(m) {
   const v = stack ? ['bad', `Drop ${stack.name} instead`] : covers ? ['good', `Covers your week ${week + 1} bye`] : rental ? (keeps.length ? ['bad', 'Drops a keeper for one week'] : ['meh', 'One-week rental']) : m.week >= 1 || m.nextGain >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : worseBackup ? ['bad', 'Worse backup, cancel it'] : ['meh', 'Barely matters'];
   return { bdiff, backup, worseBackup, kp, spare, stack, covers, ahead, worse, keeps, rental, v };
 }
-const todo = [];
+const todo = [['week', 'Test: slide me left', 'Slide this card left to remove it.', null, []]];
 for (const p of starters(me)) {
   if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) is on bye.`, bestMove, [p]]);
   else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`, bestMove, [p]]);
@@ -2048,7 +2048,7 @@ section:has(>details.fold){margin-top:12px}
 section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
-.todo{display:flex;gap:12px;align-items:flex-start}
+.todo{display:flex;gap:12px;align-items:flex-start;touch-action:pan-y}
 .todo .lvl{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
 details.info{margin-top:6px}details.info>summary{list-style:none;position:relative;display:inline-grid;place-items:center;place-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font:italic 700 13px/1 Georgia,serif;cursor:pointer}
@@ -2389,7 +2389,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 
 <section id="todo"><h2>Do this now <span class="dot" hidden></span></h2>
 ${adviceIssues.length ? `<div class="card" style="border-color:var(--warn)"><b style="color:var(--warn)">Advice check: ${adviceIssues.length} problem${adviceIssues.length > 1 ? 's' : ''} found</b><p class="why" style="margin:4px 0 0">Some advice may be off:</p><ul style="margin:6px 0 0;padding-left:18px">${adviceIssues.map(([where, text]) => `<li><b>${esc(where)}:</b> ${esc(text)}</li>`).join('')}</ul></div>` : ``}
-${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${/^(Pickup step|Better backup)/.test(title) && who.length === 2 ? exBtns([who[1]], [who[0]]) : ''}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
+${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<div class="card todo" data-k="${esc(league.scoringPeriodId + '|' + title)}"><span class="lvl ${lvl}">${levelName[lvl]}</span><div><b>${esc(title)}</b>${who.length ? `<div class="tpics">${who.map(p => { shown.set(p.id, p); return `<span data-pid="${p.id}" role="button" tabindex="0" title="${esc(p.name)}">${pic(p)}</span>`; }).join('')}</div>` : ''}<p>${esc(why)}</p>${info(who)}${/^(Pickup step|Better backup)/.test(title) && who.length === 2 ? exBtns([who[1]], [who[0]]) : ''}${MOVE_URL && move ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ ...move, week: league.scoringPeriodId }))}">${esc(move.label)}</button>` : ''}</div></div>`;
   return todo.slice(0, 3).map(card).join('') + (todo.length > 3 ? `<details class="all"><summary>${todo.length - 3} more to do</summary>${todo.slice(3).map(card).join('')}</details>` : ''); })() : '<div class="card empty">You\'re all set this week.</div>'}
 </section>
 
@@ -2696,6 +2696,7 @@ async function swap(html) {
   for (const k in P) delete P[k];
   Object.assign(P, np);
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
+  if (typeof hideGone === 'function') hideGone();
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
   if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) { body.innerHTML = render(P[sheet.dataset.pid]); drawGc(); }
@@ -4225,6 +4226,36 @@ function addHim(p) {
   };
   if (teamSel) { teamSel.onchange = pickTeam; loose.onchange = reset; playerSel.onchange = reset; draw(); }
 }
+// Do now: slide a card left to remove it. Remembered on this phone (by week and title), so a page update doesn't bring it back.
+const goneKey = 'todoGone', gone = () => { try { return JSON.parse(localStorage.getItem(goneKey)) || []; } catch { return []; } };
+function hideGone() { const g = gone(); document.querySelectorAll('#todo .card.todo[data-k]').forEach(c => { c.hidden = g.includes(c.dataset.k); }); }
+hideGone();
+document.addEventListener('pointerdown', ev => {
+  const c = ev.target.closest('#todo .card.todo[data-k]');
+  if (!c || ev.button) return;
+  const x0 = ev.clientX, y0 = ev.clientY;
+  let dx = 0, sliding = false;
+  const move = e => {
+    dx = Math.min(0, e.clientX - x0);
+    if (!sliding && Math.abs(e.clientY - y0) > 10 && Math.abs(e.clientY - y0) > -dx) return end(); // scrolling, not sliding
+    if (!sliding && dx > -8) return;
+    sliding = true; c.style.transition = 'none';
+    c.style.transform = 'translateX(' + dx + 'px)'; c.style.opacity = 1 + dx / c.offsetWidth;
+  };
+  const end = () => {
+    removeEventListener('pointermove', move); removeEventListener('pointerup', end); removeEventListener('pointercancel', end);
+    if (!sliding) return;
+    const eat = e => { e.stopPropagation(); e.preventDefault(); }; // the slide isn't a tap
+    addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => removeEventListener('click', eat, true), 400);
+    c.style.transition = 'transform .25s ease-out, opacity .25s ease-out';
+    if (dx < -c.offsetWidth * 0.35) {
+      c.style.transform = 'translateX(-110%)'; c.style.opacity = 0;
+      try { localStorage.setItem(goneKey, JSON.stringify([...gone(), c.dataset.k].slice(-100))); } catch {}
+      setTimeout(() => { c.hidden = true; c.style.transform = c.style.opacity = c.style.transition = ''; showTab(location.hash.slice(1), false); }, 250);
+    } else { c.style.transform = ''; c.style.opacity = ''; }
+  };
+  addEventListener('pointermove', move); addEventListener('pointerup', end); addEventListener('pointercancel', end);
+});
 // One section at a time: the bottom bar picks which tab shows, like pages in an app
 // 5 tabs; Moves, Trades and More each hold a few pages, picked with the switch at the top. Each tab remembers its page.
 const navLinks = [...document.querySelectorAll('nav a')];
@@ -4252,7 +4283,7 @@ function setTab(tab, jump) {
   if (seg.dataset.g === g) seg.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('on', b.dataset.page === tab));
   else seg.dataset.g = g, seg.innerHTML = GROUPS[g].length < 2 ? '' : GROUPS[g].map(p => '<button type="button" data-page="' + p + '"' + (p === tab ? ' class="on"' : '') + '>' + PAGE_NAME[p] + '</button>').join('');
   // red number on Home, and the same number on the to-do list it points to
-  const k = document.querySelectorAll('#todo .card.todo').length;
+  const k = document.querySelectorAll('#todo .card.todo:not([hidden])').length;
   for (const dot of document.querySelectorAll('nav .dot, #todo h2 .dot')) { dot.hidden = !k; dot.textContent = k; }
   if (jump) document.body.scrollTo({ top: 0 });
 }
