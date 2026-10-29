@@ -4072,7 +4072,9 @@ function addHim(p) {
   // --- Trade checker: the same math as the trade ideas, for any players you pick
   const tcTeam = $('tc-team');
   tcTeam.innerHTML = '<option value="">Pick a team...</option>' + R.teams.filter(t => t.id !== R.me).map(t => '<option value="' + t.id + '">' + e(t.name) + '</option>').join('');
-  const box = (p, side) => '<label class="pick"><input type="checkbox" data-side="' + side + '" value="' + p.id + '">' + photo(p) + '<span><b>' + e(p.name) + '</b><br><span class="tag">' + p.pos + ' &middot; ' + p.rate.toFixed(1) + ' per game</span></span></label>';
+  const box = (p, side) => '<label class="pick"><input type="checkbox" data-side="' + side + '" value="' + p.id + '">' + photo(p) + '<span><b class="lnk" data-pid="' + p.id + '">' + e(p.name) + '</b><br><span class="tag">' + p.pos + ' &middot; ' + p.rate.toFixed(1) + ' per game</span></span></label>';
+  // tapping a name opens his card instead of ticking the box (the page's click handler opens it)
+  $('check').addEventListener('click', ev => { if (ev.target.closest('.pick [data-pid]')) ev.preventDefault(); });
   function tcLists() {
     const them = +tcTeam.value;
     $('tc-give').innerHTML = rosterOf(R.me).map(p => box(p, 'give')).join('');
