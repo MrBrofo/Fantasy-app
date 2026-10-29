@@ -1992,7 +1992,7 @@ h1{font-size:28px;font-weight:700;margin:6px 0 2px;letter-spacing:-.025em;line-h
 .match{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:20px;padding:16px;margin:-40px 0 16px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
 .match h2{margin:0 0 10px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .vs{display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center}
-.vs .t{font-weight:600;overflow-wrap:anywhere}.vs .p{font:600 18px var(--num);text-align:right}
+.vs [data-tm]{cursor:pointer}.vs .t{font-weight:600;overflow-wrap:anywhere}.vs .p{font:600 18px var(--num);text-align:right}
 .bar{grid-column:1/-1;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;margin-bottom:6px}.bar i{display:block;height:100%;border-radius:3px}
 .verdict{margin-top:8px;font-size:14px}
 /* Bottom bar, frosted glass like iOS. Fixed so it's always one tap away. */
@@ -2314,8 +2314,8 @@ ${opp ? (() => {
   <div class="tag" id="lv-score" style="margin-bottom:8px"${live ? '' : ' hidden'}>${done ? 'Final score' : 'Score right now'}: <b>${n(mySide.totalPointsLive ?? 0)}</b> to <b>${n(oppSide.totalPointsLive ?? 0)}</b>.${done ? '' : ' Final guess below.'}</div>
   ${live && pre ? `<div class="tag" style="margin:-4px 0 8px">Guess before games started: <b>${n(pre[0])}</b> to <b>${n(pre[1])}</b>.</div>` : ''}
   <div class="vs">
-  <div class="t">You</div><div class="p" id="lv-a" data-base="${n(a)}">${n(a)}</div><div class="bar"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
-  <div class="t">${esc(opp.name)}</div><div class="p" id="lv-b">${n(b)}</div><div class="bar"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
+  <div class="t" data-tm="${me.id}">You</div><div class="p" id="lv-a" data-tm="${me.id}" data-base="${n(a)}">${n(a)}</div><div class="bar" data-tm="${me.id}"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
+  <div class="t" data-tm="${opp.id}">${esc(opp.name)}</div><div class="p" id="lv-b" data-tm="${opp.id}">${n(b)}</div><div class="bar" data-tm="${opp.id}"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
 </div><div class="verdict" id="lv-verdict">${(() => {
   // 0% or 100% from ESPN: decided, just not official yet
   const [x, y] = done ? [mySide.totalPointsLive ?? 0, oppSide.totalPointsLive ?? 0] : [a, b], by = n(Math.abs(Math.round(x * 10) - Math.round(y * 10)) / 10);
@@ -2869,7 +2869,7 @@ function render(p) {
   // not the sheet itself: it carries data-pid too, and its first photo is whoever was on the page under it
   return '<div class="sh-top">' + (document.querySelector(':not(#sheet)[data-pid="' + p.id + '"] .pic')?.outerHTML ?? '') +
     '<div><div class="sh-name">' + e(p.name) + '</div><div class="meta">' + e(p.posName) + ' &middot; ' + e(p.teamName) + '</div><div class="tag">' + e(p.owner) + '</div></div></div>' +
-    '<div class="sh-q ' + p.play[0] + '"><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
+    '<div class="sh-q ' + p.play[0] + '"' + (p.news.length ? ' data-tonews role="button" tabindex="0" style="cursor:pointer"' : '') + '><small>Will he play this week?</small><b>' + e(p.play[1]) + '</b>' + (p.game ? '<span>' + e(p.game) + '</span>' : '') + '</div>' +
     (p.advice ? '<div class="sh-q ' + p.advice[0] + '"><small>What to do</small><b>' + e(p.advice[1]) + '</b></div>' : '') +
     (g => LD?.field?.[g?.[3]] || g?.[0] === 'post' ? (l => '<button type="button" class="btn" data-watch data-label="' + l + '">' + (gcOpen ? 'Hide the game' : l) + '</button><div id="gc"' + (gcOpen ? '' : ' hidden') + '></div>')(LD.field?.[g[3]] ? 'Watch his game live' : g.last ? 'Watch his plays last week' : 'Watch his plays') : '')(gcG(p)) +
     (p.liveNews?.length ? '<div class="group">Just in</div>' + p.liveNews.map(x => '<p class="why" style="margin:4px 0 0">' + e(x.h) + '</p>').join('') : '') +
@@ -3535,6 +3535,15 @@ document.getElementById('askopen').onclick = async () => {
 };
 document.addEventListener('click', ev => {
   if (ev.target.closest('[data-close]')) return closeSheet();
+  // "Will he play?": jump to the news story about his status (practice, injury tag, ruled out...), opened; else the newest
+  if (ev.target.closest('[data-tonews]')) {
+    const all = [...body.querySelectorAll('.news')], d = all.find(x => /practic|limited|\bDNP\b|questionable|doubtful|ruled out|inactive|game-time|status|injur|expected to play|will play|won't play|\bsit\b|\bout\b/i.test(x.textContent)) ?? all[0];
+    if (d) { if (d.tagName === 'DETAILS') d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    return;
+  }
+  // a name or bar in this week's matchup: that team's page
+  const tm = ev.target.closest('[data-tm]');
+  if (tm) return openTeam(tm.dataset.tm);
   const el = (!ev.target.closest('.sheet-body') || sheet.dataset.team) && ev.target.closest('[data-pid]');
   if (el) openSheet(el.dataset.pid);
 });
