@@ -57,8 +57,8 @@ assert.equal(r.judge([], [pl(20, 'RB', 'RB', 25, 1)], them).mineWeek, 0, 'gettin
 assert.equal(r.judge([], [pl(21, 'RB', 'RB', 25, 2)], them).mineWeek, 25 - 10, 'getting one who plays later pushes out my lowest open starter (10)');
 assert.equal(r.judge([base[1]], [], them).mineWeek, 0, 'trading away a starter who already played loses nothing this week');
 assert.equal(r.judge([base[2]], [], them).mineWeek, -(12 - 9), 'trading away one who plays later: the bench RB (9) steps in');
-// 2 for 1: the open roster spot gets the best free agent (31, worth 5 a game), so getting one player isn't undervalued
-assert.equal(run(base, { lastWeek: 8 }).judge([base[2], base[3]], [{ ...pl(40, 'RB', 'RB', 0, 2), ros: 3 }], them).mineLater, 3 + 5, 'open spot filled from free agents');
+// 2 for 1: my open roster spot is not filled with a free agent (31, worth 5 a game); the trade stands on its own players
+assert.equal(run(base, { lastWeek: 8 }).judge([base[2], base[3]], [{ ...pl(40, 'RB', 'RB', 0, 2), ros: 3 }], them).mineLater, 3, 'open spot not filled from free agents');
 
 // questionable: start him when a bench player at his position plays at the same time or later (swap him if he's inactive)
 {

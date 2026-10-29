@@ -614,7 +614,7 @@ const myStartersAt = (roster, pos) => bestLineup(roster, seasonValue).lineup.map
 // "Stefon Diggs (9.4), Jakobi Meyers (9.1) and Malik Washington (8.2)"
 const startersText = ps => ps.map(p => `${esc(p.name)} (${n(rate(p))})`).join(', ').replace(/, (?=[^,]*$)/, ' and ');
 // A team that ends a trade with fewer players (2 for 1) fills the open roster spot with the best free agent.
-// That spot is real value for the side getting the one better player, so it's counted.
+// Counted for the other team only (see judge): my own trades have to stand on the players in them.
 const faBest = allFa.filter(playable).sort((a, b) => seasonValue(b) - seasonValue(a));
 const refill = (after, before) => (after.length < before.length ? [...after, ...faBest.slice(0, before.length - after.length)] : after);
 // Effect of a trade on both teams. give = players I send, take = players I get.
@@ -625,7 +625,9 @@ function judge(give, take, them) {
   // this week: a starter of mine whose game has kicked off already scored for me, traded or not; a player
   // I'd get counts like a bench player (0 once his game has kicked off)
   const mineWeek = weekScore([...me.roster.filter(p => !give.includes(p) || (locked(p) && isStarter(p))), ...take.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(me.roster);
-  const h = horizon(refill(mineAfter, me.roster), me.roster, 0, myLater ??= futureScores(me.roster), mineWeek);
+  // my side isn't refilled with a free agent: the trade has to be good on its own players (the best free agent
+  // is already its own pickup suggestion, and counting him made giving up a QB and a starting RB look like a win)
+  const h = horizon(mineAfter, me.roster, 0, myLater ??= futureScores(me.roster), mineWeek);
   return {
     // per week over the rest of the season, this week included
     mine: h.total / (futureWeeks.length + 1),
@@ -854,6 +856,10 @@ for (const d of tradesOpen ? partners : []) {
   const mine = me.roster.filter(p => tradeable(p) && p.avg > 0 && !(p.espn === 0 && p.bye !== week)), theirs = d.t.roster.filter(p => tradeable(p) && p.avg > 0);
   const gives = [...mine.map(p => [p]), ...mine.flatMap((a, i) => mine.slice(i + 1).map(b => [a, b]))];
   for (const give of gives) for (const take of theirs) {
+    // what they've actually scored this season has to back it up, not just the projections: 2 for 1 only for someone
+    // better than each player I give (by points per game so far and rest of season), 1 for 1 not clearly worse so far
+    const so = p => p.avg ?? 0;
+    if (give.length > 1 ? give.some(g => so(take) < so(g) || rate(take) < rate(g)) : so(take) < so(give[0]) - 1.5) continue;
     const j = judge(give, [take], d.t);
     const best = bestOffer.get(take);
     if (j.mine <= 0 || j.mine < 1 && best && best.mine >= j.mine) continue;
