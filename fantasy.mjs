@@ -2100,7 +2100,8 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .lg .dot{animation:lgfade .35s ease-out both}
 @keyframes lgdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes lgfade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.lg *{animation:none!important}}
-.lgx{display:flex;margin-top:4px}.lgx div{flex:1;text-align:center}.lgx small{display:block}
+.lgx{display:flex;margin-top:4px}.lgx div{flex:1;text-align:center;cursor:pointer}.lgx .on small{color:var(--fg);font-weight:700}
+.lg .hit{fill:var(--fg);opacity:0;cursor:pointer}.lg .hit.on{opacity:.06}html.term .lg .hit{rx:0}.lg .dot,.lg path,.lg line{pointer-events:none}.lgwhy{margin:8px 0 0}.lgx small{display:block}
 .lgk{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px}.lgk i{display:inline-block;width:16px;border-top:2.5px solid var(--accent);vertical-align:middle;margin-right:6px}.lgk i.p{border-top:2px dashed #dfe4ec;opacity:.75}
 .news{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;color:var(--fg);text-decoration:none}
 .news b{display:block;font-size:14px;font-weight:600}.news .nsnip{display:block;font-size:13px;color:var(--muted);margin:3px 0 2px}.news small{color:var(--muted);font-size:12px}
@@ -2893,7 +2894,18 @@ const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 let gcOpen = false; // the Watch view is open on this sheet
 // last games as a line chart: what he scored (solid, glowing, shaded under, numbers on the dots: green when he beat his
 // projection, red when he fell short) and what he was projected (dashed). The line draws itself in when the sheet opens.
-function chart(G) {
+let lgWk = null; // the week tapped on the chart; a new sheet starts on the newest
+const lgPick = G => { const i = G.findIndex(g => g.wk === lgWk); return i < 0 ? G.length - 1 : i; };
+document.addEventListener('click', ev => {
+  const t = ev.target.closest('#sheet [data-lgwk]'), G = t && P[sheet.dataset.pid]?.games;
+  if (!G) return;
+  lgWk = +t.dataset.lgwk;
+  sheet.querySelectorAll('[data-lgwk]').forEach(x => x.classList.toggle('on', +x.dataset.lgwk === lgWk));
+  sheet.querySelector('.lgwhy').innerHTML = weekText(G[lgPick(G)]);
+});
+const weekText = g => '<b>Week ' + g.wk + (g.pts == null ? '' : ': ' + g.pts.toFixed(1) + ' pts' + (g.proj == null ? '' : ', projected ' + g.proj.toFixed(1))) + '.</b> ' +
+  (g.note === 'bye' ? 'Bye week.' : g.pts == null ? 'Didn’t play.' : e(g.line.join(', ')) + (g.line.length && g.why.length ? '. ' : '') + e(g.why.join(' ')));
+function chart(G, sel) {
   const all = G.flatMap(g => [g.pts, g.proj]).filter(v => v != null), lo = Math.min(0, ...all), hi = Math.max(1, ...all);
   const W = Math.max(300, G.length * 62), x = i => (i + 0.5) * W / G.length, y = v => 22 + (hi - v) / (hi - lo || 1) * 74, f = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
   // a game with no number (bye, didn't play) is skipped: the line runs on to the next one. Smooth curves through the dots.
@@ -2902,12 +2914,13 @@ function chart(G) {
     return 'C' + f([b[0] + (p[0] - a[0]) / 6, b[1] + (p[1] - a[1]) / 6]) + ' ' + f([p[0] - (d[0] - b[0]) / 6, p[1] - (d[1] - b[1]) / 6]) + ' ' + f(p); }).join('') : '';
   const S = pts('pts'), line = smooth(S), base = y(lo);
   return '<div class="lgk"><span><i></i>Scored</span><span><i class="p"></i>Projected</span></div><div class="bars lgw"><div style="min-width:' + W + 'px"><svg class="lg" viewBox="0 0 ' + W + ' 104">' +
+    G.map((g, i) => '<rect class="hit' + (i === sel ? ' on' : '') + '" data-lgwk="' + g.wk + '" x="' + (x(i) - W / G.length / 2).toFixed(1) + '" y="0" width="' + (W / G.length).toFixed(1) + '" height="104" rx="8"/>').join('') +
     '<defs><linearGradient id="lgfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0"/><stop offset="1"/></linearGradient></defs>' +
     [hi, (hi + lo) / 2, lo].map(v => '<line class="gl" x1="0" x2="' + W + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>').join('') +
     (S.length > 1 ? '<path class="area" d="' + line + 'L' + f([S.at(-1)[0], base]) + 'L' + f([S[0][0], base]) + 'Z"/>' : '') +
     '<path class="p" d="' + smooth(pts('proj')) + '"/><path class="glow" pathLength="1" d="' + line + '"/><path class="a" pathLength="1" d="' + line + '"/>' +
     G.map((g, i) => g.pts == null ? '' : '<g class="dot ' + (g.proj == null ? '' : g.pts >= g.proj ? 'up' : 'dn') + '" style="animation-delay:' + (0.15 + 0.6 * i / G.length).toFixed(2) + 's"><circle cx="' + x(i).toFixed(1) + '" cy="' + y(g.pts).toFixed(1) + '" r="4.5"/><text x="' + x(i).toFixed(1) + '" y="' + (y(g.pts) - 10).toFixed(1) + '">' + g.pts.toFixed(1) + '</text></g>').join('') +
-    '</svg><div class="lgx">' + G.map(g => '<div><small>' + (g.pts == null ? '<b>' + e(g.note) + '</b>' : g.proj == null ? '&nbsp;' : 'proj ' + g.proj.toFixed(1)) + '</small><small>wk ' + g.wk + '</small></div>').join('') + '</div></div></div>';
+    '</svg><div class="lgx">' + G.map((g, i) => '<div data-lgwk="' + g.wk + '"' + (i === sel ? ' class="on"' : '') + '><small>' + (g.pts == null ? '<b>' + e(g.note) + '</b>' : g.proj == null ? '&nbsp;' : 'proj ' + g.proj.toFixed(1)) + '</small><small>wk ' + g.wk + '</small></div>').join('') + '</div></div></div>';
 }
 function render(p) {
   // not the sheet itself: it carries data-pid too, and its first photo is whoever was on the page under it
@@ -2932,8 +2945,7 @@ function render(p) {
     (p.sources ? '<div class="group">Where "expected" comes from</div><p class="why" style="margin:0">' + e(p.sources) + '</p>' : '') +
     (p.notes.length ? '<div class="group">What&rsquo;s affecting him</div>' + p.notes.map(t => '<p class="why" style="margin:0 0 6px">' + e(t) + '</p>').join('') : '') +
     (p.rosText ? '<div class="group">Rest of the season</div><p class="why" style="margin:0">' + e(p.rosText) + '</p>' : '') +
-    (p.games.length ? '<div class="group">Last games (fantasy points)</div>' + chart(p.games) +
-      p.games.filter(g => g.why.length || g.line.length).map(g => '<p class="why" style="margin:8px 0 0"><b>Week ' + g.wk + (g.pts == null ? '' : ' (' + g.pts.toFixed(1) + ' pts)') + ':</b> ' + e(g.line.join(', ')) + (g.line.length && g.why.length ? '. ' : '') + e(g.why.join(' ')) + '</p>').join('') : '') +
+    (p.games.length ? (G => '<div class="group">Last games (fantasy points)</div>' + chart(G, lgPick(G)) + '<p class="why lgwhy">' + weekText(G[lgPick(G)]) + '</p>')(p.games) : '') +
     '<div class="group">Bye week</div><p class="why" style="margin:0">' + e(p.byeText) + '</p>' +
     (p.news.length ? '<div class="group">Latest news</div>' + p.news.map(x => x.f ? '<details class="news"><summary><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<span class="nsnip nfull">' + e(x.f) + '</span><small>' + e(x.when) + ' &rsaquo;</small></summary></details>'
       : '<a class="news" href="' + e(x.url) + '" target="_blank" rel="noopener"><b>' + e(x.h) + '</b>' + (x.s ? '<span class="nsnip">' + e(x.s) + '</span>' : '') + '<small>' + e(x.when) + ' &rsaquo;</small></a>').join('') : '') +
@@ -3326,7 +3338,7 @@ document.addEventListener('click', ev => {
   drawGc();
 });
 let closeTimer;
-function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; lgWk = null; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
@@ -4542,10 +4554,10 @@ for (const [id, p] of shown) {
     : bestIds.has(id) ? (p.slot === 'Bench' ? ['yes', 'Start him. He\'s one of your best options this week.'] : ['yes', 'Keep him in your lineup.'])
     : p.slot !== 'Bench' ? ['no', 'Bench him. Someone on your team is expected to score more.'] : ['maybe', 'Keep him on the bench this week.'];
   const games = [];
-  for (let wk = 1; wk < week; wk++) { // every week so far for the chart; the write-ups only for the last 5
+  for (let wk = 1; wk < week; wk++) {
     const s = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk);
     const proj = p.bye === wk ? null : c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 1 && x.statSplitTypeId === 1 && x.scoringPeriodId === wk)?.appliedTotal || null;
-    games.push({ wk, pts: s?.appliedTotal ?? null, proj, note: p.bye === wk ? 'bye' : '–', line: wk < week - 5 ? [] : scoring(s), why: p.bye === wk || wk < week - 5 ? [] : whyWeek(p, wk, s?.appliedTotal ?? null, proj) });
+    games.push({ wk, pts: s?.appliedTotal ?? null, proj, note: p.bye === wk ? 'bye' : '–', line: scoring(s), why: p.bye === wk ? [] : whyWeek(p, wk, s?.appliedTotal ?? null, proj) });
   }
   // this week so far, once his game has started
   const cur = c?.stats?.find(x => x.seasonId === SEASON && x.statSourceId === 0 && x.statSplitTypeId === 1 && x.scoringPeriodId === week), g = gameNow[TEAM(p.team)];
