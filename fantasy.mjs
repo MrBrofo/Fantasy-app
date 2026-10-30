@@ -1909,6 +1909,7 @@ const startersAt = pos => teams.length * ((slotCounts[FA_SLOT[pos]] ?? 1) + (['R
 // his season rank with what it means here: about k players at his position start across this league each week
 // ("#9 of 12 starting kickers", or "#20 kicker, only the top 12 start")
 const rankWhy = p => { const k = Math.round(startersAt(p.pos)), w = POS_NAME[p.pos]?.toLowerCase(); return p.rank <= k ? 'of ' + k + ' starting ' + (p.pos === 'D/ST' ? 'defenses' : w + 's') : w + ', only the top ' + k + ' start'; };
+const rankText = p => !p.rank ? '' : '#' + p.rank + ' ' + rankWhy(p);
 // how often he connects this season, from the weekly stat lines: a kicker's field goals and extra points made of tried,
 // a pass catcher's catches of his targets, each next to what everyone at his position does. [card text, sheet text]
 const pctOf = (a, b) => Math.round(a / b * 100) + '%';
