@@ -3211,12 +3211,17 @@ function render(p) {
 // The live marks drawn over field.webp, a Blender render (1600x490). x is yards from the left end line (0-120),
 // z yards from the near sideline (0-53.3). Numbers come from the render's camera: the near sideline is 13.28 px a
 // yard wide at y 402.8, the far one 9.11 px a yard at y 102.9; one yard up is 0.868 of a yard across.
-// A lateral's spot, in yards from the offense's own goal: the last "to KC 35" before the word lateral. null = not a lateral, NaN = no spot given.
-function gcLatYard(text, code) {
-  const parts = (text || '').split(/lateral/i);
-  if (parts.length < 2) return null;
-  const m = [...parts[0].matchAll(/ to (?:([A-Z]+) )?([0-9]+)/g)].pop();
-  return !m ? NaN : !m[1] || m[1] === code ? +m[2] : 100 - m[2];
+// A lateral play, from its text: every spot the ball got to, in yards from the offense's own goal, with what happened
+// there, and whether the other team ended up with it. null = not a lateral, or no spots named.
+function gcChain(text, code) {
+  const t = (text || '').split('PENALTY')[0], stops = [];
+  if (!/lateral/i.test(t)) return null;
+  for (const m of t.matchAll(/ (?:to|at) (?:([A-Z]+) )?([0-9]+)(?![0-9:])|[Ll]ateral|FUMBLES|fumbles/g)) {
+    if (m[2]) stops.push({ y: !m[1] || m[1] === code ? +m[2] : 100 - m[2] });
+    else if (stops.length) stops[stops.length - 1].tag = /ateral/.test(m[0]) ? 'LATERAL' : 'FUMBLE';
+  }
+  const rec = /RECOVERED by ([A-Z]+)-/.exec(t);
+  return stops.length ? { stops, lost: !!rec && rec[1] !== code } : null;
 }
 function gcField(F, A, H, ball, from, first, fx) {
   const k = z => 1 / (0.075309 + 0.00064582 * z);
@@ -3268,10 +3273,11 @@ function gcField(F, A, H, ball, from, first, fx) {
     const kind = /field goal|extra point/i.test(type) ? (/good/i.test(type) ? 'fg' : /block/i.test(type) ? 'block' : 'miss') : /incomplet/i.test(type) ? 'inc' : /punt|kickoff/i.test(type) ? 'kick' : /interception/i.test(type) ? 'pick' : /pass|reception/i.test(type) ? 'pass' : 'run';
     // an interception lands where it was picked ("INTERCEPTED by D.Overshown at DAL 30"), not where the return ended
     const pk = kind === 'pick' && / at ([A-Z]+) ([0-9]+)/.exec(F.last.split('INTERCEPTED')[1] ?? ''), pick = pk ? (pk[1] === F.teams.find(t => t[0] === tid)?.[1] ? +pk[2] : 100 - pk[2]) : y1;
+    const chain = /run|pass/.test(kind) && F.play ? gcChain(F.last, F.teams.find(t => t[0] === tid)?.[1]) : null;
     const hold = /fg|miss|block/.test(kind), sx = fx(own(hold ? y0 - 7 : y0));
     // where the play started: a dashed line, next to the blue one where the ball is now
     if (F.play && Math.abs(fx(own(y0)) - fx(ball)) > 0.5) o += line(fx(own(y0)), '#fff').replace('/>', ' stroke-dasharray="14 10" stroke-opacity=".7"/>');
-    const post = fx(own(110)), lx = td ? fx(ball) : kind === 'fg' ? post + Math.sign(post - sx) * Math.min(8, 3 + Math.abs(post - sx) * 0.2) : fx(own(kind === 'miss' ? 110 : kind === 'block' ? y0 - 5 : kind === 'inc' ? y0 + (/ deep /.test(F.last) ? 20 : 8) : kind === 'pick' ? pick : y1)), dl = Math.abs(lx - sx);
+    const post = fx(own(110)), lx = td ? fx(ball) : kind === 'fg' ? post + Math.sign(post - sx) * Math.min(8, 3 + Math.abs(post - sx) * 0.2) : fx(own(kind === 'miss' ? 110 : kind === 'block' ? y0 - 5 : kind === 'inc' ? y0 + (/ deep /.test(F.last) ? 20 : 8) : kind === 'pick' ? pick : chain ? chain.stops[chain.stops.length - 1].y : y1)), dl = Math.abs(lx - sx);
     // across the field: a play starts in the middle and ends on the side the play text names ("pass short left",
     // "right end", "up the middle"), from the offense's view; facing right on screen its left is the far sideline (z up)
     const sd = /(?:short|deep) (left|right)|(left|right) (end|tackle|guard)/.exec(F.last || ''), z0 = 26.65,
@@ -3279,32 +3285,43 @@ function gcField(F, A, H, ball, from, first, fx) {
     // every play throws its own ball, picked from the play itself so a replay flies the same: how high, how much the air
     // slows it (fast off the foot or hand, slower at the end, so it comes down steeper than it went up), how fast it turns
     const rnd = (() => { let h = 2166136261; for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return () => (h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909), (h >>> 0) / 4294967296); })();
-    // a lateral: the ball gets to the player who pitches it, goes back to the next one, and he carries it the rest of the way
-    const latY = /run|pass/.test(kind) && F.play ? gcLatYard(F.last, F.teams.find(t => t[0] === tid)?.[1]) : null, lat = latY != null;
-    const latX = lat ? (Number.isNaN(latY) ? (sx + lx) / 2 : fx(own(latY))) : 0, latZ = (z0 + z1) / 2, LAT_A = 0.45, LAT_B = 0.6;
     const kicked = /fg|miss|kick|block/.test(kind), drag = kicked ? 0.8 + rnd() * 0.7 : 0.25 + rnd() * 0.5;
     let H = (kind === 'run' || kind === 'block' ? 0 : /fg|miss|kick/.test(kind) ? Math.min(17.5, 3 + dl * 0.28) : dl >= 5 ? Math.min(7, 1.5 + dl * 0.22) : 0) * (0.8 + rnd() * 0.45);
-    if (lat) H = kind === 'pass' && Math.abs(latX - sx) >= 5 ? Math.min(7, 1.5 + Math.abs(latX - sx) * 0.22) : 0;
+    // a lateral play follows the text stop by stop: thrown to the first if it's a pass, pitched back to the next one
+    // (two yards back and off to the side), a loose ball hops to whoever recovers it, and each carrier runs it flat
+    const legs = [];
+    if (chain) {
+      const fw = Math.sign(fx(own(100)) - fx(own(0))), side = z1 >= z0 ? 5 : -5, X0 = fx(own(chain.stops[0].y)), thrown = / pass /.test(F.last) && Math.abs(X0 - sx) >= 5;
+      H = thrown ? Math.min(7, 1.5 + Math.abs(X0 - sx) * 0.22) : 0;
+      let z = z1, prev = null;
+      const add = (x, zz, lift, tag) => legs.push({ x, z: zz, lift, tag });
+      legs.push({ x: sx, z: z0, lift: 0 });
+      chain.stops.forEach((st, i) => {
+        const x = fx(own(st.y));
+        add(x, z, i === 0 ? H : prev === 'FUMBLE' ? 0.8 : 0, st.tag);
+        if (st.tag === 'LATERAL') { z += side; add(x - 2 * fw, z, 1.2); }
+        prev = st.tag; if (i < chain.stops.length - 1) z += (z1 - z) / (chain.stops.length - 1 - i);
+      });
+      if (td) add(lx, z1, 0);
+    }
+    const LEGS = legs.length - 1;
     // height at a share u of the way there: the flight's time at u, then up and down over that time
     const tau = u => -Math.log(1 - u * (1 - Math.exp(-drag))) / drag, up = u => { const tm = tau(u); return H * 4 * tm * (1 - tm); };
     // a good field goal goes through the uprights: over the crossbar (10 feet, 3.3 yards up) with room to spare, under their tops
     if (kind === 'fg') { const tp = tau(Math.abs(post - sx) / dl); H = Math.min(22, (8 + rnd() * 3) / (4 * tp * (1 - tp))); }
     // lost yards, an interception, a missed or blocked kick: red; an incompletion: faint grey
-    const bad = !td && ((y1 < y0 && /run|pass/.test(kind)) || /pick|miss|block/.test(kind)), grey = kind === 'inc';
+    const bad = !td && ((y1 < y0 && /run|pass/.test(kind)) || /pick|miss|block/.test(kind) || chain?.lost), grey = kind === 'inc';
     const p = pt(F.play ? lx : fx(ball), z1), pb = pt(fx(ball), z1), s = k(z1), X = p[0].toFixed(1);
     // an interception: the defender runs in from a few yards downfield, catches it where it was picked, and carries it back
     // to where the return ended (px: the same sideline distance, so only x moves)
     const run = kind === 'pick' && F.play ? pt(lx + 4 * Math.sign(lx - sx || 1), z1)[0] - p[0] : 0, ret = run && Math.abs(fx(ball) - lx) > 0.5 ? pb[0] - p[0] : 0, pe = ret ? pb : p;
     if (F.play) {
-      const backX = latX - 2 * Math.sign(fx(own(100)) - fx(own(0))), backZ = latZ + (z1 >= z0 ? 5 : -5);
-      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30;
-        if (!lat) return pt(sx + (lx - sx) * u, z0 + (z1 - z0) * u, lift ? up(u) : 0);
-        if (u < LAT_A) { const v = u / LAT_A; return pt(sx + (latX - sx) * v, z0 + (latZ - z0) * v, lift ? H * 4 * v * (1 - v) : 0); }
-        if (u < LAT_B) { const v = (u - LAT_A) / (LAT_B - LAT_A); return pt(latX + (backX - latX) * v, latZ + (backZ - latZ) * v, lift ? 1.2 * 4 * v * (1 - v) : 0); }
-        const v = (u - LAT_B) / (1 - LAT_B); return pt(backX + (lx - backX) * v, backZ + (z1 - backZ) * v, 0); });
+      const path = lift => chain ? Array.from({ length: 20 * LEGS + 1 }, (_, i) => { const u = i / (20 * LEGS), g = Math.min(LEGS - 1, Math.floor(u * LEGS)), v = u * LEGS - g, a = legs[g], c = legs[g + 1];
+        return pt(a.x + (c.x - a.x) * v, a.z + (c.z - a.z) * v, lift ? c.lift * 4 * v * (1 - v) : 0); })
+        : Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, z0 + (z1 - z0) * u, lift ? up(u) : 0); });
       cam = (pt(sx, 26.65)[0] + p[0]) / 2;
       // a thrown ball spirals, a kicked one tumbles end over end
-      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: !H ? '' : /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H && !lat ? drag : 0, latAt: lat ? LAT_A : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
+      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: !H ? '' : chain || /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H && !chain ? drag : 0, legs: chain ? LEGS : 0, fly: chain ? GC_FLY + (LEGS - 1) * 500 : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
         run, ret, inc: kind === 'inc' && s, a0: rnd() * 360, f0: Math.floor(rnd() * 16), wob: rnd() * rnd() * 7, wf: 1.5 + rnd() * 2.5, td:td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
     }
     // a wide arrow from where the play started to the ball; the tip stops short of the ball so it shows (less on a short play)
@@ -3345,7 +3362,7 @@ function gcField(F, A, H, ball, from, first, fx) {
       if (who.length && !solo) o += '<g class="gc-catch"' + (ret ? ' transform="translate(' + ret.toFixed(1) + ' 0)"' : '') + (kind === 'inc' ? ' style="opacity:.45"' : '') + '>' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0, z1) +
         // an interception: a red INTERCEPTED tag under the defender, carried with him on the return
         (kind === 'pick' ? '<g class="gc-int"><rect x="' + (p[0] - 70).toFixed(1) + '" y="' + (p[1] + 18).toFixed(1) + '" width="140" height="26" rx="13" fill="#dc2626"/><text x="' + X + '" y="' + (p[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">INTERCEPTED</text></g>' : '') + '</g>';
-      if (lat) { const q = pt(latX, latZ); o += '<g class="gc-lat"><rect x="' + (q[0] - 48).toFixed(1) + '" y="' + (q[1] + 18).toFixed(1) + '" width="96" height="26" rx="13" fill="#000" fill-opacity=".6"/><text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">LATERAL</text></g>'; }
+      if (chain) legs.forEach((w, i) => { if (!w.tag) return; const q = pt(w.x, w.z), wide = w.tag === 'FUMBLE' ? 84 : 96, y = q[1] + 18 + legs.slice(0, i).filter(x => x.tag).length * 30; o += '<g class="gc-lat" data-u="' + (i / LEGS).toFixed(3) + '"><rect x="' + (q[0] - wide / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + wide + '" height="26" rx="13" fill="' + (w.tag === 'FUMBLE' ? '#dc2626' : '#000') + '" fill-opacity="' + (w.tag === 'FUMBLE' ? 1 : 0.6) + '"/><text x="' + q[0].toFixed(1) + '" y="' + (y + 13).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">' + w.tag + '</text></g>'; });
       // an incomplete pass: the target fades, the ball bounces off the turf, and INCOMPLETE shows under the spot
       if (kind === 'inc') o += '<g class="gc-inc"><rect x="' + (p[0] - 62).toFixed(1) + '" y="' + (p[1] + 18).toFixed(1) + '" width="124" height="26" rx="13" fill="#000" fill-opacity=".6"/><text x="' + X + '" y="' + (p[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#cbd5e1" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">INCOMPLETE</text></g>';
     }
@@ -3369,41 +3386,42 @@ function gcAnimate() {
   const b = document.getElementById('gcBall'), sh = document.getElementById('gcShad'), F = gcFly, run = gcRun = {};
   const fade = c => document.querySelector('#gc .' + c);
   if (!F || !b) return;
+  const FLY = F.fly || GC_FLY;
   let conf = null, bits = [], pop = null;
   const step = () => {
     if (!b.isConnected || gcRun !== run) { conf?.remove(); pop?.remove(); b.ownerSVGElement.style.transform = ''; return; }
-    const el = Date.now() - gcAt, t = Math.min(1, Math.max(0, (el - GC_LEAD) / GC_FLY)), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
+    const el = Date.now() - gcAt, t = Math.min(1, Math.max(0, (el - GC_LEAD) / FLY)), k = t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2;
     // in the air the ball keeps its speed through time, slowed by the air (F.drag); a run slides along easing in and out
-    const u = F.drag ? (1 - Math.exp(-F.drag * t)) / (1 - Math.exp(-F.drag)) : k;
+    const u = F.legs ? t : F.drag ? (1 - Math.exp(-F.drag * t)) / (1 - Math.exp(-F.drag)) : k;
     const along = (L, w = u) => { const i = Math.min(L.length - 2, Math.floor(w * (L.length - 1))), r = w * (L.length - 1) - i; return [L[i][0] + (L[i + 1][0] - L[i][0]) * r, L[i][1] + (L[i + 1][1] - L[i][1]) * r]; };
     const [x, y] = along(F.b), [gx, gy] = along(F.g), clip = document.querySelector('#gcReveal rect'), trail = fade('gc-trail');
     b.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')');
     // in flight the ball points along its path: a pass spins on its long axis (spin.webp's frames, the laces rolling
     // around), its nose wobbling a little on some throws; a kick turns end over end. Each slows a bit as it flies, at
     // its own rate (F.rate turns a second). Landed, it lies as drawn
-    const sp = document.getElementById('gcSpin'), fr = document.getElementById('gcFrame'), fly = t > 0 && t < 1 && (!F.latAt || u < F.latAt);
+    const sp = document.getElementById('gcSpin'), fr = document.getElementById('gcFrame'), fly = t > 0 && t < 1 && (!F.legs || u < 1 / F.legs);
     if (sp && F.spin) {
       const [x2, y2] = along(F.b, Math.min(1, u + 0.02)), dir = x2 < x - 0.01 ? -1 : 1, tilt = Math.atan2(y2 - y, Math.abs(x2 - x) || 1e-3) * 180 / Math.PI;
-      const turns = F.rate * t * GC_FLY / 1000 * (1 - 0.2 * t), wob = F.wob * Math.sin(t * GC_FLY / 1000 * F.wf * 2 * Math.PI);
+      const turns = F.rate * t * FLY / 1000 * (1 - 0.2 * t), wob = F.wob * Math.sin(t * FLY / 1000 * F.wf * 2 * Math.PI);
       sp.setAttribute('transform', !fly ? '' : 'translate(0 ' + F.cy.toFixed(2) + ') scale(' + dir + ' 1) rotate(' +
         (F.spin === 'spiral' ? tilt + wob : tilt + F.a0 + turns * 360).toFixed(1) + ') rotate(20) translate(0 ' + (-F.cy).toFixed(2) + ')');
       fr?.setAttribute('viewBox', (!fly ? 0 : F.spin === 'spiral' ? (Math.floor(turns * 16) % 16) * 240 : F.f0 * 240) + ' 0 240 160');
     }
-    if (F.latAt && fade('gc-lat')) fade('gc-lat').style.opacity = u < F.latAt ? 0 : 1;
+    if (F.legs) document.querySelectorAll('#gc .gc-lat').forEach(g => { g.style.opacity = u + 1e-6 < +g.dataset.u ? 0 : 1; });
     // the shadow stays on the turf right under the ball, smaller and fainter the higher the ball is
     const hi = Math.max(0, gy - y);
     sh.setAttribute('transform', 'translate(' + gx.toFixed(1) + ' ' + gy.toFixed(1) + ') scale(' + Math.max(0.4, 1 - hi / 220).toFixed(2) + ')');
     sh.setAttribute('opacity', Math.max(0.35, 1 - hi / 260).toFixed(2));
     // interception: the defender closes on the ball while it's in the air, then runs it back with the ball in his hands
     if (F.run) {
-      const rt = Math.min(1, Math.max(0, (el - GC_LEAD - GC_FLY) / GC_RET)), dx = t < 1 ? F.run * (1 - t) : F.ret * rt * rt * (3 - 2 * rt);
+      const rt = Math.min(1, Math.max(0, (el - GC_LEAD - FLY) / GC_RET)), dx = t < 1 ? F.run * (1 - t) : F.ret * rt * rt * (3 - 2 * rt);
       fade('gc-catch')?.setAttribute('transform', 'translate(' + dx.toFixed(1) + ' 0)');
-      if (fade('gc-int')) fade('gc-int').style.opacity = t < 1 ? 0 : Math.min(1, (el - GC_LEAD - GC_FLY) / 250);
+      if (fade('gc-int')) fade('gc-int').style.opacity = t < 1 ? 0 : Math.min(1, (el - GC_LEAD - FLY) / 250);
       if (t >= 1 && F.ret) { const [ex, ey] = F.b[F.b.length - 1], bx = (ex + dx).toFixed(1); b.setAttribute('transform', 'translate(' + bx + ' ' + ey.toFixed(1) + ')'); sh.setAttribute('transform', 'translate(' + bx + ' ' + ey.toFixed(1) + ')'); sh.setAttribute('opacity', 1); }
     }
     // incomplete: off the turf in two shrinking hops (about a yard and a half, then a third of that), then the label fades in
     if (F.inc) {
-      const bt = (el - GC_LEAD - GC_FLY) / 600, [ex, ey] = F.b[F.b.length - 1];
+      const bt = (el - GC_LEAD - FLY) / 600, [ex, ey] = F.b[F.b.length - 1];
       if (bt > 0 && bt < 1) b.setAttribute('transform', 'translate(' + ex.toFixed(1) + ' ' + (ey - F.inc * 1.3 * Math.abs(Math.sin(bt * 2 * Math.PI)) * (bt < 0.5 ? 1 : 0.35)).toFixed(1) + ')');
       if (fade('gc-inc')) fade('gc-inc').style.opacity = Math.min(1, Math.max(0, bt / 0.4));
     }
@@ -3411,7 +3429,7 @@ function gcAnimate() {
     if (clip) { clip.setAttribute('x', t < 1 ? Math.min(F.x0, x).toFixed(1) : 0); clip.setAttribute('width', t < 1 ? Math.abs(x - F.x0).toFixed(1) : 1600); }
     if (fade('gc-qb')) fade('gc-qb').style.opacity = Math.min(1, el / GC_LEAD);
     // touchdown: the end zone flashes and settles, the word fades in, confetti bursts out of the end zone and falls
-    const tl = (el - GC_LEAD - GC_FLY) / 1000;
+    const tl = (el - GC_LEAD - FLY) / 1000;
     if (F.td) {
       if (fade('gc-tdz')) fade('gc-tdz').style.opacity = tl < 0 ? 0 : tl < 0.15 ? tl / 0.15 : 0.7 + 0.3 * Math.exp(-(tl - 0.15) * 2.5) * Math.abs(Math.cos((tl - 0.15) * 9));
       if (fade('gc-tdt')) fade('gc-tdt').style.opacity = Math.min(1, Math.max(0, (tl - 1.75) / 0.3));
@@ -3447,7 +3465,7 @@ function gcAnimate() {
       if (tl >= GC_TD / 1000 && conf) { conf.remove(); conf = null; pop?.remove(); pop = null; b.ownerSVGElement.style.transform = ''; if (fade('gc-tdz')) fade('gc-tdz').style.opacity = 0.7; }
     }
     if (fade('gc-catch')) fade('gc-catch').style.opacity = Math.min(F.inc ? 0.45 : 1, Math.max(0, (t - (F.run ? 0.3 : 0.6)) / 0.3));
-    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0) || (F.run && el < GC_LEAD + GC_FLY + GC_RET) || (F.inc && el < GC_LEAD + GC_FLY + 700)) requestAnimationFrame(step);
+    if (t < 1 || (F.td && conf !== null) || (F.td && tl < 0) || (F.run && el < GC_LEAD + FLY + GC_RET) || (F.inc && el < GC_LEAD + FLY + 700)) requestAnimationFrame(step);
   };
   step();
 }
@@ -3469,12 +3487,13 @@ function gcWho(F) {
   if (F.dt) { const R = roster(F.dt), ab = F.teams.find(x => x[0] === F.dt)?.[1];
     return F.def ? [F.def, F.def2].filter(Boolean).map(n => ({ n, p: R[n], logo: ab, label: n.split('.').pop() })) : [{ n: 'Defense', logo: ab, label: 'DEFENSE' }]; }
   const t = (F.last || '').trim().replace(/^(\\([^)]*\\)\\s*)+/, ''), tid = F.play?.[2] || F.poss;
-  const a = /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1], b = / pass /.test(t) ? / to ([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1] : null;
+  const a = /^([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1], latTo = [...t.matchAll(/[Ll]ateral to ([A-Z][.][A-Z][A-Za-z'-]+)/g)].pop()?.[1], recBy = latTo && /RECOVERED by ([A-Z]+)-([A-Z][.][A-Z][A-Za-z'-]+)/.exec(t);
+  const b = latTo ? (recBy && recBy[1] === F.teams?.find(x => x[0] === tid)?.[1] ? recBy[2] : latTo) : / pass /.test(t) ? / to ([A-Z]\\.[A-Z][\\w'-]+)/.exec(t)?.[1] : null;
   if (!a || !tid) return [];
   if (b) gcQb[tid] = a;
   const q = !b && /rush/i.test(F.play?.[3] ?? '') ? F.qb || gcQb[tid] : null, kr = /punt|kickoff/i.test(F.play?.[3] ?? '') && /[.] +([A-Z][.][A-Z][A-Za-z'-]+) (?:to|for|pushed|ran) /.exec(t)?.[1];
   // a pick: the defender who caught it stands where he caught it (his team's logo when he isn't on its roster)
-  const R = roster(tid), opp = F.teams?.find(x => x[0] !== tid), pk = /interception/i.test(F.play?.[3] ?? '') && /INTERCEPTED by ([A-Z][.][A-Z][A-Za-z'-]+)/.exec(t)?.[1];
+  const R = roster(tid), opp = F.teams?.find(x => x[0] !== tid), pk = recBy && recBy[1] === opp?.[1] ? recBy[2] : /interception/i.test(F.play?.[3] ?? '') && /INTERCEPTED by ([A-Z][.][A-Z][A-Za-z'-]+)/.exec(t)?.[1];
   return [q !== a && q, a, !pk && b, kr, pk].filter(Boolean).map(n => kr === n || pk === n ? { n, p: roster(opp?.[0])[n], logo: opp?.[1], label: n.split('.').pop() } : { n, p: R[n] });
 }
 // The newest touchdown in ESPN's game summary, as [start, end, team, type, true] with yards from the team's own goal line
@@ -3595,7 +3614,7 @@ function drawGc() {
   if (html === box.gcHtml) return;
   box.innerHTML = box.gcHtml = html;
   // a new play animates, unless the phone is set to reduce motion and it came in on its own rather than from a tap
-  if (Date.now() - gcAt < GC_LEAD + GC_FLY + GC_TD && (gcTap || !matchMedia('(prefers-reduced-motion: reduce)').matches)) gcAnimate();
+  if (Date.now() - gcAt < GC_LEAD + (gcFly?.fly || GC_FLY) + GC_TD && (gcTap || !matchMedia('(prefers-reduced-motion: reduce)').matches)) gcAnimate();
   gcTap = false;
 }
 let gcTap = false;

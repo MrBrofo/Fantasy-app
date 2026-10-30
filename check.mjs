@@ -398,13 +398,13 @@ console.log('ok');
   assert.equal(gameOdds(r.slice(0, 10), 10), null); assert.equal(gameOdds(r, 0), null);
   console.log('game odds ok'); }
 
-// lateral spot: the last yard line named before the word lateral, either side of the field; a plain play isn't one
-{ const lat = new Function(cut('function gcLatYard(', '\n}') + '\nreturn gcLatYard;')();
-  assert.equal(lat('P.Mahomes pass short right to T.Kelce to KC 35 for 12 yards. T.Kelce lateral to M.Hardman to KC 45 for 10 yards.', 'KC'), 35);
-  assert.equal(lat('J.Goff pass short left to A.St. Brown to GB 40 for 8 yards. A.St. Brown lateral to J.Gibbs to GB 20.', 'DET'), 60);
-  assert.equal(lat('J.Goff pass short left to A.St. Brown to 50 for 8 yards. A.St. Brown lateral to J.Gibbs.', 'DET'), 50);
-  assert.equal(lat('J.Cook left end to BUF 40 for 5 yards.', 'BUF'), null);
-  assert.ok(Number.isNaN(lat('Trick play, lateral to J.Cook.', 'BUF')));
+// lateral plays: every spot in the text, in order, from the offense's side; a plain play isn't one
+{ const chain = new Function(cut('function gcChain(', '\n}') + '\nreturn gcChain;')();
+  const c = chain('(Shotgun) B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards (J.Bullard). FUMBLES (J.Bullard), RECOVERED by GB-B.Cox at CAR 25. B.Cox to CAR 22 for 3 yards (B.Young).', 'CAR');
+  assert.deepEqual(c.stops, [{ y: 24, tag: 'LATERAL' }, { y: 26, tag: 'FUMBLE' }, { y: 25 }, { y: 22 }]); assert.equal(c.lost, true);
+  assert.deepEqual(chain('J.Goff pass short left to A.St. Brown to GB 40 for 8 yards. A.St. Brown lateral to J.Gibbs to 50.', 'DET').stops, [{ y: 60, tag: 'LATERAL' }, { y: 50 }]);
+  assert.equal(chain('J.Cook left end to BUF 40 for 5 yards.', 'BUF'), null);
+  assert.equal(chain('Trick play, lateral to J.Cook.', 'BUF'), null);
   console.log('lateral ok'); }
 
 // the page's own script parses: it sits inside a template string in fantasy.mjs, where a lone backslash
