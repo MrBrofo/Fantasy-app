@@ -2173,7 +2173,7 @@ let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="manifest" href="manifest.json">
 <title>${esc(me.name)}</title>
-<script>try { const l = localStorage.getItem('look'); if (l !== 'classic') document.documentElement.classList.add(l === 'glass' ? 'glass' : 'term'); } catch { document.documentElement.classList.add('term'); }</script>
+<script>try { const l = localStorage.getItem('look'); if (l !== 'classic') document.documentElement.classList.add(l === 'term' ? 'term' : 'glass'); } catch { document.documentElement.classList.add('glass'); }</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
