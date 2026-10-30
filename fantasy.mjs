@@ -214,16 +214,24 @@ if (!rosSaved) {
       }
     }
   } catch (err) { console.warn('NFL injury report skipped:', err.message); rosSaved.practice = []; rosSaved.gameStatus = []; }
+  const csv = async url => {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status} on ${url.split('/').pop()}`);
+    const [head, ...rows] = (await r.text()).trim().split('\n').map(l => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).map(s => s.replace(/,$/, '').replace(/^"|"$/g, '')));
+    return rows.map(f => Object.fromEntries(head.map((h, i) => [h, f[i]])));
+  };
+  // Air yards by game (nflverse, a day or two behind Sleeper): air[wk][player key]. Checked every 6 hours; a game it doesn't have yet is estimated in luck().
+  if (rosPrev?.air && Date.now() - rosPrev.airAt < 216e5) Object.assign(rosSaved, { air: rosPrev.air, airAt: rosPrev.airAt });
+  else try {
+    const air = {};
+    for (const x of await csv(`https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_${SEASON}.csv`))
+      if (x.season_type === 'REG' && ['RB', 'WR', 'TE'].includes(x.position)) (air[x.week] ??= {})[pkey(x.player_display_name, x.position, x.team === 'LA' ? 'LAR' : x.team)] = +x.receiving_air_yards || 0;
+    Object.assign(rosSaved, { air, airAt: Date.now() });
+  } catch (err) { console.warn('Air yards skipped:', err.message); rosSaved.air = rosPrev?.air ?? {}; rosSaved.airAt = rosPrev?.airAt ?? 0; }
   // Each player's own record when listed questionable or doubtful (nflverse injury reports + snap counts, last 5 seasons):
   // tagHist[name|pos] = { Q: [times listed, times played], D: [...] }. Only changes once a week, so it's reused until then.
   if (rosPrev?.tagHist && rosPrev.tagHistWeek === week) Object.assign(rosSaved, { tagHist: rosPrev.tagHist, tagHistWeek: week });
   else try {
-    const csv = async url => {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`${r.status} on ${url.split('/').pop()}`);
-      const [head, ...rows] = (await r.text()).trim().split('\n').map(l => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).map(s => s.replace(/,$/, '').replace(/^"|"$/g, '')));
-      return rows.map(f => Object.fromEntries(head.map((h, i) => [h, f[i]])));
-    };
     const hist = {};
     for (let y = SEASON - 5; y <= SEASON; y++) {
       const nf = 'https://github.com/nflverse/nflverse-data/releases/download';
@@ -1839,15 +1847,24 @@ const tdRate = {};
   }
   for (const [pos, [td, rz]] of Object.entries(sum)) if (rz >= 50) tdRate[pos] = td / rz;
 }
-// Points a target or carry is worth at each position, touchdowns aside. A target counts as 2 carries.
-// ponytail: Sleeper's stats have no air yards, so a deep target counts like a short one.
-const oppOf = g => g[3] * 2 + g[4];
+// Points a target, carry or air yard is worth at each position, touchdowns aside. Weights from 2023-25 (nflverse): a target
+// counts as 2 carries, 25 air yards as 1 carry. A game with no air yards yet gets the position's usual per target.
+const airPerTgt = {};
+{
+  const sum = {};
+  for (const [wk, wd] of Object.entries(rosSaved.weeks ?? {})) for (const [k, g] of Object.entries(wd)) {
+    g[13] = rosSaved.air?.[wk]?.[k] ?? null;
+    if (g[13] != null) { const t = (sum[posOfKey.get(k)] ??= [0, 0]); t[0] += g[13]; t[1] += g[3]; }
+  }
+  for (const [pos, [air, tgt]] of Object.entries(sum)) if (tgt >= 100) airPerTgt[pos] = air / tgt;
+}
+const oppOf = (g, pos) => g[3] * 2 + g[4] + (g[13] ?? g[3] * (airPerTgt[pos] ?? 0)) * 0.04;
 const oppRate = {};
 {
   const sum = {};
   for (const wd of Object.values(rosSaved.weeks ?? {})) for (const [k, g] of Object.entries(wd)) {
     const pos = posOfKey.get(k), t = (sum[pos] ??= [0, 0]);
-    if (g[6] != null && g[0] >= 20) { t[0] += g[2] - g[6] * 6; t[1] += oppOf(g); }
+    if (g[6] != null && g[0] >= 20) { t[0] += g[2] - g[6] * 6; t[1] += oppOf(g, pos); }
   }
   for (const [pos, [pts, opp]] of Object.entries(sum)) if (opp >= 200) oppRate[pos] = pts / opp;
 }
@@ -1874,10 +1891,10 @@ function luck(p) {
   const games = Object.keys(rosSaved.weeks ?? {}).map(Number).sort((a, b) => b - a).map(w => rosSaved.weeks[w][k]).filter(g => g && g[6] != null).slice(0, 5);
   if (games.length < 3) return null;
   const tot = i => games.reduce((s, g) => s + g[i], 0), got = tot(2) / games.length, td = tot(6), rz = tot(5);
-  const worth = (games.reduce((s, g) => s + oppOf(g), 0) * each + rz * r * 6) / games.length; // a rushing or receiving TD is 6 points
-  return { games: games.length, got, worth, gap: got - worth, rz, tgt: tot(3) / games.length, car: tot(4) / games.length };
+  const worth = (games.reduce((s, g) => s + oppOf(g, p.pos), 0) * each + rz * r * 6) / games.length; // a rushing or receiving TD is 6 points
+  return { games: games.length, got, worth, gap: got - worth, rz, tgt: tot(3) / games.length, car: tot(4) / games.length, air: games.every(g => g[13] != null) ? tot(13) / games.length : null };
 }
-const roleText = l => `${n(l.tgt)} targets and ${n(l.car)} carries a game, ${l.rz} chances near the goal line in ${l.games} games`;
+const roleText = l => `${n(l.tgt)} targets${l.air != null ? ` (${Math.round(l.air)} air yards)` : ''} and ${n(l.car)} carries a game, ${l.rz} chances near the goal line in ${l.games} games`;
 const sellHigh = me.roster.filter(p => ['RB', 'WR', 'TE'].includes(p.pos) && playable(p)).map(p => ({ p, l: luck(p) })).filter(x => x.l && x.l.gap >= 3 && x.l.got >= 8).sort((a, b) => b.l.gap - a.l.gap);
 const buyLow = teams.filter(t => t !== me).flatMap(t => t.roster.filter(p => ['RB', 'WR', 'TE'].includes(p.pos) && playable(p)).map(p => ({ p, t, l: luck(p) })))
   .filter(x => x.l && x.l.gap <= -3 && x.l.worth >= 8).sort((a, b) => a.l.gap - b.l.gap).slice(0, 8);
