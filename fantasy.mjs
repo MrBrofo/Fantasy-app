@@ -1887,16 +1887,15 @@ const freeCard = (p, name, team, pos) => (p ? player(p) : `<div class="player"><
 // Tapping a player opens his detail sheet; every player shown is remembered so the sheet data
 // (recent games, news, game time) is fetched for exactly those after the page is built.
 // rank = how he compares at his position this season
-// his spot on his NFL team's depth chart: 1 = starter, 2 = 2nd string... (receivers: 1st at any of the three WR spots is a starter)
+// his spot on his NFL team's depth chart: 1st string, 2nd string... (receivers: 1st at any of the three WR spots is a starter)
 const depthAt = new Map(), dkey = (team, name) => team + '|' + norm(name).replace(/ (jr|sr|ii|iii|iv|v)$/, ''); // Sleeper often drops the Jr.
 for (const [team, chart] of Object.entries(rosSaved.depth ?? {})) for (const [, o, name] of chart) { const k = dkey(team, name); if (!(depthAt.get(k) <= o)) depthAt.set(k, o); }
 const depthWord = p => { if (!['QB', 'RB', 'WR', 'TE', 'K'].includes(p.pos)) return ''; const o = depthAt.get(dkey(TEAM(p.team), p.name));
-  return !o ? '' : o === 1 ? 'Starter' : o === 2 ? 'Backup' : ordinal(o); };
+  return o ? ordinal(o) + ' string' : ''; };
 const shown = new Map();
 const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
-  <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(p.teamName)}${p.bye ? ` &middot; bye wk ${p.bye}` : ''}</div>
-  ${(r => r.length ? `<div class="rank">${r.join(' &middot; ')}</div>` : '')([rankText(p), depthWord(p), hitLine(p)?.[0]].filter(Boolean))}<span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
+  <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(proAbbr[p.proTeamId] ?? p.teamName)}${p.rank ? ` &middot; #${p.rank}` : ''}${p.bye === week ? ' &middot; bye this week' : p.bye === week + 1 ? ' &middot; bye next week' : ''}</div><span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
 // (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
 const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
@@ -1910,7 +1909,6 @@ const startersAt = pos => teams.length * ((slotCounts[FA_SLOT[pos]] ?? 1) + (['R
 // his season rank with what it means here: about k players at his position start across this league each week
 // ("#9 of 12 starting kickers", or "#20 kicker, only the top 12 start")
 const rankWhy = p => { const k = Math.round(startersAt(p.pos)), w = POS_NAME[p.pos]?.toLowerCase(); return p.rank <= k ? 'of ' + k + ' starting ' + (p.pos === 'D/ST' ? 'defenses' : w + 's') : w + ', only the top ' + k + ' start'; };
-const rankText = p => !p.rank ? '' : '#' + p.rank + ' ' + rankWhy(p);
 // how often he connects this season, from the weekly stat lines: a kicker's field goals and extra points made of tried,
 // a pass catcher's catches of his targets, each next to what everyone at his position does. [card text, sheet text]
 const pctOf = (a, b) => Math.round(a / b * 100) + '%';
@@ -2168,7 +2166,7 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 @media (max-width:420px){.card.row .pic{width:42px;height:42px}.card.row{gap:8px}}
 .big small.up{color:var(--good);font-weight:600}
 .big .t-good{color:var(--good)}.big .t-weak{color:var(--warn)}.big small.tw{font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:11px}
-.rank{font-size:12px;color:var(--muted);line-height:1.35}
+
 .btn{background:var(--accent);color:var(--onaccent);border:0;border-radius:12px;padding:13px 16px;min-height:46px;font:600 15px Geist,system-ui,sans-serif;cursor:pointer;width:100%;margin-top:10px;transition:transform .1s ease-out,filter .1s}
 .btn:active{transform:scale(.97);filter:brightness(.9)}
 *{scrollbar-width:none}*::-webkit-scrollbar{display:none}.ask{display:grid;gap:2px}#askbtn:disabled{opacity:.45}.askmic{position:absolute;right:2px;bottom:2px;width:34px;height:34px;border:0;padding:0;display:grid;place-items:center;background:none;color:var(--muted);cursor:pointer}.askmic.on{color:#ff3b30;animation:askmic 1.2s ease-in-out infinite}@keyframes askmic{50%{opacity:.4}}.askout{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;line-height:1.5}.askout p{margin:0 0 8px}.askout p:last-child{margin:0}.askout ul{margin:0 0 8px;padding-left:20px}.linkbtn{background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;padding:10px 0 0;cursor:pointer;justify-self:center}
@@ -4803,7 +4801,7 @@ for (const [id, p] of shown) {
     p.vegas && p.pos !== 'D/ST' && p.bye !== week ? `Betting odds have his team scoring about ${Math.round(p.vegas)} points, ${p.vegas >= vegasAvg + 3 ? 'one of the higher totals this week. Good for him.' : p.vegas <= vegasAvg - 3 ? 'one of the lower totals this week. Bad for him.' : 'about average this week.'}` : '',
   ].filter(Boolean).join(' ');
   pdata[id] = {
-    id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: p.teamName, free: t ? null : { wa: !!p.wa, locked: locked(p) },
+    id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: [p.teamName, depthWord(p), p.bye && `bye wk ${p.bye}`].filter(Boolean).join(' · '), free: t ? null : { wa: !!p.wa, locked: locked(p) },
     pro: String(p.proTeamId), side: isStarter(p) ? (mine ? 'me' : t && t === opp ? 'opp' : null) : null, // Watch view: starters in my matchup
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
     play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
