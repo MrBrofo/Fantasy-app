@@ -2316,7 +2316,7 @@ details.news>summary,details.news[open]>summary{display:block;font-weight:400;ma
 .swap{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.row{min-width:0}
 .arrow{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase}
 .arrow::after{content:"";flex:1;height:1px;background:var(--line)}
-.gain{display:inline-block;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}
+.gain{display:block;width:fit-content;max-width:100%;box-sizing:border-box;margin-bottom:6px;background:var(--goodbg);color:var(--good);font-weight:800;padding:4px 10px;border-radius:8px;font-size:14px}.gain>span{white-space:nowrap}
 .why{color:var(--muted);font-size:14px;margin:10px 0 0}
 [hidden]{display:none!important}
 html:not(.term):not(.glass) #bg-field,html:not(.term) .bgring{display:none}
@@ -2631,7 +2631,7 @@ ${fillIns.length ? `<div class="group">Injury fill-ins: grab them first</div><p 
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
   <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'mostly this week' : 'long-term upgrade'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'this week' : 'per game, rest of season', null, s.add, wk ? 'week' : 'season')}</div>
-  <p class="why"><span class="gain">${gainText(s.now, s.later)}${oddsText(s.weeks)}</span>. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
+  <p class="why"><span class="gain">${(gainText(s.now, s.later) + oddsText(s.weeks)).split(' · ').map(x => `<span>${x}</span>`).join(' · ')}</span>To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
   <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
   ${s.add.wa ? (() => { const r = rivalsFor(s.add, wk ? weekValue : seasonValue); return r.length
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
