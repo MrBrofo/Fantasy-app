@@ -383,6 +383,21 @@ console.log('ok');
   assert.equal(pick(out, [out, { ...flex, proTeamId: 1 }, wr, rb], new Set(), new Set())[2].id, 62, 'started flex stays put');
   console.log('auto swap ok'); }
 
+// start-slot order: flex takes the later game; nothing moves once a game has started or if flex already plays last
+{ const slotOrder = new Function(cut('function slotOrder(', '\n}') + '\nreturn slotOrder;')();
+  const kick = p => p.k, no = () => false, f = { slot: 'FLEX', pos: 'WR', k: 1 }, w1 = { slot: 'WR', pos: 'WR', k: 3 }, w2 = { slot: 'WR', pos: 'WR', k: 2 }, rb = { slot: 'RB', pos: 'RB', k: 9 };
+  assert.equal(slotOrder([f, w1, w2, rb], kick, no).late, w1);
+  assert.equal(slotOrder([{ ...f, k: 5 }, w1, rb], kick, no), null, 'flex already last');
+  assert.equal(slotOrder([f, w1], kick, p => p === f), null, 'flex locked');
+  console.log('slot order ok'); }
+// one-game odds: range and chances scale with his number, and too few games gives nothing
+{ const gameOdds = new Function(cut('function gameOdds(', '\n}') + '\nreturn gameOdds;')();
+  const r = Array.from({ length: 100 }, (_, i) => i / 50); // 0 to 1.98 times his number
+  const [lo, hi, p15, p20] = gameOdds(r, 10);
+  assert.ok(lo < 10 && hi > 10 && p15 > p20 && p15 > 0, 'low < number < high, 15+ likelier than 20+');
+  assert.equal(gameOdds(r.slice(0, 10), 10), null); assert.equal(gameOdds(r, 0), null);
+  console.log('game odds ok'); }
+
 // the page's own script parses: it sits inside a template string in fantasy.mjs, where a lone backslash
 // (a regex like /\d/) silently disappears and breaks the whole page
 { const from = src.indexOf('<script>', src.indexOf('id="live"')) + 8, to = src.indexOf('</script></body></html>`', from);

@@ -1086,6 +1086,12 @@ const realPct = me.w / Math.max(1, me.w + me.l);
 
 const gamesPlayed = Object.keys(weekly).length || 1;
 const leagueAvg = teams.reduce((s, t) => s + t.pf, 0) / teams.length / gamesPlayed;
+// How hard each team's remaining opponents are: average best lineup they face, 1 = easiest in the league.
+const schedHard = new Map(teams.map(t => {
+  const gs = (league.schedule ?? []).filter(g => g.matchupPeriodId > week && g.matchupPeriodId <= lastWeek && g.away && (g.home.teamId === t.id || g.away.teamId === t.id));
+  return [t, gs.length ? gs.reduce((s, g) => s + score(teams.find(x => x.id === (g.home.teamId === t.id ? g.away.teamId : g.home.teamId)).roster, futValue(g.matchupPeriodId)), 0) / gs.length : null];
+}));
+const schedEase = t => (schedHard.get(t) == null ? null : 1 + teams.filter(x => schedHard.get(x) != null && schedHard.get(x) < schedHard.get(t)).length);
 // --- Schedule ahead: each remaining opponent's best lineup that week (ESPN's projection for that week, so his NFL
 // matchup counts; players on bye, on IR or out for the season count 0), against the league's average that week.
 // Starters from their full-strength lineup who are off that week are named; losing 15+ points of them makes it easy.
@@ -1833,16 +1839,45 @@ const tdRate = {};
   }
   for (const [pos, [td, rz]] of Object.entries(sum)) if (rz >= 50) tdRate[pos] = td / rz;
 }
+// Points a target or carry is worth at each position, touchdowns aside. A target counts as 2 carries.
+// ponytail: Sleeper's stats have no air yards, so a deep target counts like a short one.
+const oppOf = g => g[3] * 2 + g[4];
+const oppRate = {};
+{
+  const sum = {};
+  for (const wd of Object.values(rosSaved.weeks ?? {})) for (const [k, g] of Object.entries(wd)) {
+    const pos = posOfKey.get(k), t = (sum[pos] ??= [0, 0]);
+    if (g[6] != null && g[0] >= 20) { t[0] += g[2] - g[6] * 6; t[1] += oppOf(g); }
+  }
+  for (const [pos, [pts, opp]] of Object.entries(sum)) if (opp >= 200) oppRate[pos] = pts / opp;
+}
+// Odds for one game: how far every real game at his position landed from that player's own average, applied to this week's number.
+const OUTCOMES = {};
+{
+  const byPlayer = {};
+  for (const wd of Object.values(rosSaved.weeks ?? {})) for (const [k, g] of Object.entries(wd)) if (g[0] >= 20) (byPlayer[k] ??= []).push(g[2]);
+  for (const [k, pts] of Object.entries(byPlayer)) {
+    const avg = pts.reduce((s, x) => s + x, 0) / pts.length, pos = posOfKey.get(k);
+    if (pts.length >= 3 && avg >= 5 && TRADE_POS.includes(pos)) (OUTCOMES[pos] ??= []).push(...pts.map(x => x / avg));
+  }
+  for (const v of Object.values(OUTCOMES)) v.sort((a, b) => a - b);
+}
+function gameOdds(ratios, proj) {
+  if (!(proj > 0) || !(ratios?.length >= 50)) return null;
+  const at = q => +(ratios[Math.floor(q * (ratios.length - 1))] * proj).toFixed(1), over = pts => Math.round(ratios.filter(r => r * proj >= pts).length / ratios.length * 100);
+  return [at(0.1), at(0.9), over(15), over(20)];
+}
+const oddsOf = p => (p.bye === week ? null : gameOdds(OUTCOMES[p.pos], p.proj));
 function luck(p) {
-  const k = pkey(p.name, p.pos, p.team), r = tdRate[p.pos];
-  if (r == null) return null;
+  const k = pkey(p.name, p.pos, p.team), r = tdRate[p.pos], each = oppRate[p.pos];
+  if (r == null || each == null) return null;
   const games = Object.keys(rosSaved.weeks ?? {}).map(Number).sort((a, b) => b - a).map(w => rosSaved.weeks[w][k]).filter(g => g && g[6] != null).slice(0, 5);
   if (games.length < 3) return null;
   const tot = i => games.reduce((s, g) => s + g[i], 0), got = tot(2) / games.length, td = tot(6), rz = tot(5);
-  const gap = (td - rz * r) * 6 / games.length; // a rushing or receiving TD is 6 points
-  return { games: games.length, got, worth: got - gap, gap, td, rz, exp: rz * r };
+  const worth = (games.reduce((s, g) => s + oppOf(g), 0) * each + rz * r * 6) / games.length; // a rushing or receiving TD is 6 points
+  return { games: games.length, got, worth, gap: got - worth, rz, tgt: tot(3) / games.length, car: tot(4) / games.length };
 }
-const roleText = l => `${l.td} touchdown${l.td === 1 ? '' : 's'} on ${l.rz} chances near the goal line in ${l.games} games (about ${n(l.exp)} is normal)`;
+const roleText = l => `${n(l.tgt)} targets and ${n(l.car)} carries a game, ${l.rz} chances near the goal line in ${l.games} games`;
 const sellHigh = me.roster.filter(p => ['RB', 'WR', 'TE'].includes(p.pos) && playable(p)).map(p => ({ p, l: luck(p) })).filter(x => x.l && x.l.gap >= 3 && x.l.got >= 8).sort((a, b) => b.l.gap - a.l.gap);
 const buyLow = teams.filter(t => t !== me).flatMap(t => t.roster.filter(p => ['RB', 'WR', 'TE'].includes(p.pos) && playable(p)).map(p => ({ p, t, l: luck(p) })))
   .filter(x => x.l && x.l.gap <= -3 && x.l.worth >= 8).sort((a, b) => a.l.gap - b.l.gap).slice(0, 8);
@@ -1870,6 +1905,31 @@ function profile(t) {
 const profiles = new Map(teams.filter(t => t !== me).map(t => [t, profile(t)]));
 const MODE_WORD = { safe: 'safe in the playoffs', bubble: 'on the playoff bubble', longshot: 'long shot for the playoffs', out: 'out of the race' };
 const situation = t => { const pr = profiles.get(t); return pr ? `${pr.record}, ${ordinal(pr.rank)}${pr.mode ? `, ${MODE_WORD[pr.mode]}` : ''}${pr.hurt.length ? `, missing ${pr.hurt.map(p => p.name).join(' and ')}` : ''}` : ''; };
+
+// Bye trouble: managers still fighting for the playoffs who lose real points in a coming bye week, even with the best
+// free agents, and who on my bench fills the hole. A team out of the race has no reason to pay for that.
+const topFa = allFa.filter(playable).sort((a, b) => seasonValue(b) - seasonValue(a)).slice(0, 40);
+const byeTrouble = (tradesOpen ? teams : []).filter(t => t !== me && ['bubble', 'longshot'].includes(profiles.get(t)?.mode)).flatMap(t => {
+  const full = score(t.roster, seasonValue), fullUp = lineups.get(t).map(x => x.player);
+  return Array.from({ length: Math.max(0, lastWeek - week) }, (_, i) => week + 1 + i).map(w => {
+    const v = p => (p.bye === w ? 0 : seasonValue(p)), patched = score([...t.roster, ...topFa], v), off = fullUp.filter(p => p.bye === w);
+    const offer = me.roster.filter(p => !isStarter(p) && tradeable(p) && p.bye !== w).map(p => ({ p, gain: score([...t.roster, ...topFa, p], v) - patched })).sort((a, b) => b.gain - a.gain)[0];
+    return { t, w, lost: full - patched, off, offer };
+  }).filter(x => x.off.length && x.lost >= 8 && x.offer?.gain >= 2).sort((a, b) => b.lost - a.lost).slice(0, 1);
+}).sort((a, b) => b.lost - a.lost).slice(0, 5);
+// Start-slot order: an earlier game in the position's own slot and a later one in FLEX, so FLEX can still change to any position late.
+function slotOrder(roster, kick, isLocked) {
+  const f = roster.find(p => p.slot === 'FLEX');
+  if (!f || isLocked(f) || kick(f) == null) return null;
+  const late = roster.filter(p => p.slot === f.pos && !isLocked(p) && kick(p) > kick(f)).sort((a, b) => kick(b) - kick(a))[0];
+  return late ? { early: f, late } : null;
+}
+const slotSwap = bestMove ? null : slotOrder(me.roster, kickoff, locked);
+const kickText = p => new Date(kickoff(p)).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' });
+// My weakest position by starters' rest-of-season points, and my best two-for-one.
+const posRank = pos => { const sum = t => lineups.get(t).filter(x => x.slot === pos).reduce((s, x) => s + rate(x.player), 0); return 1 + teams.filter(t => sum(t) > sum(me)).length; };
+const worstPos = [...TRADE_POS].sort((a, b) => posRank(b) - posRank(a))[0];
+const bestTwoForOne = [...fleecePool, ...ideaPool].filter(f => f.give.length === 2).sort((a, b) => b.mine - a.mine)[0];
 
 // To-do and alerts for the new finds. Only big ones push (Brody's pick): a fill-in who'd start for me.
 // Breakouts and buy low / sell high stay in the app.
@@ -2539,6 +2599,8 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <div class="list">__NEWS__</div></section>
 
 <section id="lineup"><h2>My team</h2>
+${slotSwap ? `<div class="card"><div class="group" style="margin:0 0 6px">Slot order</div><p class="why" style="margin:0">${lnk(slotSwap.early)} (${esc(kickText(slotSwap.early))}) to ${esc(slotSwap.early.pos)}, ${lnk(slotSwap.late)} (${esc(kickText(slotSwap.late))}) to FLEX.</p>
+${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: 'Swap their slots on ESPN', type: 'ROSTER', week: league.scoringPeriodId, items: [{ type: 'LINEUP', playerId: slotSwap.early.id, from: SLOT_ID.FLEX, to: SLOT_ID[slotSwap.early.pos] }, { type: 'LINEUP', playerId: slotSwap.late.id, from: SLOT_ID[slotSwap.late.pos], to: SLOT_ID.FLEX }] }))}">Swap their slots on ESPN</button>` : ''}</div>` : ''}
 ${[['Starting', p => p.slot !== 'Bench' && p.slot !== 'IR'], ['Bench', p => p.slot === 'Bench'], ['Injured reserve', p => p.slot === 'IR']].map(([label, f]) => {
   const ps = lineupRows.filter(f);
   const rows = ps.map(lineRow).join('');
@@ -2644,22 +2706,28 @@ ${poolMore}
 ${poolMore}
 </section>
 
-<section id="buysell"><h2>Buy low, sell high</h2><p class="sub">Touchdowns vs his chances near the goal line, last 5 games. Luck evens out.</p>
+<section id="buysell"><h2>Buy low, sell high</h2><p class="sub">Points vs his role, last 5 games.</p>
 ${sellHigh.length ? `<div class="group">Sell high: yours, scoring above his role</div><div class="list">${sellHigh.map(x => `<div class="card"><div class="row">${player(x.p)}${big(x.l.got, `per game, last ${x.l.games}`, null, x.p, 'season')}</div>
-  <p class="why">${esc(roleText(x.l))}. With normal touchdown luck he'd be at about <b>${n(x.l.worth)}</b> a game, not ${n(x.l.got)}, so expect him to cool off. Other managers see great numbers, so he's worth the most in a trade now.</p></div>`).join('')}</div>` : '<div class="card empty">None of your players are running way above their role right now.</div>'}
+  <p class="why">${esc(roleText(x.l))}. That role is worth about <b>${n(x.l.worth)}</b> a game, not ${n(x.l.got)}, so expect him to cool off. Other managers see great numbers, so he's worth the most in a trade now.</p></div>`).join('')}</div>` : '<div class="card empty">None of your players are running way above their role right now.</div>'}
 ${buyLow.length ? `<div class="group">Buy low: theirs, scoring below his role</div><div class="list">${buyLow.map(x => `<div class="card"><div class="tag" style="margin-bottom:8px">on <b>${esc(x.t.name)}</b> &middot; ${esc(situation(x.t))}</div><div class="row">${player(x.p)}${big(x.l.got, `per game, last ${x.l.games}`, null, x.p, 'season')}</div>
-  <p class="why">${esc(roleText(x.l))}. With normal touchdown luck he'd be at about <b>${n(x.l.worth)}</b> a game, not ${n(x.l.got)}. Expect the touchdowns to come; his manager sees the low number. Pick ${esc(x.t.name)} in Fleece finder for your best offer.</p></div>`).join('')}</div>` : '<div class="card empty">Nobody on other teams is running way below his role right now.</div>'}
+  <p class="why">${esc(roleText(x.l))}. That role is worth about <b>${n(x.l.worth)}</b> a game, not ${n(x.l.got)}. Expect the points to come; his manager sees the low number. Pick ${esc(x.t.name)} in Fleece finder for your best offer.</p></div>`).join('')}</div>` : '<div class="card empty">Nobody on other teams is running way below his role right now.</div>'}
+</section>
+
+<section id="byes"><h2>Bye trouble</h2>
+${byeTrouble.length ? `<div class="list">${byeTrouble.map(x => `<div class="card"><div class="vhead"><b>${esc(x.t.name)}</b><span class="verdict-good">Wk ${x.w}: -${Math.round(x.lost)}</span></div>
+  <p class="why" style="margin:0">${esc(situation(x.t))}. Off: ${x.off.map(lnk).join(', ')}. Offer ${lnk(x.offer.p)}: +${n(x.offer.gain)} that week.</p></div>`).join('')}</div>` : '<div class="card"><p class="why" style="margin:0">Nobody right now.</p></div>'}
 </section>
 
 <section id="partners"><h2>Trade partners</h2>
 <div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
-<p class="why" style="margin:0">Short on: <b>${myDepth.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}</b>. Extra: <b>${myDepth.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(p => esc(p.name)).join(', ')})`).join('; ') || 'nothing'}</b>.</p></div>
+<p class="why" style="margin:0">Short on: <b>${myDepth.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}</b>. Extra: <b>${myDepth.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(p => esc(p.name)).join(', ')})`).join('; ') || 'nothing'}</b>.</p>
+<p class="why" style="margin:8px 0 0">Weakest: <b>${POS_NAME[worstPos].toLowerCase()}</b>, ${ordinal(posRank(worstPos))} of ${teams.length}.${bestTwoForOne ? ` Best 2-for-1: ${bestTwoForOne.give.map(lnk).join(' + ')} for ${lnk(bestTwoForOne.take)} from <b>${esc(bestTwoForOne.d.t.name)}</b> (+${n(bestTwoForOne.mine)} a week).` : ''}</p></div>
 ${(() => { const card = d => `<div class="card"><div class="vhead"><b>${esc(d.t.name)}</b>${d.theyHave.length && d.youHave.length ? '<span class="verdict-good">Good match</span>' : d.theyHave.length ? '<span class="verdict-meh">Has what you need</span>' : ''}</div>
   <div class="worder" style="margin:0 0 6px"><span>Has:</span>${Object.entries(d.count).map(([pos, k]) => `<span>${k} ${pos}${k === 1 ? '' : 's'}</span>`).join('')}</div>
   <p class="tag" style="margin:0">Short on: ${d.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}.
   ${d.extra.length ? `Extra: ${d.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(lnk).join(', ')})`).join('; ')}.` : 'No extra starters.'}
   ${d.theyHave.length && d.youHave.length ? `<br><b style="color:var(--good)">Pitch:</b> your extra ${d.youHave.map(([pos]) => POS_NAME[pos].toLowerCase()).join('/')} for their extra ${d.theyHave.map(([pos]) => POS_NAME[pos].toLowerCase()).join('/')}.` : ''}</p>
-  ${profiles.get(d.t) ? `<p class="why" style="margin:8px 0 0"><b>${esc(situation(d.t))}.</b> ${profiles.get(d.t).say.map(esc).join(' ')}</p>` : ''}</div>`;
+  ${profiles.get(d.t) ? `<p class="why" style="margin:8px 0 0"><b>${esc(situation(d.t))}.</b> ${profiles.get(d.t).say.map(esc).join(' ')}${schedEase(d.t) ? ` Schedule: ${ordinal(schedEase(d.t))} easiest.` : ''}</p>` : ''}</div>`;
   return `<div class="list">${partners.slice(0, 3).map(card).join('')}</div>${partners.length > 3 ? `<details class="all"><summary>All ${partners.length} teams</summary><div class="list">${partners.slice(3).map(card).join('')}</div></details>` : ''}`; })()}
 </section>
 
@@ -2697,7 +2765,7 @@ ${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last wee
   <p class="why">${apPct > realPct + 0.08 ? 'You\'ve been <b>unlucky</b>: you\'ve played better than your record shows, so wins should come.'
     : apPct < realPct - 0.08 ? 'You\'ve been <b>lucky</b>: your record is better than your points.'
     : 'Your record matches how you\'ve played.'}${pfRank > teams.length / 2 ? ' Your team scores less than most.' : ''}</p></div>
-${ahead.length ? `<div class="card"><div class="group" style="margin:0 0 4px">Your schedule ahead</div><table>
+${ahead.length ? `<div class="card"><div class="vhead"><span class="group" style="margin:0">Your schedule ahead</span>${schedEase(me) ? `<span class="verdict-meh">${ordinal(schedEase(me))} easiest of ${teams.length}</span>` : ''}</div><table>
 ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><td>${esc(g.t.name)} <span class="tag">${g.t.w}-${g.t.l}</span></td><td class="num">proj ~${Math.round(g.proj)}${g.off.length ? `<br><small>no ${esc(g.off.map(p => p.name.split(' ').pop()).join(', '))}</small>` : ''}</td><td style="text-align:right"><span class="lv ${g.level}">${g.level}</span></td></tr>`).join('')}</table>
 </div>` : ''}
 </section>
@@ -3123,6 +3191,7 @@ function render(p) {
       p.plays.map(x => '<p' + (x.td ? ' class="td"' : '') + '><small>' + e(x.when) + '</small> ' + e(x.text) + '</p>').join('') + '</details>' : '') +
     '<div class="stat">' +
       (p.sources || p.notes.length ? '<div class="pw' + (pwOpen ? ' on' : '') + '" data-projwhy role="button" tabindex="0" aria-expanded="' + pwOpen + '"><b>' + e(p.proj) + ' <span class="chev">&rsaquo;</span></b>' : '<div><b>' + e(p.proj) + '</b>') + '<small>expected this week' + (p.ceiling ? ' (up to ' + e(p.ceiling) + ')' : '') + '</small></div>' +
+      (p.odds ? '<div><b>' + e(p.odds[0]) + ' to ' + e(p.odds[1]) + '</b><small>bad game to great game</small></div><div><b>' + e(p.odds[2]) + '% / ' + e(p.odds[3]) + '%</b><small>chance of 15+ / 20+</small></div>' : '') +
       '<div><b>' + e(p.avg) + '</b><small>points per game this season</small></div>' +
       '<div><b>' + e(p.rank) + '</b><small>' + e(p.rankWhy || 'rank at his position') + '</small></div>' +
       '<div><b>' + e(p.started) + '</b><small>of ESPN managers start him</small></div></div>' +
@@ -4127,7 +4196,7 @@ for (const p of me.roster) for (const x of blurbs.get(p.id) ?? []) {
 }
 const TOOLS_JS = String.raw`// Data for Compare, the trade checker and Add buttons: every rostered player and the free agents
 const R = JSON.parse(document.getElementById('rdata').textContent);
-const plOf = id => { const a = R.pl[id]; return a && { id: +id, name: a[0], pos: a[1], team: a[2], proj: a[3], rate: a[4], playable: a[5], locked: a[6], slot: a[7], rank: a[8], ceiling: a[9], avg: a[10], bye: a[11], status: a[12], abbr: a[13], next: a[14], fut: a[15] }; };
+const plOf = id => { const a = R.pl[id]; return a && { id: +id, name: a[0], pos: a[1], team: a[2], proj: a[3], rate: a[4], playable: a[5], locked: a[6], slot: a[7], rank: a[8], ceiling: a[9], avg: a[10], bye: a[11], status: a[12], abbr: a[13], next: a[14], fut: a[15], odds: a[16] }; };
 const photo = p => p.id < 0 || p.pos === 'D/ST' ? '<span class="pic logo"><img src="https://a.espncdn.com/i/teamlogos/nfl/500/' + e((p.abbr || '').toLowerCase()) + '.png" alt=""></span>' : '<span class="pic" data-i="' + e(p.name.split(' ').map(w => w[0]).join('').slice(0, 2)) + '"><img src="https://a.espncdn.com/i/headshots/nfl/players/full/' + p.id + '.png" alt="" onerror="this.remove()"></span>';
 // Compare / Trade buttons on a player page
 const toolBtns = p => { const x = plOf(p.id); if (!x) return ''; const onTeam = R.teams.some(t => t.ids.includes(x.id)); return '<div class="tools2"><button type="button" class="btn" data-cmp="' + x.id + '">Compare</button>' + (onTeam ? '<button type="button" class="btn" data-trade="' + x.id + '">Trade check</button>' : '') + '</div>'; };
@@ -4289,6 +4358,9 @@ function addHim(p) {
       ...Array.from({ length: Math.max(0, R.lastWeek - R.fw + 1) }, (_, i) => ['Week ' + (R.fw + i) + ' (ESPN)', a.fut?.[i] ?? '-', b.fut?.[i] ?? '-', 1]),
       ['Weeks ' + R.fw + '-' + R.lastWeek + ' total (ESPN)', +(a.fut || []).reduce((t, v) => t + (v || 0), 0).toFixed(1), +(b.fut || []).reduce((t, v) => t + (v || 0), 0).toFixed(1), 1],
       ['Great-game score', a.ceiling || a.proj, b.ceiling || b.proj, 1],
+      ['Bad-game score', a.odds?.[0] ?? '-', b.odds?.[0] ?? '-', 1],
+      ['Chance of 15+ (%)', a.odds?.[2] ?? '-', b.odds?.[2] ?? '-', 1],
+      ['Chance of 20+ (%)', a.odds?.[3] ?? '-', b.odds?.[3] ?? '-', 1],
       ['Per game, rest of season', a.rate, b.rate, 1],
       ['Per game so far', a.avg, b.avg, 1],
       ['Rank at his position', a.rank || '-', b.rank || '-', -1],
@@ -4844,7 +4916,7 @@ for (const [id, p] of shown) {
     id, name: p.name, posName: POS_NAME[p.pos] ?? p.pos, teamName: [p.teamName, depthWord(p), p.bye && `bye wk ${p.bye}`].filter(Boolean).join(' · '), free: t ? null : { wa: !!p.wa, locked: locked(p) },
     pro: String(p.proTeamId), side: isStarter(p) ? (mine ? 'me' : t && t === opp ? 'opp' : null) : null, // Watch view: starters in my matchup
     owner: mine ? 'On your team' : t ? `On ${t.name}` : 'Free: nobody in your league has him',
-    play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null,
+    play, advice, game: p.bye === week ? '' : gameText(p), proj: n(p.proj), ceiling: p.ceiling > (p.proj ?? 0) + 1 ? Math.round(p.ceiling) : null, odds: oddsOf(p),
     avg: n(p.avg), rank: p.rank ? '#' + p.rank : '-', rankWhy: p.rank ? rankWhy(p) + ' (this season)' : '', started: c?.ownership?.percentStarted != null ? `${Math.round(c.ownership.percentStarted)}%` : '-',
     trend, hit: hitLine(p)?.[1] ?? '', sources, projLine, projVs, experts, espnProj: pc ? n(pc.appliedTotal) : null, games, now, plays: plays.get(id) ?? [], notes: notes(p),
     rosText: p.ros == null ? '' : `Expected ${n(p.ros)} points per game from here on (${[['ESPN', p.rosBy[0]], ['Rotowire', p.rosBy[1]], ['CBS', p.rosBy[2]], ['FantasyPros', p.rosBy[3]]].filter(([, v]) => v != null).map(([src, v]) => `${src} ${n(v)}`).join(', ')}).${p.rosRank ? ` Experts rank him ${p.rosRank.replace(/(\D+)(\d+)/, '$1 #$2')} for the rest of the season.` : ''} Season pickups and trades use this.`, news: (news.get(id) ?? []).map(x => ({ ...x, s: freshSnip(x.s, p) })),
@@ -4855,7 +4927,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
@@ -4863,10 +4935,10 @@ html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, t
   return `${h}<p class="sub">${text.slice(0, cut + 1)}</p><details class="intro"><summary>How to read this</summary><p class="sub">${text.slice(cut + 2)}</p></details>`;
 });
 // extra sections fold to one line you tap to open, so each tab starts short
-html = html.replace(/(<section id="(?:bench|fleece|buysell|partners)"[^>]*>)(<h2>[^<]*<\/h2>)([\s\S]*?)<\/section>/g, '$1<details class="fold"><summary>$2</summary>$3</details></section>');
+html = html.replace(/(<section id="(?:bench|fleece|byes|buysell|partners)"[^>]*>)(<h2>[^<]*<\/h2>)([\s\S]*?)<\/section>/g, '$1<details class="fold"><summary>$2</summary>$3</details></section>');
 html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', bestLineup.toString()));
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
-const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null];
+const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null, oddsOf(p)];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
