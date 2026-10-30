@@ -648,14 +648,14 @@ const isKeeper = p => { const o = faBest.find(o => o.pos === p.pos); return seas
 // A move's worth, week by week for the rest of the regular season: this week as weekScore counts it, each later week
 // with ESPN's projection for that week (0 on bye), else his rest-of-season number. So a pickup that's great this week
 // and worse after, or a trade that costs this week and wins later, is judged on both. now = this week,
-// later = average a week after, total = every week added up.
+// later = average a week after, total = every week added up, weeks = each week's gain (for the playoff chance).
 // ponytail: playoff weeks aren't counted, and later weeks assume no other moves (a streamer could be swapped again)
 const futureWeeks = Array.from({ length: Math.max(0, lastWeek - week) }, (_, i) => week + 1 + i);
 const weekPts = w => p => (p.bye === w || outLong(p) ? 0 : rosSaved.future?.by?.[p.id]?.[w - week - 1] ?? rate(p));
 const futureScores = r => futureWeeks.map(w => score(r, weekPts(w)));
 function horizon(after, before, nowBase = weekScore(before), laterBase = futureScores(before), now = weekScore(after) - nowBase) {
-  const later = futureScores(after).reduce((t, x, i) => t + x - laterBase[i], 0);
-  return { now, later: futureWeeks.length ? later / futureWeeks.length : 0, total: now + later };
+  const weeks = [now, ...futureScores(after).map((x, i) => x - laterBase[i])], later = weeks.slice(1).reduce((t, x) => t + x, 0);
+  return { now, later: futureWeeks.length ? later / futureWeeks.length : 0, total: now + later, weeks };
 }
 // a step that's mostly this week's points is a this-week pickup; gain is what its card leads with
 const kindOf = s => Object.assign(s, s.later * futureWeeks.length >= s.now ? { kind: 'season', gain: s.later } : { kind: 'week', gain: s.now });
@@ -711,7 +711,7 @@ function judge(give, take, them) {
   return {
     // per week over the rest of the season, this week included
     mine: h.total / (futureWeeks.length + 1),
-    mineWeek, mineLater: h.later,
+    mineWeek, mineLater: h.later, weeks: h.weeks,
     theirs: score(refill(theirsAfter, them.roster), seasonValue) - score(them.roster, seasonValue),
     vorGive: give.reduce((s, p) => s + vor(p), 0), vorTake: take.reduce((s, p) => s + vor(p), 0),
     after: mineAfter,
@@ -947,7 +947,7 @@ for (const d of tradesOpen ? partners : []) {
     const looks = score([...d.t.roster.filter(p => p !== take), ...give], avgValue) - score(d.t.roster, avgValue);
     if (looks < -1) continue;
     const theirWeek = weekScore([...d.t.roster.filter(p => p !== take || (locked(p) && isStarter(p))), ...give.map(p => ({ ...p, slot: 'Bench' }))]) - weekScore(d.t.roster);
-    const f = { d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, mineWeek: j.mineWeek, mineLater: j.mineLater, after: j.after, theirs: j.theirs, looks, theirWeek, strict: j.mine >= 2 && j.theirs <= -1 && looks >= 0 };
+    const f = { d, give: [...give].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)), take, mine: j.mine, mineWeek: j.mineWeek, mineLater: j.mineLater, weeks: j.weeks, after: j.after, theirs: j.theirs, looks, theirWeek, strict: j.mine >= 2 && j.theirs <= -1 && looks >= 0 };
     if (!best || j.mine > best.mine) bestOffer.set(take, f);
     if (j.mine >= 1 && j.theirs <= -0.5) fleece.push(f);
     else if (j.mine >= 1) ideas.push(f); // fair by the projections too: an easy yes
@@ -2008,26 +2008,51 @@ for (const t of teams) for (let w = week + 1; w <= lastWeek; w++) {
 const nowMean = new Map(teams.map(t => [t.id, lineupProj(t)])), nowSd = new Map(teams.map(t => [t.id, Math.sqrt(spread(t)) || 15]));
 const byId_ = new Map(teams.map(t => [t.id, t]));
 const left = (league.schedule ?? []).filter(g => g.away && g.matchupPeriodId >= week && g.matchupPeriodId <= lastWeek);
-const SIMS = 10000, byRecord = {};
-let made = 0;
-for (let k = 0; k < SIMS; k++) {
-  const w = new Map(teams.map(t => [t.id, t.w + t.ties / 2])), pf = new Map(teams.map(t => [t.id, t.pf]));
-  for (const g of left) {
-    const [a, b] = [g.home, g.away].map(side => {
-      const t = byId_.get(side.teamId), now = g.matchupPeriodId === week, fut = futLine.get(`${t.id}|${g.matchupPeriodId}`);
-      if (!now) return fut.mean + gauss() * fut.sd;
-      return (isLive && side.totalProjectedPointsLive > 0 ? side.totalProjectedPointsLive : nowMean.get(t.id)) + gauss() * nowSd.get(t.id);
+// Every team's expected score in each game left, and one set of random swings reused by every run below, so a move's
+// effect on the playoff chance is the move, not luck (the same 10,000 seasons, only my scores changed).
+const SIMS = 10000;
+const sideMean = left.map(g => [g.home, g.away].map(side => g.matchupPeriodId === week
+  ? [isLive && side.totalProjectedPointsLive > 0 ? side.totalProjectedPointsLive : nowMean.get(side.teamId), nowSd.get(side.teamId)]
+  : (f => [f.mean, f.sd])(futLine.get(`${side.teamId}|${g.matchupPeriodId}`))));
+const noise = Float32Array.from({ length: SIMS * left.length * 2 }, gauss);
+// myAdd[i] = points added to my lineup in week (this week + i). Returns the chance, the seasons by my final wins, and
+// for each of my games left how often I got in after winning vs losing it.
+function simSeasons(myAdd = [], runs = SIMS) {
+  const byRecord = {}, swing = {};
+  let made = 0, z = 0;
+  for (let k = 0; k < runs; k++) {
+    const w = new Map(teams.map(t => [t.id, t.w + t.ties / 2])), pf = new Map(teams.map(t => [t.id, t.pf])), mine = [];
+    left.forEach((g, gi) => {
+      const [a, b] = [g.home, g.away].map((side, j) => { const [m, sd] = sideMean[gi][j]; return m + noise[z++] * sd + (side.teamId === me.id ? myAdd[g.matchupPeriodId - week] ?? 0 : 0); });
+      pf.set(g.home.teamId, pf.get(g.home.teamId) + a); pf.set(g.away.teamId, pf.get(g.away.teamId) + b);
+      const winner = a >= b ? g.home.teamId : g.away.teamId;
+      w.set(winner, w.get(winner) + 1);
+      if (g.home.teamId === me.id || g.away.teamId === me.id) mine.push([g.matchupPeriodId, winner === me.id]);
     });
-    pf.set(g.home.teamId, pf.get(g.home.teamId) + a); pf.set(g.away.teamId, pf.get(g.away.teamId) + b);
-    const winner = a >= b ? g.home.teamId : g.away.teamId;
-    w.set(winner, w.get(winner) + 1);
+    const inP = seedOrder(w, pf).order.indexOf(me) < playoffTeams;
+    made += inP;
+    const r = (byRecord[w.get(me.id)] ??= [0, 0]); r[0] += inP; r[1]++;
+    for (const [wk, won] of mine) { const x = (swing[wk] ??= [0, 0, 0, 0]); x[won ? 0 : 2] += inP; x[won ? 1 : 3]++; }
   }
-  const inP = seedOrder(w, pf).order.indexOf(me) < playoffTeams;
-  made += inP;
-  const r = (byRecord[w.get(me.id)] ??= [0, 0]); r[0] += inP; r[1]++;
+  return { pct: made / runs * 100, byRecord, swing };
 }
-const playoffPct = Math.round(made / SIMS * 100);
-// records that happen in at least 5% of seasons, with how often each one got in
+const simBase = simSeasons(), byRecord = simBase.byRecord;
+const playoffPct = Math.round(simBase.pct);
+// my biggest games: how much winning vs losing that week moves the chance (shown when 10+ points apart)
+const mustWin = Object.entries(simBase.swing).map(([wk, [wm, wc, lm, lc]]) => ({ wk: +wk, win: Math.round(wm / Math.max(1, wc) * 100), lose: Math.round(lm / Math.max(1, lc) * 100),
+  opp: teams.find(t => t !== me && left.some(g => g.matchupPeriodId === +wk && [g.home.teamId, g.away.teamId].includes(me.id) && [g.home.teamId, g.away.teamId].includes(t.id))) }))
+  .filter(x => x.win - x.lose >= 10).sort((a, b) => b.win - b.lose - (a.win - a.lose)).slice(0, 2).sort((a, b) => a.wk - b.wk);
+// a move's change to my playoff chance (weeks = its gain each week, this week first); '' under 1 point.
+// The first 2,000 of the same seasons: with the same swings on both sides that's within a point, and fast enough for every trade.
+const oddsMemo = new Map(), MOVE_RUNS = 2000;
+let moveBase;
+const oddsText = weeks => {
+  if (!weeks || week > lastWeek || !playoffTeams || weeks.every(x => Math.abs(x) < 0.05)) return '';
+  moveBase ??= simSeasons([], MOVE_RUNS).pct;
+  const key = weeks.map(x => x.toFixed(1)).join(), d = oddsMemo.get(key) ?? Math.round(simSeasons(weeks, MOVE_RUNS).pct - moveBase);
+  oddsMemo.set(key, d);
+  return Math.abs(d) < 1 ? '' : ` · ${d > 0 ? '+' : ''}${d}% playoff chance`;
+};
 const recordOdds = Object.entries(byRecord).filter(([, [, c]]) => c >= SIMS * 0.05).map(([wins, [m, c]]) => [+wins, Math.round(m / c * 100)]).sort((a, b) => b[0] - a[0]);
 const fixedProj = best.total;
 // projected score after pending claims and the to-do list (best lineup from that roster)
@@ -2058,7 +2083,7 @@ const facts = [
   `My team: ${me.name}${mgrName(me) ? ` (manager ${mgrName(me)}, that's me)` : ''}, ${me.w}-${me.l}, ${ordinal(myRank)} of ${teams.length}, ${ordinal(pfRank)} in points scored. I pick ${ordinal(me.waiver)} on waivers.`,
   `Every team in the league, in standings order (manager's name in brackets), with points a week and the last 3 weeks' scores:\n${standings.map((t, i) => `- ${ordinal(i + 1)}: ${t.name}${mgrName(t) ? ` (${mgrName(t)})` : ''}, ${t.w}-${t.l}, ${Math.round(t.pf / gamesPlayed)} a week (league average ${Math.round(leagueAvg)}), last 3: ${Object.keys(weekly).map(Number).sort((a, b) => b - a).slice(0, 3).map(w => n(weekly[w][t.id] ?? 0)).join(', ')}`).join('\n')}`,
   opp ? `This week vs ${opp.name} (${opp.w}-${opp.l}): projected ${n(myProj)} to ${n(oppProj)}, win chance ${winPct}%${liveWin ? ' (ESPN live estimate)' : ''}.` : '',
-  `${week > lastWeek ? '' : `Playoff chance: ${playoffPct}% (top ${playoffTeams} of ${teams.length}, simulated).`}${recap ? ` Last week (wk ${recap.wk}) I scored ${n(recap.got)}${recap.opp != null ? ` vs ${n(recap.opp)}` : ''}; best possible lineup was ${n(recap.best)}.` : ''}`,
+  `${week > lastWeek ? '' : `Playoff chance: ${playoffPct}% (top ${playoffTeams} of ${teams.length}, simulated).${mustWin.map(x => ` Week ${x.wk}${x.opp ? ` vs ${x.opp.name}` : ''}: win and it's ${x.win}%, lose and it's ${x.lose}%.`).join('')}`}${recap ? ` Last week (wk ${recap.wk}) I scored ${n(recap.got)}${recap.opp != null ? ` vs ${n(recap.opp)}` : ''}; best possible lineup was ${n(recap.best)}.` : ''}`,
   `Starters:\n${starters(me).map(p => `- ${p.slot}: ${line(p)}`).join('\n')}`,
   `Bench:\n${me.roster.filter(p => p.slot === 'Bench').map(p => `- ${line(p)}`).join('\n')}`,
   me.roster.some(p => p.slot === 'IR') ? `IR:\n${me.roster.filter(p => p.slot === 'IR').map(p => `- ${line(p)}`).join('\n')}` : '',
@@ -2538,7 +2563,7 @@ ${fillIns.length ? `<div class="group">Injury fill-ins: grab them first</div><p 
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
   <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'mostly this week' : 'long-term upgrade'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'this week' : 'per game, rest of season', null, s.add, wk ? 'week' : 'season')}</div>
-  <p class="why"><span class="gain">${gainText(s.now, s.later)}</span>. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
+  <p class="why"><span class="gain">${gainText(s.now, s.later)}${oddsText(s.weeks)}</span>. To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
   <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
   ${s.add.wa ? (() => { const r = rivalsFor(s.add, wk ? weekValue : seasonValue); return r.length
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
@@ -2594,7 +2619,7 @@ ${pending.length ? pending.map(m => {
 <section id="trades"><h2>Trade ideas</h2>
 <div class="card"><select id="tp-team" class="sel" aria-label="Show trades with"><option value="">All teams</option>${teams.filter(t => t !== me).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
 <label class="pick" style="border:0;padding-bottom:0"><input type="checkbox" id="tp-loose"> Looser check: also show closer calls (trade ideas worth 1+ point a week to you, fleeces with a weaker pitch)</label></div>
-<div class="pool-list" data-step="3">${(top => ideaPool.map(f => { const s = myStartersAt(f.after, f.give[0].pos); return `<div class="card" data-team="${f.d.t.id}" data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">${gainText(f.mineWeek, f.mineLater)}</span></div>
+<div class="pool-list" data-step="3">${(top => ideaPool.map(f => { const s = myStartersAt(f.after, f.give[0].pos); return `<div class="card" data-team="${f.d.t.id}" data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">${gainText(f.mineWeek, f.mineLater)}${oddsText(f.weeks)}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="why">For them: ${f.theirs > 0.2 ? `+${n(f.theirs)} a week` : 'about even'}.${f.give.length > 1 ? ' They\'d have to drop a bench player.' : ''}
@@ -2605,7 +2630,7 @@ ${poolMore}
 
 <section id="fleece"><h2>Fleece finder</h2>
 <select id="tp-player" class="sel" aria-label="Player to get" hidden><option value="">Any player</option>${(tradesOpen ? teams : []).filter(t => t !== me).flatMap(t => t.roster.filter(tradeable).sort((a, b) => rate(b) - rate(a)).map(p => `<option value="${p.id}" data-team="${t.id}">${esc(p.name)} (${p.pos})</option>`)).join('')}</select>
-<div class="pool-list" data-step="3">${(top => fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">${gainText(f.mineWeek, f.mineLater)}${f.alt ? ', not a fleece' : ''}</span></div>
+<div class="pool-list" data-step="3">${(top => fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">${gainText(f.mineWeek, f.mineLater)}${oddsText(f.weeks)}${f.alt ? ', not a fleece' : ''}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="why">${situation(f.d.t) ? esc(situation(f.d.t)) + '. ' : ''}${f.alt ? 'Not a fleece, just your best offer. ' : ''}Looks ${f.looks >= 0.5 ? 'good for them' : 'even'} by points so far; ${f.theirs < -0.2 ? `they lose about ${n(-f.theirs)} a week going forward` : f.theirs > 0.2 ? `it helps them too going forward (+${n(f.theirs)} a week)` : 'about even for them going forward'}.${f.give.length > 1 ? " They'd have to drop a bench player." : ''}</p>
@@ -2648,7 +2673,8 @@ ${week > lastWeek ? '' : `<div class="card"><div class="group" style="margin:0 0
   <div><b style="color:var(--${playoffPct >= 50 ? 'good' : 'bad'})">${playoffPct}%</b><small>chance you make the playoffs (top ${playoffTeams})</small></div>
   <div><b>${me.w}-${me.l}</b><small>now, with ${lastWeek - week + 1} games left</small></div></div>
   <p class="why">What it takes:</p>
-  <div class="worder" style="margin:0">${recordOdds.map(([wins, pct]) => `<span class="${pct >= 50 ? 'me' : ''}">${wins}-${lastWeek - wins}: ${pct}% get in</span>`).join('')}</div></div>`}
+  <div class="worder" style="margin:0">${recordOdds.map(([wins, pct]) => `<span class="${pct >= 50 ? 'me' : ''}">${wins}-${lastWeek - wins}: ${pct}% get in</span>`).join('')}</div>
+  ${mustWin.length ? `<p class="why">Biggest games:</p>${mustWin.map(x => `<p class="why" style="margin:2px 0 0"><b>Week ${x.wk}${x.opp ? ` vs ${esc(x.opp.name)}` : ''}</b>: win and you're at ${x.win}%, lose and you're at ${x.lose}%.</p>`).join('')}` : ''}</div>`}
 ${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last week (week ${recap.wk})</div><div class="stat">
   <div><b style="color:var(--${recap.opp == null || recap.got >= recap.opp ? 'good' : 'bad'})">${n(recap.got)}</b><small>you scored${recap.opp != null ? ` (${esc(recap.oppName)}: ${n(recap.opp)})` : ''}</small></div>
   <div><b>${n(recap.best)}</b><small>best lineup you could have set (in hindsight)</small></div></div>
