@@ -3211,6 +3211,13 @@ function render(p) {
 // The live marks drawn over field.webp, a Blender render (1600x490). x is yards from the left end line (0-120),
 // z yards from the near sideline (0-53.3). Numbers come from the render's camera: the near sideline is 13.28 px a
 // yard wide at y 402.8, the far one 9.11 px a yard at y 102.9; one yard up is 0.868 of a yard across.
+// A lateral's spot, in yards from the offense's own goal: the last "to KC 35" before the word lateral. null = not a lateral, NaN = no spot given.
+function gcLatYard(text, code) {
+  const parts = (text || '').split(/lateral/i);
+  if (parts.length < 2) return null;
+  const m = [...parts[0].matchAll(/ to (?:([A-Z]+) )?([0-9]+)/g)].pop();
+  return !m ? NaN : !m[1] || m[1] === code ? +m[2] : 100 - m[2];
+}
 function gcField(F, A, H, ball, from, first, fx) {
   const k = z => 1 / (0.075309 + 0.00064582 * z);
   const pt = (x, z, up = 0) => { const s = k(z); return [800 + (x - 60) * s, 402.79 + (s - 13.2787) * 72.0 - up * 0.868 * s]; };
@@ -3272,8 +3279,12 @@ function gcField(F, A, H, ball, from, first, fx) {
     // every play throws its own ball, picked from the play itself so a replay flies the same: how high, how much the air
     // slows it (fast off the foot or hand, slower at the end, so it comes down steeper than it went up), how fast it turns
     const rnd = (() => { let h = 2166136261; for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return () => (h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909), (h >>> 0) / 4294967296); })();
+    // a lateral: the ball gets to the player who pitches it, goes back to the next one, and he carries it the rest of the way
+    const latY = /run|pass/.test(kind) && F.play ? gcLatYard(F.last, F.teams.find(t => t[0] === tid)?.[1]) : null, lat = latY != null;
+    const latX = lat ? (Number.isNaN(latY) ? (sx + lx) / 2 : fx(own(latY))) : 0, latZ = (z0 + z1) / 2, LAT_A = 0.45, LAT_B = 0.6;
     const kicked = /fg|miss|kick|block/.test(kind), drag = kicked ? 0.8 + rnd() * 0.7 : 0.25 + rnd() * 0.5;
     let H = (kind === 'run' || kind === 'block' ? 0 : /fg|miss|kick/.test(kind) ? Math.min(17.5, 3 + dl * 0.28) : dl >= 5 ? Math.min(7, 1.5 + dl * 0.22) : 0) * (0.8 + rnd() * 0.45);
+    if (lat) H = kind === 'pass' && Math.abs(latX - sx) >= 5 ? Math.min(7, 1.5 + Math.abs(latX - sx) * 0.22) : 0;
     // height at a share u of the way there: the flight's time at u, then up and down over that time
     const tau = u => -Math.log(1 - u * (1 - Math.exp(-drag))) / drag, up = u => { const tm = tau(u); return H * 4 * tm * (1 - tm); };
     // a good field goal goes through the uprights: over the crossbar (10 feet, 3.3 yards up) with room to spare, under their tops
@@ -3285,10 +3296,15 @@ function gcField(F, A, H, ball, from, first, fx) {
     // to where the return ended (px: the same sideline distance, so only x moves)
     const run = kind === 'pick' && F.play ? pt(lx + 4 * Math.sign(lx - sx || 1), z1)[0] - p[0] : 0, ret = run && Math.abs(fx(ball) - lx) > 0.5 ? pb[0] - p[0] : 0, pe = ret ? pb : p;
     if (F.play) {
-      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30; return pt(sx + (lx - sx) * u, z0 + (z1 - z0) * u, lift ? up(u) : 0); });
+      const backX = latX - 2 * Math.sign(fx(own(100)) - fx(own(0))), backZ = latZ + (z1 >= z0 ? 5 : -5);
+      const path = lift => Array.from({ length: 31 }, (_, i) => { const u = i / 30;
+        if (!lat) return pt(sx + (lx - sx) * u, z0 + (z1 - z0) * u, lift ? up(u) : 0);
+        if (u < LAT_A) { const v = u / LAT_A; return pt(sx + (latX - sx) * v, z0 + (latZ - z0) * v, lift ? H * 4 * v * (1 - v) : 0); }
+        if (u < LAT_B) { const v = (u - LAT_A) / (LAT_B - LAT_A); return pt(latX + (backX - latX) * v, latZ + (backZ - latZ) * v, lift ? 1.2 * 4 * v * (1 - v) : 0); }
+        const v = (u - LAT_B) / (1 - LAT_B); return pt(backX + (lx - backX) * v, backZ + (z1 - backZ) * v, 0); });
       cam = (pt(sx, 26.65)[0] + p[0]) / 2;
       // a thrown ball spirals, a kicked one tumbles end over end
-      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: !H ? '' : /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H ? drag : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
+      gcFly = { b: path(true), g: path(false), x0: pt(sx, 26.65)[0], spin: !H ? '' : /pass|inc|pick/.test(kind) ? 'spiral' : kicked ? 'tumble' : '', drag: H && !lat ? drag : 0, latAt: lat ? LAT_A : 0, rate: kicked ? 1.5 + rnd() * 1.2 : 1.8 + rnd() * 1.2, // a spiral stays under 3 turns a second: spin.webp's 16 frames faster than a 60Hz screen would look like it turns backwards
         run, ret, inc: kind === 'inc' && s, a0: rnd() * 360, f0: Math.floor(rnd() * 16), wob: rnd() * rnd() * 7, wf: 1.5 + rnd() * 2.5, td:td && { c: pt(tdLeft ? 5 : 115, 26.65), cols: ['#' + (tdTeam[3] || 'fff'), '#' + (tdTeam[4] || 'fff'), '#fff'] } };
     }
     // a wide arrow from where the play started to the ball; the tip stops short of the ball so it shows (less on a short play)
@@ -3329,6 +3345,7 @@ function gcField(F, A, H, ball, from, first, fx) {
       if (who.length && !solo) o += '<g class="gc-catch"' + (ret ? ' transform="translate(' + ret.toFixed(1) + ' 0)"' : '') + (kind === 'inc' ? ' style="opacity:.45"' : '') + '>' + pin(lx, who[who.length - 1], 1, who.length === 2 ? push : 0, z1) +
         // an interception: a red INTERCEPTED tag under the defender, carried with him on the return
         (kind === 'pick' ? '<g class="gc-int"><rect x="' + (p[0] - 70).toFixed(1) + '" y="' + (p[1] + 18).toFixed(1) + '" width="140" height="26" rx="13" fill="#dc2626"/><text x="' + X + '" y="' + (p[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">INTERCEPTED</text></g>' : '') + '</g>';
+      if (lat) { const q = pt(latX, latZ); o += '<g class="gc-lat"><rect x="' + (q[0] - 48).toFixed(1) + '" y="' + (q[1] + 18).toFixed(1) + '" width="96" height="26" rx="13" fill="#000" fill-opacity=".6"/><text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#fff" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">LATERAL</text></g>'; }
       // an incomplete pass: the target fades, the ball bounces off the turf, and INCOMPLETE shows under the spot
       if (kind === 'inc') o += '<g class="gc-inc"><rect x="' + (p[0] - 62).toFixed(1) + '" y="' + (p[1] + 18).toFixed(1) + '" width="124" height="26" rx="13" fill="#000" fill-opacity=".6"/><text x="' + X + '" y="' + (p[1] + 31).toFixed(1) + '" font-size="13" font-weight="800" fill="#cbd5e1" text-anchor="middle" dominant-baseline="central" letter-spacing="1.5">INCOMPLETE</text></g>';
     }
@@ -3364,7 +3381,7 @@ function gcAnimate() {
     // in flight the ball points along its path: a pass spins on its long axis (spin.webp's frames, the laces rolling
     // around), its nose wobbling a little on some throws; a kick turns end over end. Each slows a bit as it flies, at
     // its own rate (F.rate turns a second). Landed, it lies as drawn
-    const sp = document.getElementById('gcSpin'), fr = document.getElementById('gcFrame'), fly = t > 0 && t < 1;
+    const sp = document.getElementById('gcSpin'), fr = document.getElementById('gcFrame'), fly = t > 0 && t < 1 && (!F.latAt || u < F.latAt);
     if (sp && F.spin) {
       const [x2, y2] = along(F.b, Math.min(1, u + 0.02)), dir = x2 < x - 0.01 ? -1 : 1, tilt = Math.atan2(y2 - y, Math.abs(x2 - x) || 1e-3) * 180 / Math.PI;
       const turns = F.rate * t * GC_FLY / 1000 * (1 - 0.2 * t), wob = F.wob * Math.sin(t * GC_FLY / 1000 * F.wf * 2 * Math.PI);
@@ -3372,6 +3389,7 @@ function gcAnimate() {
         (F.spin === 'spiral' ? tilt + wob : tilt + F.a0 + turns * 360).toFixed(1) + ') rotate(20) translate(0 ' + (-F.cy).toFixed(2) + ')');
       fr?.setAttribute('viewBox', (!fly ? 0 : F.spin === 'spiral' ? (Math.floor(turns * 16) % 16) * 240 : F.f0 * 240) + ' 0 240 160');
     }
+    if (F.latAt && fade('gc-lat')) fade('gc-lat').style.opacity = u < F.latAt ? 0 : 1;
     // the shadow stays on the turf right under the ball, smaller and fainter the higher the ball is
     const hi = Math.max(0, gy - y);
     sh.setAttribute('transform', 'translate(' + gx.toFixed(1) + ' ' + gy.toFixed(1) + ') scale(' + Math.max(0.4, 1 - hi / 220).toFixed(2) + ')');
