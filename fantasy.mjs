@@ -1938,7 +1938,13 @@ const tier = (v, p, kind) => { const c = p && tierCut[`${kind}|${p.pos}`]; retur
 // status (the same average of ESPN, Rotowire and CBS, times wind, times his chance to play). Not for bye weeks or games underway.
 const liveBig = p => (p.bye === week || locked(p) || p.slot === 'IR' ? ''
   : ` data-big="${p.id}" data-st="${p.status || 'ACTIVE'}" data-espn="${p.espn ?? ''}" data-roto="${p.roto ?? ''}" data-cbs="${p.cbs ?? ''}" data-wind="${p.wind ?? 1}" data-odds="${playOdds(p, p.inj?.type)?.pct ?? 100}" data-v="${n(weekValue(p))}"${me.roster.includes(p) ? ` data-mine${p.slot !== 'Bench' ? ' data-start' : ''}` : ''}`);
-const big = (v, label, ceiling, p, kind) => { const t = tier(v, p, kind); return `<div class="big"${kind === 'week' && p?.id ? ` data-why="${p.id}"` : ''}><b${t ? ` class="t-${t[0]}"` : ''}${kind === 'week' && p ? liveBig(p) : ''}>${n(v)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
+// once his game starts: points so far + his number for the part of the game left (ESPN's clock text: "6:50 - 3rd",
+// "Halftime", "End of 3rd", "Final"). null = can't tell, keep his number. The page redoes it every 30s (runFinal there).
+const gameLeft = t => !t ? null : /final/i.test(t) ? 0 : /half/i.test(t) ? 0.5 : /OT/.test(t) ? 0
+  : (q => q ? Math.max(0, (4 - q) * 15 + +((t.match(/([0-9]+):[0-9]+/) || [])[1] || 0)) / 60 : null)(+((t.match(/([1-4])(st|nd|rd|th)/) || [])[1] || 0));
+const runFinal = (p, v) => { const g = gameNow[TEAM(p.team)], left = g && g.state !== 'pre' ? (g.state === 'post' ? 0 : gameLeft(g.text)) : null; return left == null ? v : (p.now ?? 0) + v * left; };
+const big = (v, label, ceiling, p, kind) => { const run = kind === 'week' && p && locked(p) && p.slot !== 'IR' && p.bye !== week;
+  const shown = run ? runFinal(p, v) : v, t = tier(v, p, kind); return `<div class="big"${kind === 'week' && p?.id ? ` data-why="${p.id}"` : ''}><b${t ? ` class="t-${t[0]}"` : ''}${kind === 'week' && p ? liveBig(p) : ''}${run ? ` data-run="${p.id}" data-pro="${p.proTeamId}" data-v="${v}"` : ''}>${n(shown)}</b>${t ? `<small class="tw t-${t[0]}">${t[1]}</small>` : ''}<small>${label}</small>${ceiling > v + 1 ? `<small class="up">up to ${Math.round(ceiling)}</small>` : ''}</div>`; };
 
 // Playoff seeding, ESPN's way: with divisions, each division winner takes a top seed; the rest go by record.
 // Ties: total points (ESPN's default tiebreak). A tie game counts as half a win.
@@ -2857,6 +2863,9 @@ async function check(clicked) {
 const LIVE = JSON.parse(document.getElementById('live')?.textContent || 'null');
 // after "updated ... ago": how long ago the last live update (every 30s) came in, ticking up, or why live scores are off
 let liveOn = false, liveNote = '', liveAt = 0, LD = null; // LD: the last live answer, for the Watch view
+// share of his game left from the clock text (same as the build's gameLeft)
+const gameLeft = t => !t ? null : /final/i.test(t) ? 0 : /half/i.test(t) ? 0.5 : /OT/.test(t) ? 0
+  : (q => q ? Math.max(0, (4 - q) * 15 + +((t.match(/([0-9]+):[0-9]+/) || [])[1] || 0)) / 60 : null)(+((t.match(/([1-4])(st|nd|rd|th)/) || [])[1] || 0));
 async function liveTick() {
   if (!LIVE || document.hidden) return;
   try {
@@ -2878,6 +2887,10 @@ async function liveTick() {
       el.innerHTML = '<b>' + f(pts) + ' pts</b> ' + (g[0] === 'post' ? 'final' : 'so far &middot; ' + e(g[1])) + (ball === 2 ? ' &middot; red zone' : ball ? (dst ? ' &middot; on the field' : ' &middot; has the ball') : '');
       const p = P[el.dataset.live];
       if (p) p.now = { line: [], why: [], ...p.now, pts: f(pts), game: g[0] === 'post' ? 'Game over' : g[0] === 'in' ? 'Playing now (' + g[1] + ')' : g[1] };
+    }
+    for (const b of document.querySelectorAll('[data-run]')) {
+      const x = d.players[b.dataset.run], pts = Array.isArray(x) ? x[0] : x, g = d.games[b.dataset.pro], left = !g || g[0] === 'pre' ? null : g[0] === 'post' ? 0 : gameLeft(g[1]);
+      if (left != null) b.textContent = f((pts || 0) + +b.dataset.v * left);
     }
     liveProj(d, f); liveExtras(d, f);
     const shift = startShift(d);
