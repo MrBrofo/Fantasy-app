@@ -2136,6 +2136,8 @@ const oddsText = weeks => {
   oddsMemo.set(key, d);
   return Math.abs(d) < 1 ? '' : ` · ${d > 0 ? '+' : ''}${d}% playoff chance`;
 };
+// Stats that wrap between each other, never mid-phrase
+const statSpans = t => t.split(' · ').map(x => `<span>${x}</span>`).join(' · ');
 const recordOdds = Object.entries(byRecord).filter(([, [, c]]) => c >= SIMS * 0.05).map(([wins, [m, c]]) => [+wins, Math.round(m / c * 100)]).sort((a, b) => b[0] - a[0]);
 const fixedProj = best.total;
 // projected score after pending claims and the to-do list (best lineup from that roster)
@@ -2363,8 +2365,8 @@ dl{margin:0}dt{font-weight:700;margin-top:12px}dd{margin:2px 0 0;color:var(--mut
 .empty{color:var(--muted);text-align:center;padding:18px}
 .worder{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}.worder span{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--muted)}
 .worder span.ahead{color:var(--fg)}.worder span.me{background:var(--accent);color:var(--onaccent);font-weight:700}
-.vhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
-[class^=verdict-]{flex:none;font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px}
+.vhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+[class^=verdict-]{max-width:100%;box-sizing:border-box;font-size:12px;font-weight:800;padding:3px 10px;border-radius:12px}[class^=verdict-]>span{white-space:nowrap}
 .verdict-good{background:var(--goodbg);color:var(--good)}.verdict-bad{background:var(--badbg);color:var(--bad)}.verdict-meh{background:var(--chip);color:var(--muted)}
 
 .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -2648,7 +2650,7 @@ ${fillIns.length ? `<div class="group">Injury fill-ins: grab them first</div><p 
 ${plan.length ? plan.map((s, i) => { const wk = s.kind === 'week'; return `<div class="card">
   <div class="group" style="margin:0 0 10px">Step ${i + 1} &middot; ${wk ? 'mostly this week' : 'long-term upgrade'}</div>
   <div class="row">${player(s.add)}${big(wk ? s.add.proj : rate(s.add), wk ? 'this week' : 'per game, rest of season', null, s.add, wk ? 'week' : 'season')}</div>
-  <p class="why"><span class="gain">${(gainText(s.now, s.later) + oddsText(s.weeks)).split(' · ').map(x => `<span>${x}</span>`).join(' · ')}</span>To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
+  <p class="why"><span class="gain">${statSpans(gainText(s.now, s.later) + oddsText(s.weeks))}</span>To make room, drop <b>${esc(s.drop.name)}</b> (${n(wk ? weekValue(s.drop) : rate(s.drop))} ${wk ? 'this week' : 'per game, rest of season'}).${wk ? ` He isn't a long-term keeper (${n(seasonValue(s.drop))} a game from here on; free players come close).` : ''}<br>
   <span class="tag">${s.add.wa ? 'On waivers: your claim goes through in about a day.' : 'Free agent: yours right away.'}</span>
   ${s.add.wa ? (() => { const r = rivalsFor(s.add, wk ? weekValue : seasonValue); return r.length
     ? `<br><span class="tag" style="color:var(--warn)">${r.length} team${r.length > 1 ? 's' : ''} that pick${r.length > 1 ? '' : 's'} before you could use him too: ${r.slice(0, 3).map(t => esc(t.name)).join(', ')}${r.length > 3 ? '&hellip;' : ''}.</span>`
@@ -2704,7 +2706,7 @@ ${pending.length ? pending.map(m => {
 <section id="trades"><h2>Trade ideas</h2>
 <div class="card"><select id="tp-team" class="sel" aria-label="Show trades with"><option value="">All teams</option>${teams.filter(t => t !== me).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
 <label class="pick" style="border:0;padding-bottom:0"><input type="checkbox" id="tp-loose"> Looser check: also show closer calls (trade ideas worth 1+ point a week to you, fleeces with a weaker pitch)</label></div>
-<div class="pool-list" data-step="3">${(top => ideaPool.map(f => { const s = myStartersAt(f.after, f.give[0].pos); return `<div class="card" data-team="${f.d.t.id}" data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">${gainText(f.mineWeek, f.mineLater)}${oddsText(f.weeks)}</span></div>
+<div class="pool-list" data-step="3">${(top => ideaPool.map(f => { const s = myStartersAt(f.after, f.give[0].pos); return `<div class="card" data-team="${f.d.t.id}" data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="verdict-good">${statSpans(gainText(f.mineWeek, f.mineLater) + oddsText(f.weeks))}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="why">For them: ${f.theirs > 0.2 ? `+${n(f.theirs)} a week` : 'about even'}.${f.give.length > 1 ? ' They\'d have to drop a bench player.' : ''}
@@ -2715,7 +2717,7 @@ ${poolMore}
 
 <section id="fleece"><h2>Fleece finder</h2>
 <select id="tp-player" class="sel" aria-label="Player to get" hidden><option value="">Any player</option>${(tradesOpen ? teams : []).filter(t => t !== me).flatMap(t => t.roster.filter(tradeable).sort((a, b) => rate(b) - rate(a)).map(p => `<option value="${p.id}" data-team="${t.id}">${esc(p.name)} (${p.pos})</option>`)).join('')}</select>
-<div class="pool-list" data-step="3">${(top => fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">${gainText(f.mineWeek, f.mineLater)}${oddsText(f.weeks)}${f.alt ? ', not a fleece' : ''}</span></div>
+<div class="pool-list" data-step="3">${(top => fleecePool.map(f => `<div class="card" data-team="${f.d.t.id}" data-take="${f.take.id}"${f.extra ? ' data-extra="1"' : ''} data-strict="${f.strict ? 1 : 0}"${top.has(f) ? '' : ' hidden'}><div class="vhead"><span class="tag">with <b>${esc(f.d.t.name)}</b></span><span class="${f.alt ? 'verdict-meh' : 'verdict-good'}">${statSpans(gainText(f.mineWeek, f.mineLater) + oddsText(f.weeks) + (f.alt ? ', not a fleece' : ''))}</span></div>
   <div class="swap"><div class="arrow">you give</div>${f.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
   <div class="arrow">you get</div><div class="row">${player(f.take)}${big(rate(f.take), 'per game, rest of season', null, f.take, 'season')}</div></div>
   <p class="why">${situation(f.d.t) ? esc(situation(f.d.t)) + '. ' : ''}${f.alt ? 'Not a fleece, just your best offer. ' : ''}Looks ${f.looks >= 0.5 ? 'good for them' : 'even'} by points so far; ${f.theirs < -0.2 ? `they lose about ${n(-f.theirs)} a week going forward` : f.theirs > 0.2 ? `it helps them too going forward (+${n(f.theirs)} a week)` : 'about even for them going forward'}.${f.give.length > 1 ? " They'd have to drop a bench player." : ''}</p>
