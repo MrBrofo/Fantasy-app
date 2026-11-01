@@ -2,8 +2,13 @@
 // Login comes from env ESPN_S2 / SWID / LEAGUE_ID (GitHub Actions) or league-config.json (local).
 import fs from 'fs';
 import crypto from 'crypto';
+import zlib from 'zlib';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// A source that hangs must not hold up the build: every fetch gives up after 30s unless it sets its own limit
+const fetch0 = fetch;
+globalThis.fetch = (u, o = {}) => fetch0(u, { signal: AbortSignal.timeout(30000), ...o });
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const file = path.join(dir, 'league-config.json');
@@ -98,7 +103,7 @@ let cbsSaved = null;
 try {
   const old = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/cbs.json?t=${Date.now()}`)).json();
   if (old.week === week && Date.now() - old.at < 3600e3) cbsSaved = old;
-} catch {}
+} catch (err) { console.warn('Saved CBS numbers skipped:', err.message); }
 // Reads every CBS page for one time span (a week number, or 'restofseason') into [name, pos, team, points] rows.
 // The last number in each row is the points (the week's total, or per game for rest of season).
 async function cbsRows(span) {
@@ -143,7 +148,7 @@ let rosSaved = null, rosPrev = null;
 try {
   const old = rosPrev = await (await fetch(`https://mrbrofo.github.io/Fantasy-app/ros.json?t=${Date.now()}`)).json();
   if (old.week === week && Date.now() - old.at < 3600e3 && old.v === 5 && old.practice && old.weeks && old.depth && old.weather && old.scores && old.kd && old.tagHist) rosSaved = old;
-} catch {}
+} catch (err) { console.warn('Saved player numbers skipped:', err.message); }
 if (!rosSaved) {
   rosSaved = { v: 5, week, at: Date.now(), roto: [], cbs: [] }; // v5: kicker and defense games (kd)
   try {
@@ -1192,7 +1197,7 @@ else try {
   const r = await fetch(`https://mrbrofo.github.io/Fantasy-app/alerts.json?t=${Date.now()}`);
   if (r.status === 404) memoOk = true; // first run ever
   else if (r.ok) { memo = { ...memo, ...await r.json() }; memoOk = true; }
-} catch {}
+} catch (err) { console.warn('Saved alerts skipped:', err.message); }
 // When ESPN starts the next week. It publishes no time, so the first update that sees the new week number writes down
 // the moment (updates run every few minutes, so it's that close); the last 6 are kept. memo.week = the week last run saw
 if (memo.week && memo.week < week) memo.turns = [...(memo.turns ?? []), Date.now()].slice(-6);
@@ -1215,7 +1220,7 @@ function claimCheck(m) {
   const v = stack ? ['bad', `Drop ${stack.name} instead`] : covers ? ['good', `Covers your week ${week + 1} bye`] : rental ? (keeps.length ? ['bad', 'Drops a keeper for one week'] : ['meh', 'One-week rental']) : m.week >= 1 || m.nextGain >= 1 || m.season >= 1 ? ['good', 'Good claim'] : m.week <= -1 || m.season <= -1 ? ['bad', 'Bad claim, cancel it'] : backup ? ['good', 'Better backup'] : worseBackup ? ['bad', 'Worse backup, cancel it'] : ['meh', 'Barely matters'];
   return { bdiff, backup, worseBackup, kp, spare, stack, covers, ahead, worse, keeps, rental, v };
 }
-const todo = [['week', 'Test: slide me left', 'Slide this card left to remove it.', null, []]];
+const todo = [];
 for (const p of starters(me)) {
   if (p.bye === week) todo.push(['urgent', `Take ${p.name} out of your lineup`, `His team (${p.teamName}) is on bye.`, bestMove, [p]]);
   else if (['OUT', 'INJURY_RESERVE', 'DOUBTFUL', 'SUSPENSION'].includes(p.status) && !locked(p)) todo.push(['urgent', `Take ${p.name} out of your lineup`, `${STATUS[p.status][0]}. If he doesn't play, he scores 0.`, bestMove, [p]]);
@@ -1894,10 +1899,10 @@ function luck(p) {
   const worth = (games.reduce((s, g) => s + oppOf(g, p.pos), 0) * each + rz * r * 6) / games.length; // a rushing or receiving TD is 6 points
   return { games: games.length, got, worth, gap: got - worth, rz, tgt: tot(3) / games.length, car: tot(4) / games.length, air: games.every(g => g[13] != null) ? tot(13) / games.length : null };
 }
-const roleText = l => `${n(l.tgt)} targets${l.air != null ? ` (${Math.round(l.air)} air yards)` : ''} and ${n(l.car)} carries a game, ${l.rz} chances near the goal line in ${l.games} games`;
-const sellHigh = me.roster.filter(p => ['RB', 'WR', 'TE'].includes(p.pos) && playable(p)).map(p => ({ p, l: luck(p) })).filter(x => x.l && x.l.gap >= 3 && x.l.got >= 8).sort((a, b) => b.l.gap - a.l.gap);
+const roleText = l => `${n(l.tgt)} targets${l.air >= 20 ? ` (${Math.round(l.air)} air yards)` : ''} and ${n(l.car)} carries a game, ${l.rz} chances near the goal line in ${l.games} games`;
+const sellHigh = me.roster.filter(p => ['RB', 'WR', 'TE'].includes(p.pos) && playable(p)).map(p => ({ p, l: luck(p) })).filter(x => x.l?.games >= 5 && x.l.gap >= 3 && x.l.got >= 8).sort((a, b) => b.l.gap - a.l.gap);
 const buyLow = teams.filter(t => t !== me).flatMap(t => t.roster.filter(p => ['RB', 'WR', 'TE'].includes(p.pos) && playable(p)).map(p => ({ p, t, l: luck(p) })))
-  .filter(x => x.l && x.l.gap <= -3 && x.l.worth >= 8).sort((a, b) => a.l.gap - b.l.gap).slice(0, 8);
+  .filter(x => x.l?.games >= 5 && x.l.gap <= -3 && x.l.worth >= 8).sort((a, b) => a.l.gap - b.l.gap).slice(0, 8);
 
 // 4. Manager profiles: where each team stands, who they're missing, and how often they deal. What a manager will
 // accept depends on his situation more than on the numbers: a team fighting for a playoff spot pays for help now.
@@ -1921,7 +1926,7 @@ function profile(t) {
 }
 const profiles = new Map(teams.filter(t => t !== me).map(t => [t, profile(t)]));
 const MODE_WORD = { safe: 'safe in the playoffs', bubble: 'on the playoff bubble', longshot: 'long shot for the playoffs', out: 'out of the race' };
-const situation = t => { const pr = profiles.get(t); return pr ? `${pr.record}, ${ordinal(pr.rank)}${pr.mode ? `, ${MODE_WORD[pr.mode]}` : ''}${pr.hurt.length ? `, missing ${pr.hurt.map(p => p.name).join(' and ')}` : ''}` : ''; };
+const situation = t => { const pr = profiles.get(t); return pr ? `${pr.record}, ${ordinal(pr.rank)}${pr.mode ? `, ${pr.mode === 'bubble' && pr.rank <= playoffTeams ? 'in a playoff spot' : MODE_WORD[pr.mode]}` : ''}${pr.hurt.length ? `, missing ${pr.hurt.map(p => p.name).join(' and ')}` : ''}` : ''; };
 
 // Bye trouble: managers still fighting for the playoffs who lose real points in a coming bye week, even with the best
 // free agents, and who on my bench fills the hole. A team out of the race has no reason to pay for that.
@@ -2149,6 +2154,7 @@ const lineRow = p => `<div class="card row"><span class="slot">${p.slot === 'Ben
 // the matchup line under the scores: 'final' = all games over, 'decided' = ESPN gives 0% or 100%
 const verdictText = (win, by, how) => how === 'final' ? `<b style="color:var(--${win ? 'good' : 'bad'})">You ${win ? 'won' : 'lost'}</b> by ${by} points. Final.`
   : how === 'decided' ? `<b style="color:var(--${win ? 'good' : 'bad'})">${win ? 'Locked up' : 'Out of reach'}:</b> you'll ${win ? 'win' : 'lose'} by about ${by} points. ESPN gives ${win ? 'them' : 'you'} no chance with the games left.`
+  : how === 'guess' ? `Final guess: you ${win ? 'win' : 'lose'} by ${by} points.`
   : `<b style="color:var(--${win ? 'good' : 'bad'})">You're expected to ${win ? 'win' : 'lose'}</b> by ${by} points.`;
 const levelName = { urgent: 'Do now', week: 'This week', later: 'Plan ahead' };
 
@@ -2187,11 +2193,11 @@ const facts = [
 let html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Fantasy"><meta name="theme-color" content="#0b0d10"><meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-title" content="Gameday"><meta name="description" content="Fantasy football lineup, trade and waiver advice."><meta property="og:title" content="Gameday"><meta property="og:description" content="Fantasy football lineup, trade and waiver advice."><meta property="og:image" content="https://mrbrofo.github.io/Fantasy-app/icon-512.png"><meta name="theme-color" content="#0b0d10"><meta name="color-scheme" content="dark">
 <meta name="built" content="${Date.now()}"><meta name="code" content="${CODE}">
 <link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="manifest" href="manifest.json">
-<title>${esc(me.name)}</title>
+<title>Gameday</title>
 <script>try { const l = localStorage.getItem('look'); if (l !== 'classic') document.documentElement.classList.add(l === 'term' ? 'term' : 'glass'); } catch { document.documentElement.classList.add('glass'); }</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -2225,12 +2231,12 @@ h1{font-size:28px;font-weight:700;margin:6px 0 2px;letter-spacing:-.025em;line-h
 /* Bottom bar, frosted glass like iOS. Fixed so it's always one tap away. */
 nav{position:fixed;left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 80px));bottom:calc(env(safe-area-inset-bottom) + 8px);z-index:10;display:flex;gap:2px;padding:4px;border-radius:24px;background:var(--glass);border:1px solid var(--glassline);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 30px rgba(0,0,0,.5);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%)}
 /* 5 tabs that all fit: icon over label, like a phone app */
-nav a{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 0 6px;border-radius:20px;color:var(--muted);text-decoration:none;font-weight:600;font-size:11px;line-height:14px;transition:background .2s,color .2s,transform .1s ease-out}
+nav a{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 0 6px;border-radius:20px;color:var(--muted);text-decoration:none;font-weight:600;font-size:12px;line-height:14px;transition:background .2s,color .2s,transform .1s ease-out}
 nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 nav{touch-action:none}nav a,#fab{-webkit-touch-callout:none}
 nav a.on{color:var(--accent);background:rgba(198,244,50,.1)}
 nav a.press{background:rgba(255,255,255,.14);color:var(--fg);transform:scale(1.1)}
-nav .dot{position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--bad);color:#fff;font-size:10px;line-height:16px;text-align:center}
+nav .dot{position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--bad);color:#000;font-weight:700;font-size:11px;line-height:16px;text-align:center}
 /* the switch at the top of a tab that holds two or more pages (Moves, Trades, More) */
 .seg{display:flex;gap:3px;margin-top:20px;padding:3px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
 .seg button{flex:1;padding:9px 4px;border:0;border-radius:9px;background:none;color:var(--muted);font:600 13px Geist,system-ui,sans-serif;cursor:pointer}
@@ -2250,7 +2256,7 @@ section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-
 .card.todo{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .todo-del{position:absolute;box-sizing:border-box;background:var(--bad);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;opacity:.75;transition:opacity .15s}
 .todo-del.go{opacity:1}html.term .todo-del{border-radius:0}
-.todo .lvl{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
+.todo .lvl{flex:none;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;margin-top:2px}
 .lvl.urgent{background:var(--badbg);color:var(--bad)}.lvl.week{background:var(--warnbg);color:var(--warn)}.lvl.later{background:var(--chip);color:var(--muted)}
 details.info{margin-top:6px}details.info>summary{list-style:none;position:relative;display:inline-grid;place-items:center;place-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font:italic 700 13px/1 Georgia,serif;cursor:pointer}
 details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px tap area around the small (i) */details.info>summary::-webkit-details-marker{display:none}details.info[open]>summary{color:var(--fg);border-color:var(--fg);margin-bottom:0}
@@ -2264,23 +2270,23 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .pic.logo img{object-fit:contain;padding:6px}
 .who{min-width:0}.name{font-weight:700;line-height:1.25;overflow-wrap:anywhere}
 .meta{color:var(--muted);font-size:13px;line-height:1.35}
-.pos{display:inline-block;font-size:11px;font-weight:800;padding:1px 6px;border-radius:5px;color:#fff;margin-right:2px;vertical-align:1px}
+.pos{display:inline-block;font-size:12px;font-weight:800;padding:1px 6px;border-radius:5px;color:#fff;margin-right:2px;vertical-align:1px}
 .pos-QB{background:#e5484d}.pos-RB{background:#12a150}.pos-WR{background:#3e63dd}.pos-TE{background:#f76b15}.pos-K{background:#8e4ec6}.pos-DST{background:#646f82}
 .chip{display:inline-block;margin-top:4px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
 .chip.bad{background:var(--badbg);color:var(--bad)}.chip.good{background:var(--goodbg);color:var(--good)}.chip.warn{background:var(--warnbg);color:var(--warn)}
 .row{display:flex;align-items:center;gap:10px}
-.slot{flex:none;width:30px;font-size:10px;font-weight:700;letter-spacing:.02em;color:var(--muted);text-transform:uppercase}
-.big{flex:none;text-align:right;max-width:84px}.big b{display:block;font:600 21px/1.1 var(--num);letter-spacing:-.02em}.big small{display:block;font-size:11px;line-height:1.3;color:var(--muted)}
+.slot{flex:none;width:30px;font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--muted);text-transform:uppercase}
+.big{flex:none;text-align:right;max-width:84px}.big b{display:block;font:600 21px/1.1 var(--num);letter-spacing:-.02em}.big small{display:block;font-size:12px;line-height:1.3;color:var(--muted)}
 /* lineup slot (QB/RB/FLEX) as a small corner tag instead of its own column: gives the player name ~40px more on a phone */
 .card.row{position:relative}.card.row .slot{position:absolute;left:12px;top:10px;width:auto;font-size:9px;line-height:1;padding:3px 5px;border-radius:4px;background:var(--chip)}
 .card.row .slot:empty{display:none}.card.row .slot:not(:empty)+.player{padding-top:8px}
 @media (max-width:420px){.card.row .pic{width:42px;height:42px}.card.row{gap:8px}}
 .big small.up{color:var(--good);font-weight:600}
-.big .t-good{color:var(--good)}.big .t-weak{color:var(--warn)}.big small.tw{font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:11px}
+.big .t-good{color:var(--good)}.big .t-weak{color:var(--warn)}.big small.tw{font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:12px}
 
 .btn{background:var(--accent);color:var(--onaccent);border:0;border-radius:12px;padding:13px 16px;min-height:46px;font:600 15px Geist,system-ui,sans-serif;cursor:pointer;width:100%;margin-top:10px;transition:transform .1s ease-out,filter .1s}
 .btn:active{transform:scale(.97);filter:brightness(.9)}
-*{scrollbar-width:none}*::-webkit-scrollbar{display:none}.ask{display:grid;gap:2px}#askbtn:disabled{opacity:.45}.askmic{position:absolute;right:2px;bottom:2px;width:34px;height:34px;border:0;padding:0;display:grid;place-items:center;background:none;color:var(--muted);cursor:pointer}.askmic.on{color:#ff3b30;animation:askmic 1.2s ease-in-out infinite}@keyframes askmic{50%{opacity:.4}}.askout{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;line-height:1.5}.askout p{margin:0 0 8px}.askout p:last-child{margin:0}.askout ul{margin:0 0 8px;padding-left:20px}.linkbtn{background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;padding:10px 0 0;cursor:pointer;justify-self:center}
+*{scrollbar-width:none}*::-webkit-scrollbar{display:none}.ask{display:grid;gap:2px}#askbtn:disabled{opacity:.45}.askmic{position:absolute;right:2px;bottom:2px;width:34px;height:34px;border:0;padding:0;display:grid;place-items:center;background:none;color:var(--muted);cursor:pointer}.askmic.on{color:#ff3b30;animation:askmic 1.2s ease-in-out infinite}@keyframes askmic{50%{opacity:.4}}.askout{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;line-height:1.5}.askout p{margin:0 0 8px}.askout p:last-child{margin:0}.askout ul{margin:0 0 8px;padding-left:20px}.linkbtn{background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;padding:10px 0 0;min-height:32px;cursor:pointer;justify-self:center}
 .chg{padding:8px 10px;border-radius:10px;margin-bottom:6px;font-size:14px;font-weight:600;background:var(--chip)}
 .chg.good{background:var(--goodbg);color:var(--good)}.chg.bad{background:var(--badbg);color:var(--bad)}
 .lnk{text-decoration:underline dotted;text-underline-offset:3px;color:var(--fg)}
@@ -2295,11 +2301,11 @@ details.info>summary::before{content:'';position:absolute;inset:-11px}/* 44px ta
 .sh-top{display:flex;gap:14px;align-items:center;margin-bottom:14px;padding-right:40px}.sh-top .pic{width:64px;height:64px}
 .sh-name{font-size:20px;font-weight:800}
 .sh-q{border-radius:14px;padding:12px 14px;margin-bottom:10px;background:var(--card);border:1px solid var(--line)}
-.sh-q small{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.sh-q b{display:block;font-size:16px;margin:2px 0}.sh-q span{font-size:13px;color:var(--muted)}
+.sh-q small{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.sh-q b{display:block;font-size:16px;margin:2px 0}.sh-q span{font-size:13px;color:var(--muted)}
 .sh-q.yes{border-left:4px solid var(--good)}.sh-q.no{border-left:4px solid var(--bad)}.sh-q.maybe{border-left:4px solid var(--warn)}
 .bars{display:flex;gap:8px;align-items:flex-end;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
 .bars div{flex:1;text-align:center}.bars i{display:block;background:var(--accent);border-radius:4px 4px 0 0;margin:0 auto 4px;width:70%}
-.bars b{display:block;font-size:13px}.bars small{font-size:11px;color:var(--muted)}
+.bars b{display:block;font-size:13px}.bars small{font-size:12px;color:var(--muted)}
 .lgw{display:block;overflow-x:auto;direction:rtl}.lgw>div{direction:ltr}.lg{display:block;width:100%;height:auto;overflow:visible}.lg path{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
 .lg .gl{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.lg stop{stop-color:var(--accent);stop-opacity:.28}.lg stop+stop{stop-opacity:0}
 .lg .area{fill:url(#lgfill);stroke:none;animation:lgfade .9s ease-out both}.lg .glow{stroke-width:8;opacity:.18}
@@ -2326,9 +2332,9 @@ nav{view-transition-name:nav}#seg{view-transition-name:seg}#bg-field{view-transi
 details.news>summary,details.news[open]>summary{display:block;font-weight:400;margin:0;list-style:none;cursor:pointer}details.news>summary::after{content:none}details.news>summary::-webkit-details-marker{display:none}
 .news[open] .nsnip:not(.nfull),.news:not([open]) .nfull{display:none}.nfull{white-space:pre-line}
 .wp{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}.wp b{font:600 44px/1 var(--num);letter-spacing:-.04em}
-.live{display:inline-block;background:var(--badbg);color:var(--bad);font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
+.live{display:inline-block;background:var(--badbg);color:var(--bad);font-size:12px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
 .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat div{background:var(--chip);border-radius:12px;padding:10px}.stat b{display:block;font:600 20px var(--num)}.stat small{color:var(--muted);font-size:12px}
-.lv{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;text-transform:uppercase}.lv.hard{background:var(--badbg);color:var(--bad)}.lv.medium{background:var(--warnbg);color:var(--warn)}.lv.easy{background:var(--goodbg);color:var(--good)}
+.lv{font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;text-transform:uppercase}.lv.hard{background:var(--badbg);color:var(--bad)}.lv.medium{background:var(--warnbg);color:var(--warn)}.lv.easy{background:var(--goodbg);color:var(--good)}
 .list .card{margin-bottom:0;border-radius:0;border-bottom:none}.list .card:first-child{border-radius:16px 16px 0 0}.list .card:last-child{border-radius:0 0 16px 16px;border-bottom:1px solid var(--line)}
 .list .card:only-child{border-radius:16px}
 .group{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px}
@@ -2348,7 +2354,7 @@ html:not(.term):not(.glass) #bg-field,html:not(.term) .bgring{display:none}
 .nowpts{font-size:12px;color:var(--muted);margin-top:2px}.card.row:has(.nowpts[data-ball="1"]),.card.row:has(.nowpts[data-ball="2"]){--c:var(--warn);background:color-mix(in srgb,var(--c) 30%,var(--card));border-color:var(--c)}.card.row:has(.nowpts[data-ball="2"]){--c:var(--bad)}
 /* in a stacked list the next card draws the line under him, so paint it in his color */
 .list .card.row:not(:last-child):has(.nowpts[data-ball="1"],.nowpts[data-ball="2"]){z-index:1;box-shadow:0 1px 0 var(--c)}
-#todo h2 .dot{display:inline-block;vertical-align:middle;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:99px;background:var(--bad);color:#fff;font-size:12px;line-height:20px;text-align:center}#todo h2 .dot[hidden]{display:none}.nowpts b{color:var(--accent);font-family:var(--num)}
+#todo h2 .dot{display:inline-block;vertical-align:middle;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:99px;background:var(--bad);color:#000;font-weight:700;font-size:11px;line-height:20px;text-align:center}#todo h2 .dot[hidden]{display:none}.nowpts b{color:var(--accent);font-family:var(--num)}
 .tag{font-size:12px;color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 4px;border-bottom:1px solid var(--line)}
 td.num{text-align:right;font-family:var(--num);font-size:13px;color:var(--muted);white-space:nowrap}td.num small{white-space:normal}tr.me td{font-weight:800;color:var(--fg)}
@@ -2383,7 +2389,7 @@ body:not(.home) header{padding-bottom:22px}body:not(.home) .match{display:none}
 .pick{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:8px 0;border-bottom:1px solid var(--line);line-height:1.3}.pick input{margin-top:3px;flex:none}
 table.cmp td{font-size:14px}table.cmp td.num{text-align:right;color:var(--fg)}table.cmp td.win{color:var(--good);font-weight:800}
 /* whole-league board: small column labels, score so far dimmer than the bold expected final */
-table.cmp tr.bh td{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding-bottom:2px}table.cmp td[data-now]{color:var(--muted)}table.cmp td[data-proj]{font-weight:700}
+table.cmp tr.bh td{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding-bottom:2px}table.cmp td[data-now]{color:var(--muted)}table.cmp td[data-proj]{font-weight:700}
 .cmp-picks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
 .cmp-slot,.pickrow{display:flex;gap:8px;align-items:center;text-align:left;min-width:0;color:var(--fg);font:14px Geist,system-ui,sans-serif;cursor:pointer}
 .cmp-slot{justify-content:flex-start;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--chip);min-height:64px}
@@ -2393,13 +2399,13 @@ table.cmp tr.bh td{font-size:11px;color:var(--muted);text-transform:uppercase;le
 .tools2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.tools2 .btn{margin:0;background:var(--chip);color:var(--fg)}
 .chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}
 .pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
-.pick .pic{width:34px;height:34px}#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
+.pick .pic{width:34px;height:34px}#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 84px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
 #fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}#fab{transition:opacity .5s}#fab.idle{opacity:.35}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 .sheet-body{overscroll-behavior:contain}
 /* Watch: live game. The field is 120 yards (two 10-yard end zones), stripes every 10 */
 .btn[data-watch]{margin-bottom:14px}#gc{margin:0 0 14px}.gc-sit{grid-template-columns:repeat(3,1fr);margin-top:12px}.gc-sit b{font-size:15px}.gc-score{display:flex;align-items:center;gap:18px}.gc-score div{display:flex;gap:8px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
-.gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:10px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
+.gc-score span{color:var(--muted)}.gc-score .has span::after{content:' \\25CF';color:var(--accent);font-size:12px;vertical-align:middle}.gc-score small{margin-left:auto;color:var(--bad);font-weight:600}
 .gc-fs{display:block;width:100%;height:auto;margin-top:12px;border-radius:12px;background:#0b1410}.gc-fs text{font-family:system-ui,sans-serif;font-weight:800}
 .gc-wrap{position:relative}.gc-crowd{opacity:0;animation:gcCrowd .78s step-end infinite}@keyframes gcCrowd{0%{opacity:1}16.67%{opacity:0}}@media (prefers-reduced-motion:reduce){.gc-crowd{animation:none}}@keyframes gcHop{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}.gc-hop{animation:gcHop .55s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.gc-hop{animation:none}}.gc-replay{position:absolute;right:8px;bottom:8px;padding:5px 10px;border:0;border-radius:999px;background:#000a;color:#fff;font:600 11px system-ui,sans-serif;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .gc-pager{left:8px;right:auto;display:flex;align-items:center;gap:4px;padding:2px 4px;font-variant-numeric:tabular-nums}.gc-pager button{border:0;background:none;color:inherit;font:inherit;font-size:20px;line-height:1;padding:6px 14px;cursor:pointer}.gc-pager button:disabled{opacity:.3;cursor:default}
@@ -2418,19 +2424,19 @@ html.term{background:#000}
 html.term body{background:transparent;font:14px/1.55 'JetBrains Mono',ui-monospace,Menlo,monospace}
 html.term body,html.term button,html.term .btn,html.term .seg button,html.term .sel,html.term #refresh,html.term .cmp-slot,html.term .pickrow{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
 /* moving background: dot grid with rings of light, two slow spinning circles */
-html.term #bg-field,html.glass #bg-field{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+html.term #bg-field,html.glass #bg-field{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none;opacity:.5}
 html.term .bgring{position:fixed;left:50%;top:38%;width:min(140vw,700px);aspect-ratio:1;translate:-50% -50%;border:1px dashed #ffffff1c;border-radius:50%;animation:spin 140s linear infinite;pointer-events:none;z-index:-1}
 html.term .bgring.r2{width:min(95vw,460px);border:1px solid #ffffff10;animation-duration:50s;animation-direction:reverse}
 html.term .bgring.r2::after{content:'';position:absolute;top:-3px;left:50%;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 14px #fff}
 html.term header{background:none}
-html.term .league{letter-spacing:.12em;text-transform:uppercase;font-size:11px}
+html.term .league{letter-spacing:.12em;text-transform:uppercase;font-size:12px}
 html.term h1{text-transform:uppercase;letter-spacing:.1em;font-size:22px;font-weight:700}
 html.term h1::after{content:'_';animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
-html.term .record{letter-spacing:.1em;text-transform:uppercase;font-size:11px}
+html.term .record{letter-spacing:.1em;text-transform:uppercase;font-size:12px}
 html.term h2{text-transform:uppercase;letter-spacing:.14em;font-size:15px}
 html.term section>h2::before,html.term details.fold>summary h2::before{content:'// ';color:var(--muted)}
-html.term .group,html.term .match h2,html.term .sh-q small{letter-spacing:.2em;font-size:10px}
+html.term .group,html.term .match h2,html.term .sh-q small{letter-spacing:.2em;font-size:12px}
 html.term .sub,html.term .why,html.term .tag,html.term .meta{font-size:12.5px}
 /* square edges everywhere */
 html.term .card,html.term .match,html.term details.fold,html.term .seg,html.term .seg button,html.term .btn,html.term .chip,html.term .lvl,html.term .lv,html.term .pos,html.term .gain,html.term .live,html.term .stat div,html.term .sh-q,html.term .bars,html.term .news,html.term .sel,html.term .cmp-slot,html.term .pitch,html.term .chg,html.term .worder span,html.term [class^=verdict-],html.term #gloss,html.term #refresh,html.term .card.row .slot,html.term .bar,html.term .bar i{border-radius:0!important}
@@ -2440,18 +2446,18 @@ html.term .match{border-color:#ffffff59;box-shadow:none;position:relative}
 html.term .wp b{text-shadow:0 0 18px currentColor}
 html.term .bar{height:2px}html.term .bar i{box-shadow:0 0 8px currentColor}
 /* tags: outlined, like the ACCESS GRANTED stamp */
-html.term .chip,html.term .lvl,html.term .lv,html.term .live,html.term [class^=verdict-],html.term .gain{background:transparent!important;border:1px solid currentColor;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
+html.term .chip,html.term .lvl,html.term .lv,html.term .live,html.term [class^=verdict-],html.term .gain{background:transparent!important;border:1px solid currentColor;letter-spacing:.12em;text-transform:uppercase;font-size:12px}
 html.term .live{animation:blink 1.4s steps(1) infinite}
 html.term .pos{border-radius:0}
 /* things that were boxes by their gray fill get an outline, so they still read as boxes on black */
 html.term .stat div,html.term .worder span,html.term .pitch,html.term .chg,html.term .card.row .slot,html.term .sh-q,html.term .bars,html.term .tools2 .btn,html.term #cmp-out table,html.term .sel{border:1px solid var(--line)}
 html.term .worder span.me{border-color:var(--accent)}html.term .chg.good{border-color:var(--good)}html.term .chg.bad{border-color:var(--bad)}
 /* buttons: white outline, flips to white when pressed */
-html.term .btn{background:transparent;color:#fff;border:1px solid #fff;font-weight:700;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
+html.term .btn{background:transparent;color:#fff;border:1px solid #fff;font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase}
 html.term .btn:active,html.term .btn:hover{background:#fff;color:#000;filter:none}
 html.term .btn[disabled]{opacity:.5}
 html.term .tools2 .btn{background:transparent;color:#fff}
-html.term #refresh{background:transparent;border-color:#ffffff59;text-transform:uppercase;letter-spacing:.12em;font-size:11px}
+html.term #refresh{background:transparent;border-color:#ffffff59;text-transform:uppercase;letter-spacing:.12em;font-size:12px}
 /* bottom bar: black glass strip, glowing tab */
 html.term nav{border-radius:0;background:var(--glass);border-color:var(--glassline)}
 html.term nav a{border-radius:0;letter-spacing:.12em;text-transform:uppercase;font-size:9.5px}
@@ -2459,7 +2465,7 @@ html.term nav a.on{color:#fff;background:#ffffff12;text-shadow:0 0 10px #fff}
 html.term nav a.on svg{filter:drop-shadow(0 0 5px #fff)}
 html.term nav a.press{background:#ffffff26}
 html.term nav .dot,html.term #todo h2 .dot{border-radius:0;background:var(--bad);box-shadow:0 0 10px var(--bad)}
-html.term .seg button{text-transform:uppercase;letter-spacing:.08em;font-size:11px}/* .08em: 5 buttons on More still fit a phone */
+html.term .seg button{text-transform:uppercase;letter-spacing:.08em;font-size:12px}/* .08em: 5 buttons on More still fit a phone */
 html.term .seg button.on{background:#fff;color:#000}
 html.term .gl{text-decoration-color:var(--good)}
 html.term #gloss{border-color:var(--good);box-shadow:0 0 24px #39ff8826}
@@ -2521,7 +2527,7 @@ html.glass .blob.held{scale:1.12;background:rgba(255,255,255,.16)}
 html.glass .blob{z-index:1}html.glass .blob.drag{will-change:transform;transition:scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}html.glass :is(nav a,.seg button){z-index:2}
 html.glass .sheet-x{background:rgba(255,255,255,.06)}
 /* buttons and switches inside the page sit on solid cards, so they're flat iOS controls, not glass */
-html.glass .btn{border-radius:999px;color:#fff;background:var(--accent);box-shadow:none}
+html.glass .btn{border-radius:999px;color:#fff;background:#0071e3;box-shadow:none}
 html.glass .tools2 .btn,html.glass #refresh{background:rgba(118,118,128,.24);color:var(--fg);border:0}
 html.glass .btn:active,html.glass #refresh:active{transform:scale(.97);filter:brightness(1.1)}
 html.glass .seg{position:relative;border-radius:999px;background:rgba(20,20,22,.22);touch-action:none}html.glass .seg button{position:relative;border-radius:999px}html.glass .seg button.on{color:#fff}
@@ -2569,10 +2575,10 @@ ${opp ? (() => {
   <div class="vs">
   <div class="t" data-tm="${me.id}">You</div><div class="p" id="lv-a" data-tm="${me.id}" data-base="${n(a)}">${n(a)}</div><div class="bar" data-tm="${me.id}"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
   <div class="t" data-tm="${opp.id}">${esc(opp.name)}</div><div class="p" id="lv-b" data-tm="${opp.id}">${n(b)}</div><div class="bar" data-tm="${opp.id}"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
-</div><div class="verdict" id="lv-verdict">${(() => {
+</div><div class="verdict" id="lv-verdict" aria-live="polite">${(() => {
   // 0% or 100% from ESPN: decided, just not official yet
   const [x, y] = done ? [mySide.totalPointsLive ?? 0, oppSide.totalPointsLive ?? 0] : [a, b], by = n(Math.abs(Math.round(x * 10) - Math.round(y * 10)) / 10);
-  return verdictText(x >= y, by, done ? 'final' : live && (wp <= 0 || wp >= 100) ? 'decided' : '');
+  return verdictText(x >= y, by, done ? 'final' : live && (wp <= 0 || wp >= 100) ? 'decided' : live ? 'guess' : '');
 })()}
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
 <div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
@@ -2585,7 +2591,7 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points the betting odds expect his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
 <a id="fab" href="https://fantasy.espn.com/football/league?leagueId=${LEAGUE_ID}&amp;seasonId=${SEASON}" aria-label="Open the ESPN Fantasy app"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1c/b2/68/1cb2683b-9dce-d70c-8905-2562c0482eda/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/120x120bb.jpg" alt=""></a>
-<nav>${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
+<nav aria-label="Main">${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
 <div id="seg" class="seg" hidden></div>
 
 <section id="todo"><h2>Do this now <span class="dot" hidden></span></h2>
@@ -2832,7 +2838,7 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <dt>Scoring in this league</dt><dd>Half-point PPR: players get half a point for every catch, on top of points for yards and touchdowns.</dd>
 <dt>Where these tips come from</dt><dd>"Expected" points are the average of ESPN's, Rotowire's, CBS Sports' and FantasyPros' projections, and Vegas betting lines show which games should be high-scoring. Season stats come from ESPN. Breaking news can take a while to reach them.</dd>
 </dl></div>
-<div class="card"><div class="group" style="margin:0 0 4px">Football dictionary</div><dl id="dict"></dl></div>
+<details class="fold"><summary class="group">Football dictionary</summary><dl id="dict" style="padding-bottom:12px"></dl></details>
 <details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
 
 <section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div></div></section>
@@ -2896,10 +2902,10 @@ async function swap(html) {
     if (!saved) return false;
     const b = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
     const key = await crypto.subtle.importKey('raw', b(saved), 'AES-GCM', false, ['decrypt']);
-    page = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b(m[2]) }, key, b(m[3])));
+    page = await new Response(new Blob([await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b(m[2]) }, key, b(m[3]))]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
   }
   const doc = new DOMParser().parseFromString(page, 'text/html');
-  morphLib ??= new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/idiomorph@0.7.3/dist/idiomorph.min.js'; s.onload = ok; s.onerror = no; document.head.append(s); });
+  morphLib ??= new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/idiomorph@0.7.3/dist/idiomorph.min.js'; s.integrity = 'sha384-JcorokHTL/m+D6ZHe2+yFVQopVwZ+91GxAPDyEZ6/A/OEPGEx1+MeNSe2OGvoRS9'; s.crossOrigin = 'anonymous'; s.onload = ok; s.onerror = no; document.head.append(s); });
   await morphLib;
   // (the body's HTML, not the body element: given an element, idiomorph nests a second <body> inside this one)
   Idiomorph.morph(document.body, doc.body.innerHTML, { morphStyle: 'innerHTML', callbacks: { beforeNodeMorphed: o => !keep(o), beforeNodeRemoved: o => !keep(o), beforeAttributeUpdated: a => a !== 'open' } }); // a section you opened stays open
@@ -3003,7 +3009,7 @@ async function liveTick() {
       $('lv-a').textContent = f(a); $('lv-b').textContent = f(b);
       $('lv-abar').style.width = Math.min(100, a / top * 100) + '%'; $('lv-bbar').style.width = Math.min(100, b / top * 100) + '%';
       const wp = d.me.win == null ? 50 : Math.round(d.me.win * 100), x = done ? d.me.pts : a, y = done ? d.opp.pts : b;
-      $('lv-verdict').innerHTML = verdictText(x >= y, f(Math.abs(x - y)), done ? 'final' : wp <= 0 || wp >= 100 ? 'decided' : '');
+      $('lv-verdict').innerHTML = verdictText(x >= y, f(Math.abs(x - y)), done ? 'final' : wp <= 0 || wp >= 100 ? 'decided' : 'guess');
     }
   } catch {}
 }
@@ -3649,12 +3655,14 @@ document.addEventListener('click', ev => {
   drawGc();
 });
 let closeTimer;
-function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; lgWk = null; pwOpen = false; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+let sheetFrom = null;
+function sheetShow() { if (sheet.hidden) sheetFrom = document.activeElement; sheet.hidden = false; sheet.querySelector('.sheet-x').focus({ preventScroll: true }); }
+function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; lgWk = null; pwOpen = false; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheetShow(); body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
   const card = sheet.querySelector('.sheet-card');
-  const done = () => { sheet.hidden = true; closeTimer = null; document.body.style.overflow = ''; card.style.transform = card.style.transition = ''; };
+  const done = () => { sheet.hidden = true; sheetFrom?.focus?.({ preventScroll: true }); closeTimer = null; document.body.style.overflow = ''; card.style.transform = card.style.transition = ''; };
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
   card.classList.add('closing'); // slides down from wherever a swipe left it
   closeTimer = setTimeout(done, 200);
@@ -4272,7 +4280,7 @@ function openTeam(tid) {
   const html = teamPage(tid);
   if (!html) return;
   sheet.dataset.pid = ''; sheet.dataset.team = tid; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing');
-  body.innerHTML = html; sheet.hidden = false; body.scrollTop = 0; document.body.style.overflow = 'hidden';
+  body.innerHTML = html; sheetShow(); body.scrollTop = 0; document.body.style.overflow = 'hidden';
   gloss(body);
   if (typeof liveTick === 'function') liveTick();
 }
@@ -4585,7 +4593,7 @@ function setTab(tab, jump) {
   // (Trades > Trade ideas is 'trades' too: its sections showed under Compare)
   document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab && (s.dataset.tab !== g || GROUPS[g].includes(g))));
   document.body.classList.toggle('home', tab === 'home');
-  navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + g));
+  navLinks.forEach(a => { a.classList.toggle('on', a.hash === '#' + g); if (a.hash === '#' + g) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   const seg = document.getElementById('seg');
   seg.hidden = GROUPS[g].length < 2;
   if (seg.dataset.g === g) seg.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('on', b.dataset.page === tab));
@@ -4696,7 +4704,7 @@ document.addEventListener('pointerdown', ev => {
 (() => {
   const cv = document.getElementById('bg-field');
   if (!cv) return;
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches, cx = cv.getContext('2d'), dpr = Math.min(2, devicePixelRatio || 1);
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches, cx = cv.getContext('2d'), dpr = Math.min(1.5, devicePixelRatio || 1);
   // routes for a receiver on the left, in yards from where he lines up (up the screen is upfield); the right side is mirrored
   const ROUTES = [[[0, -16]], [[0, -3], [6, -9]], [[0, -8], [5, -15]], [[0, -7], [-5, -7]], [[0, -9], [1, -7]], [[0, -8], [-5, -14]], [[0, -8], [7, -8]]];
   const WHEEL = [[-3, -1], [-5, -4], [-5, -14]], FLAT = [[-4, -1], [-7, -2]];
@@ -5004,7 +5012,7 @@ html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u0
 html = html.replace('__PDATA__', JSON.stringify(pdata).replace(/</g, '\\u003c'));
 
 // Site password (GitHub secret SITE_PASSWORD): the published page is the real page encrypted
-// (AES-GCM, key from the password via PBKDF2), plus a small unlock screen. The page is public on
+// (gzipped, then AES-GCM, key from the password via PBKDF2), plus a small unlock screen. The page is public on
 // GitHub, so a plain "enter password" screen would only hide it; encrypted, it can't be read without
 // the password. The phone keeps the password, so it's asked once. The head stays readable (no team
 // data in it) so the update check can still read the build time.
@@ -5013,9 +5021,8 @@ async function lockPage(page, password) {
   const { subtle } = crypto.webcrypto, salt = crypto.createHash('sha256').update('Fantasy-app site lock').digest().subarray(0, 16), iv = crypto.randomBytes(12);
   const base = await subtle.importKey('raw', Buffer.from(password), 'PBKDF2', false, ['deriveKey']);
   const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
-  const data = Buffer.from(await subtle.encrypt({ name: 'AES-GCM', iv }, key, Buffer.from(page))).toString('base64');
-  return page.slice(0, page.indexOf('</head>')) + `<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<style>
+  const data = Buffer.from(await subtle.encrypt({ name: 'AES-GCM', iv }, key, zlib.gzipSync(page))).toString('base64');
+  return page.slice(0, page.indexOf('</head>')) + `<style>
 body.ls{margin:0;min-height:100dvh;background:#000;color:#fff;font:14px 'JetBrains Mono',ui-monospace,Menlo,monospace;overflow:hidden;-webkit-font-smoothing:antialiased}
 body.ls::before{display:none}
 #field{position:fixed;inset:0;width:100%;height:100%}
@@ -5169,7 +5176,7 @@ body.auto .ring,body.auto .corner,body.auto #field{display:none}
     return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(LOCK.salt), iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
   }
   async function unlock(key, show) {
-    let page = new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(LOCK.iv) }, key, bytes(LOCK.data)));
+    let page = await new Response(new Blob([await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(LOCK.iv) }, key, bytes(LOCK.data))]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
     const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key));
     try { localStorage.setItem('siteKey', btoa(String.fromCharCode(...raw))); localStorage.removeItem('sitePw'); } catch {}
     // the trade password locked at sign out: unlock it with the same key
@@ -5258,7 +5265,7 @@ fs.writeFileSync(path.join(dir, 'site', WIDGET), JSON.stringify({
   games: starters(me).filter(p => p.pos !== 'D/ST').flatMap(p => { const g = pro.find(t => t.id === p.proTeamId)?.proGamesByScoringPeriod?.[week]?.[0]; return g ? [{ id: p.id, name: p.name, gid: g.id, kick: g.date }] : []; }),
 }));
 fs.writeFileSync(path.join(dir, 'site', 'manifest.json'), JSON.stringify({
-  name: me.name, short_name: 'Fantasy', start_url: '.', display: 'standalone', background_color: '#0b0d10', theme_color: '#0b0d10',
+  name: 'Gameday', short_name: 'Gameday', start_url: '.', display: 'standalone', background_color: '#0b0d10', theme_color: '#0b0d10',
   icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
 }));
 console.log(`Wrote site/index.html for ${me.name}, week ${week}. vs ${opp?.name}: ${n(myProj)}-${n(oppProj)}`);

@@ -3,8 +3,9 @@
 import fs from 'fs';
 import assert from 'assert/strict';
 import crypto from 'crypto';
+import zlib from 'zlib';
 
-const src = fs.readFileSync(new URL('./fantasy.mjs', import.meta.url), 'utf8');
+const src = fs.readFileSync(new URL('./fantasy.mjs', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const cut = (from, to) => { const i = src.indexOf(from), j = src.indexOf(to, i); assert(i >= 0 && j > i, `code moved: ${from}`); return src.slice(i, j + to.length); };
 const code = cut('function bestLineup(', 'const lineupProj = t => weekLine(t).reduce((s, p) => s + weekValue(p), 0);')
   + '\n' + cut('const best = bestLineup(me.roster,', 'const sitOut = starters(me).filter(p => !bestIds.has(p.id));')
@@ -350,13 +351,13 @@ console.log('ok');
 
 // site lock: the published page can't be read without the password, and the password opens it
 {
-  const lockPage = new Function('crypto', 'Buffer', cut('async function lockPage(', "</script></body></html>`;\n}") + '\nreturn lockPage;')(crypto, Buffer);
+  const lockPage = new Function('crypto', 'Buffer', 'zlib', cut('async function lockPage(', "</script></body></html>`;\n}") + '\nreturn lockPage;')(crypto, Buffer, zlib);
   const page = '<html><head><meta name="built" content="1"></head><body>my roster ✓</body></html>', out = await lockPage(page, 'pw');
   assert(!out.includes('my roster') && out.includes('name="built" content="1"'), 'page hidden, build time readable');
   const [salt, iv, data] = ['salt', 'iv', 'data'].map(k => Buffer.from(out.match(new RegExp(k + ": '([^']+)'"))[1], 'base64'));
   const { subtle } = crypto.webcrypto, base = await subtle.importKey('raw', Buffer.from('pw'), 'PBKDF2', false, ['deriveKey']);
   const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-  assert.equal(Buffer.from(await subtle.decrypt({ name: 'AES-GCM', iv }, key, data)).toString(), page);
+  assert.equal(zlib.gunzipSync(Buffer.from(await subtle.decrypt({ name: 'AES-GCM', iv }, key, data))).toString(), page);
   // the phone saves the key, so the next build must use the same salt (and a new iv)
   const next = await lockPage(page, 'pw'), field = (s, k) => s.match(new RegExp(k + ": '([^']+)'"))[1];
   assert(field(next, 'salt') === field(out, 'salt') && field(next, 'iv') !== field(out, 'iv'), 'same salt, new iv each build');
