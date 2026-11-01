@@ -2399,7 +2399,7 @@ table.cmp tr.bh td{font-size:12px;color:var(--muted);text-transform:uppercase;le
 .tools2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.tools2 .btn{margin:0;background:var(--chip);color:var(--fg)}
 .chip.bye{background:rgba(110,140,255,.16);color:#9db4ff}
 .pitch{background:var(--chip);border-radius:12px;padding:10px 12px;margin:0;font-size:14px}
-.pick .pic{width:34px;height:34px}#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 84px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
+.pick .pic{width:34px;height:34px}#fab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:11;width:46px;height:46px;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35);touch-action:none;-webkit-tap-highlight-color:transparent}
 #fab img{width:100%;height:100%;display:block;pointer-events:none}#fab.drag{opacity:.85;transform:scale(1.08)}#fab{transition:opacity .5s}#fab.idle{opacity:.35}
 details.all summary{font-size:14px;color:var(--muted);padding:10px 2px}
 .sheet-body{overscroll-behavior:contain}
@@ -2558,7 +2558,7 @@ html.glass .btn{box-shadow:0 0 22px rgba(10,132,255,.45)}html.glass .worder span
   <div class="record">${me.w}-${me.l} record &middot; ${ordinal(myRank)} of ${teams.length}</div>
 </div></header>
 
-<div class="wrap">
+<div class="wrap" role="main">
 <div id="lv-tx"></div>
 ${opp ? (() => {
   // Once games start, ESPN's live numbers replace the pre-game projection
@@ -5020,7 +5020,7 @@ async function lockPage(page, password) {
   // fixed salt so the key (which the phone saves) stays the same between builds; the iv is new every build
   const { subtle } = crypto.webcrypto, salt = crypto.createHash('sha256').update('Fantasy-app site lock').digest().subarray(0, 16), iv = crypto.randomBytes(12);
   const base = await subtle.importKey('raw', Buffer.from(password), 'PBKDF2', false, ['deriveKey']);
-  const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
   const data = Buffer.from(await subtle.encrypt({ name: 'AES-GCM', iv }, key, zlib.gzipSync(page))).toString('base64');
   return page.slice(0, page.indexOf('</head>')) + `<style>
 body.ls{margin:0;min-height:100dvh;background:#000;color:#fff;font:14px 'JetBrains Mono',ui-monospace,Menlo,monospace;overflow:hidden;-webkit-font-smoothing:antialiased}
@@ -5173,7 +5173,7 @@ body.auto .ring,body.auto .corner,body.auto #field{display:none}
   // The phone keeps the derived key, not the password (the salt is the same every build, so the key is too)
   async function keyOf(pass) {
     const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
-    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(LOCK.salt), iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytes(LOCK.salt), iterations: 600000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
   }
   async function unlock(key, show) {
     let page = await new Response(new Blob([await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(LOCK.iv) }, key, bytes(LOCK.data))]).stream().pipeThrough(new DecompressionStream('gzip'))).text();

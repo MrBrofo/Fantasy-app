@@ -356,7 +356,7 @@ console.log('ok');
   assert(!out.includes('my roster') && out.includes('name="built" content="1"'), 'page hidden, build time readable');
   const [salt, iv, data] = ['salt', 'iv', 'data'].map(k => Buffer.from(out.match(new RegExp(k + ": '([^']+)'"))[1], 'base64'));
   const { subtle } = crypto.webcrypto, base = await subtle.importKey('raw', Buffer.from('pw'), 'PBKDF2', false, ['deriveKey']);
-  const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const key = await subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
   assert.equal(zlib.gunzipSync(Buffer.from(await subtle.decrypt({ name: 'AES-GCM', iv }, key, data))).toString(), page);
   // the phone saves the key, so the next build must use the same salt (and a new iv)
   const next = await lockPage(page, 'pw'), field = (s, k) => s.match(new RegExp(k + ": '([^']+)'"))[1];
