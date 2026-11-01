@@ -5,7 +5,7 @@ import assert from 'assert/strict';
 import crypto from 'crypto';
 import zlib from 'zlib';
 
-const src = fs.readFileSync(new URL('./fantasy.mjs', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const src = ['fantasy', 'parts/main-js', 'parts/tools-js', 'parts/move-js', 'parts/lock-page'].map(f => fs.readFileSync(new URL(`./${f}.mjs`, import.meta.url), 'utf8')).join('\n').replace(/\r\n/g, '\n');
 const cut = (from, to) => { const i = src.indexOf(from), j = src.indexOf(to, i); assert(i >= 0 && j > i, `code moved: ${from}`); return src.slice(i, j + to.length); };
 const code = cut('function bestLineup(', 'const lineupProj = t => weekLine(t).reduce((s, p) => s + weekValue(p), 0);')
   + '\n' + cut('const best = bestLineup(me.roster,', 'const sitOut = starters(me).filter(p => !bestIds.has(p.id));')
@@ -410,7 +410,7 @@ console.log('ok');
 
 // the page's own script parses: it sits inside a template string in fantasy.mjs, where a lone backslash
 // (a regex like /\d/) silently disappears and breaks the whole page
-{ const from = src.indexOf('<script>', src.indexOf('id="live"')) + 8, to = src.indexOf('</script></body></html>`', from);
+{ const start = 'export const mainJs = (verdictText, VAPID_PUBLIC) => `', from = src.indexOf(start) + start.length, to = src.indexOf('`;\n// end of page script', from);
   const page = new Function('ctx', 'with (ctx) { return `' + src.slice(from, to) + '`; }')(new Proxy({}, { has: (t, k) => k !== 'undefined', get: () => 'X' }));
   // with the two String.raw blocks it pulls in (__TOOLSJS__, __MOVEJS__)
   const raw = name => { const i = src.indexOf('const ' + name + ' = String.raw`') + name.length + 20; return src.slice(i, i + src.slice(i).search(/\r?\n`;/)); };
