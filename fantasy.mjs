@@ -1380,7 +1380,8 @@ function rosterTrades(owners, adds) {
   return [...deals.values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
 }
 // A player traded and dropped right away never shows up on his new team, so take him from the offer the deal came from, if everything else
-// in that offer checks out: each other player in it had left the team giving him by then. Also gives the deal its date.
+// in that offer checks out: each other player in it had left the team giving him by then. He may have been picked up that same week, so he
+// needn't be on last week's roster. Any offer sharing a player gives the deal its date.
 function fillFromOffers(deals, offers, owners) {
   for (const d of deals) {
     const next = d.scoringPeriodId, f = d.items[0], pair = [f.fromTeamId, f.toTeamId].sort().join();
@@ -1388,7 +1389,9 @@ function fillFromOffers(deals, offers, owners) {
       const items = (o.items ?? []).filter(i => i.type === 'TRADE');
       if (Math.abs(o.scoringPeriodId - next) > 1 || !items.length || !items.every(i => [i.fromTeamId, i.toTeamId].sort().join() === pair)) continue;
       const known = new Set(d.items.map(i => i.playerId)), extra = items.filter(i => !known.has(i.playerId));
-      if (extra.length === items.length || !extra.every(i => owners[i.playerId]?.[next - 1] === i.fromTeamId && owners[i.playerId]?.[next] !== i.fromTeamId)) continue;
+      if (extra.length === items.length) continue;
+      d.date ??= o.proposedDate;
+      if (!extra.every(i => owners[i.playerId]?.[next] !== i.fromTeamId)) continue;
       for (const i of extra) d.items.push({ type: 'TRADE', playerId: i.playerId, fromTeamId: i.fromTeamId, toTeamId: i.toTeamId });
       d.date = o.proposedDate;
     }
