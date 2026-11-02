@@ -534,8 +534,7 @@ const placeBlobs = () => { for (const bar of document.querySelectorAll('nav,.seg
   if (!b) { b = document.createElement('i'); b.className = 'blob'; b.setAttribute('aria-hidden', 'true'); bar.prepend(b); }
   b.hidden = !on;
   if (!on) continue;
-  const t = 'translate(' + on.offsetLeft + 'px,' + on.offsetTop + 'px)';
-  if (b.style.transform !== t) b.style.transform = t;
+  b.style.translate = on.offsetLeft + 'px ' + on.offsetTop + 'px'; // the translate property, because the held swell would scale a transform's distance too
   b.style.width = on.offsetWidth + 'px'; b.style.height = on.offsetHeight + 'px';
   b.style.setProperty('--spin', Math.round((on.offsetLeft + on.offsetWidth / 2) / bar.clientWidth * 270 - 135) + 'deg');
   b.classList.toggle('held', on.classList.contains('press'));
@@ -555,7 +554,7 @@ document.addEventListener('pointerdown', ev => {
   const lo = btns[0].offsetLeft, hi = btns.at(-1).offsetLeft + btns.at(-1).offsetWidth - w;
   const at = x => Math.min(hi, Math.max(lo, x - left - w / 2));
   let moved = false, lastX = x0, frame = 0;
-  const paint = () => { frame = 0; const p = at(lastX); blob.style.transform = 'translate(' + p + 'px,' + y + 'px)'; blob.style.setProperty('--spin', Math.round((p + w / 2) / bar.clientWidth * 270 - 135) + 'deg'); };
+  const paint = () => { frame = 0; const p = at(lastX); blob.style.translate = p + 'px ' + y + 'px'; blob.style.setProperty('--spin', Math.round((p + w / 2) / bar.clientWidth * 270 - 135) + 'deg'); };
   const move = e => {
     lastX = e.clientX;
     if (!moved && Math.abs(e.clientX - x0) < 4) return;

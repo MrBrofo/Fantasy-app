@@ -315,7 +315,7 @@ html.glass nav a.on{color:var(--accent)}html.glass :is(nav a,.seg button):is(.on
    that slides over with a springy overshoot, and swells a little while you hold the tab bar (placed by placeBlobs()) */
 .blob{display:none}
 html.glass .blob{display:block;position:absolute;left:0;top:0;border-radius:999px;pointer-events:none;background:rgba(255,255,255,.1);-webkit-backdrop-filter:brightness(1.25) saturate(160%);backdrop-filter:brightness(1.25) saturate(160%);
-transition:transform .55s cubic-bezier(.3,1.4,.5,1),width .55s cubic-bezier(.3,1.4,.5,1),scale .3s cubic-bezier(.3,1.6,.5,1),background .2s,--spin .55s cubic-bezier(.3,1.4,.5,1)}
+transition:translate .55s cubic-bezier(.3,1.4,.5,1),width .55s cubic-bezier(.3,1.4,.5,1),scale .3s cubic-bezier(.3,1.6,.5,1),background .2s,--spin .55s cubic-bezier(.3,1.4,.5,1)}
 /* its edge splits light into a thin rainbow, like real glass bending light (dispersion); the colours travel around the edge
    as the bubble moves (--spin follows where it is along the bar, set by placeBlobs() and the drag) */
 @property --spin{syntax:'<angle>';inherits:true;initial-value:0deg}
@@ -323,7 +323,7 @@ html.glass .blob::after{content:'';position:absolute;inset:-1px;border-radius:in
 background:conic-gradient(from var(--spin),rgba(255,140,0,0),rgba(255,140,0,.75) 12%,rgba(255,0,170,.6) 22%,rgba(90,60,255,.7) 32%,rgba(0,190,255,.6) 42%,rgba(0,190,255,0) 55% 62%,rgba(0,190,255,.45) 72%,rgba(255,0,170,.4) 84%,rgba(255,140,0,.5) 94%,rgba(255,140,0,0));
 -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
 html.glass .blob.held{scale:1.12;background:rgba(255,255,255,.16)}
-html.glass .blob{z-index:1}html.glass .blob.drag{will-change:transform;transition:scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}html.glass :is(nav a,.seg button){z-index:2}
+html.glass .blob{z-index:1}html.glass .blob.drag{will-change:translate;transition:scale .3s cubic-bezier(.3,1.6,.5,1),background .2s}html.glass :is(nav a,.seg button){z-index:2}
 html.glass .sheet-x{background:rgba(255,255,255,.06)}
 /* buttons and switches inside the page sit on solid cards, so they're flat iOS controls, not glass */
 html.glass .btn{border-radius:999px;color:#fff;background:#0071e3;box-shadow:none}
