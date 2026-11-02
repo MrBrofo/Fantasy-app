@@ -439,8 +439,9 @@ console.log('ok');
   assert.deepEqual([r[0][0].map(val), r[0][1].map(val), r[0][2], r[0][3]], [[20], [18], 8, 8]);
   assert.equal(swaps([P('RB', 20), P('WR', 18)], [P('RB', 5), P('WR', 4)], val, score).length, 0);
   // two for one, when no one for one helps both
-  const two = swaps([P('RB', 10), P('RB', 9), P('WR', 3)], [P('WR', 20), P('RB', 2)], val, s => ['RB', 'WR'].reduce((t, pos) => t + Math.max(0, ...s.filter(p => p.pos === pos).map(val)), 0));
-  assert(two.some(x => x[0].length === 2 || x[1].length === 2 || x[0].length === 1));
+  const score2 = r => { const rb = r.filter(p => p.pos === 'RB').map(val).sort((x, y) => y - x); return (rb[0] ?? 0) + (rb[1] ?? 0) + Math.max(0, ...r.filter(p => p.pos === 'WR').map(val)); };
+  const two = swaps([P('RB', 10), P('RB', 9), P('RB', 9), P('RB', 9), P('WR', 1)], [P('WR', 20), P('WR', 6), P('RB', 1), P('RB', 1)], val, score2);
+  assert(two.some(x => x[0].length === 2 && x[1].length === 1 && x[2] >= 0.5 && x[3] >= 0.5));
   // this week: the bench player for the worst starter he'd replace, nothing under the minimum
   const st = new Function(cut('function startSwaps(', '\n}') + ';return startSwaps;')();
   const R = [{ id: 1, s: 1, w: 3 }, { id: 2, s: 1, w: 10 }, { id: 3, s: 0, w: 9 }, { id: 4, s: 0, w: 1 }];
