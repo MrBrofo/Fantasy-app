@@ -145,7 +145,7 @@ details.news>summary,details.news[open]>summary{display:block;font-weight:400;ma
 [hidden]{display:none!important}
 html:not(.term):not(.glass) #bg-field,html:not(.term) .bgring{display:none}
 .gl{text-decoration:underline dotted var(--accent);text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:help}
-#gloss{position:fixed;z-index:30;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;max-width:min(320px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#gloss{position:fixed;z-index:31;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;max-width:min(320px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(0,0,0,.5)}
 #gloss b{color:var(--accent);display:block;margin-bottom:2px}
 .pline{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
 .plays{margin-top:10px}.plays summary{cursor:pointer;font-size:14px}.plays p{margin:6px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
