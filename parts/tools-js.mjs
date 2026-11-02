@@ -90,7 +90,7 @@ function versus(aId, bId) {
     sa.value = R.me; sb.value = R.teams.find(t => t.id !== R.me).id;
     sa.onchange = draw; sb.onchange = draw; draw();
     (window.leagueDraw ??= []).push(draw);
-    document.addEventListener('click', ev => { const b = ev.target.closest('[data-vsteam]'); if (!b) return; sa.value = R.me; sb.value = b.dataset.vsteam; draw(); leaveSheet(); showTab('league', true); document.getElementById('versus').scrollIntoView(); });
+    document.addEventListener('click', ev => { const b = ev.target.closest('[data-vsteam]'); if (!b) return; sa.value = R.me; sb.value = b.dataset.vsteam; draw(); leaveSheet(); showTab('league', true); const fold = document.querySelector('#versus details'); if (fold) fold.open = true; document.getElementById('versus').scrollIntoView(); });
   }
 }
 const REPORT_WORDS = [
@@ -505,8 +505,22 @@ navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); i
 document.getElementById('seg').addEventListener('click', ev => { const b = ev.target.closest('[data-page]'); if (b) showTab(b.dataset.page, true); });
 showTab(location.hash.slice(1), false);
 // PC has the room: fold-up sections start open (not the long word lists in How it works)
-const pcFolds = () => { if (sidebar.matches) document.querySelectorAll('section:not(#help) details.fold').forEach(d => { d.open = true; }); };
+const pcFolds = () => { if (sidebar.matches) document.querySelectorAll('section:not(#help):not([data-tab=league]) details.fold').forEach(d => { d.open = true; }); };
 pcFolds();
+// League's menus stay as you left them, even after closing the app
+const foldKey = d => d.closest('section').id + ':' + d.querySelector('summary').textContent.trim();
+const foldSaved = () => { try { return JSON.parse(localStorage.getItem('leagueFolds')) || {}; } catch { return {}; } };
+const foldsRestore = () => { const s = foldSaved(); document.querySelectorAll('section[data-tab=league] details').forEach(d => { const k = foldKey(d); if (k in s) d.open = s[k]; }); };
+foldsRestore();
+(window.leagueDraw ??= []).push(foldsRestore);
+document.addEventListener('toggle', ev => {
+  const d = ev.target;
+  if (d.tagName !== 'DETAILS' || !d.closest('section[data-tab=league]')) return;
+  const s = foldSaved();
+  if (s[foldKey(d)] === d.open) return;
+  s[foldKey(d)] = d.open;
+  try { localStorage.setItem('leagueFolds', JSON.stringify(s)); } catch {}
+}, true);
 sidebar.addEventListener('change', () => { pcFolds(); showTab(location.hash.slice(1), false); });
 // Glass look: each bar (tab bar, switches) gets one bubble that slides to its picked button, or the tab under your finger.
 // Re-placed whenever a class changes anywhere (picked button, look, held tab, page merges) or the screen resizes.

@@ -2847,7 +2847,7 @@ html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, t
   return `${h}<p class="sub">${text.slice(0, cut + 1)}</p><details class="intro"><summary>How to read this</summary><p class="sub">${text.slice(cut + 2)}</p></details>`;
 });
 // extra sections fold to one line you tap to open, so each tab starts short
-html = html.replace(/(<section id="(?:bench|fleece|byes|buysell|partners)"[^>]*>)(<h2>[^<]*<\/h2>)([\s\S]*?)<\/section>/g, '$1<details class="fold"><summary>$2</summary>$3</details></section>');
+html = html.replace(/(<section id="(?:bench|fleece|byes|buysell|partners|matchups|league|report|allmoves|versus)"[^>]*>)(<h2>[^<]*<\/h2>)([\s\S]*?)<\/section>/g, '$1<details class="fold"><summary>$2</summary>$3</details></section>');
 html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', bestLineup.toString()));
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null, oddsOf(p)];
