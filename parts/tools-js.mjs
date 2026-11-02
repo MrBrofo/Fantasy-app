@@ -780,6 +780,9 @@ document.addEventListener('click', ev => {
   if (!fab) return;
   try { const p = JSON.parse(localStorage.getItem('fabPos') || 'null'); if (p) { fab.style.left = p.x + 'px'; fab.style.top = p.y + 'px'; fab.style.right = 'auto'; fab.style.bottom = 'auto'; } } catch {}
   let start = null, moved = false, idle;
+  // the tab bar only leaves room for this button while it's down beside the bar
+  const makeRoom = () => document.documentElement.classList.toggle('navwide', fab.getBoundingClientRect().bottom < document.querySelector('nav').getBoundingClientRect().top);
+  makeRoom(); addEventListener('resize', makeRoom);
   const wake = () => { fab.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(() => fab.classList.add('idle'), 30000); };
   wake();
   fab.addEventListener('pointerdown', wake);
@@ -796,6 +799,7 @@ document.addEventListener('click', ev => {
   fab.addEventListener('pointerup', () => {
     fab.classList.remove('drag');
     if (moved) try { localStorage.setItem('fabPos', JSON.stringify({ x: fab.offsetLeft, y: fab.offsetTop })); } catch {}
+    if (moved) makeRoom();
     start = null;
   });
   fab.addEventListener('click', ev => { if (moved) { ev.preventDefault(); moved = false; } });

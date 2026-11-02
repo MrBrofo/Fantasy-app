@@ -35,7 +35,7 @@ nav{touch-action:none}nav a,#fab{-webkit-touch-callout:none}
 nav a.on{color:var(--accent);background:rgba(198,244,50,.1)}
 nav a.press{background:rgba(255,255,255,.14);color:var(--fg);transform:scale(1.1)}
 nav .dot{position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--bad);color:#000;font-weight:700;font-size:11px;line-height:16px;text-align:center}
-@media(max-width:680px){nav{left:8px;transform:none;width:calc(100% - 74px)}} /* leaves room for the ESPN button, which otherwise takes taps meant for More */
+@media(max-width:680px){nav{left:8px;transform:none;width:calc(100% - 74px)}html.navwide nav{left:50%;transform:translateX(-50%);width:calc(100% - 16px)}} /* leaves room for the ESPN button, which otherwise takes taps meant for More */
 /* the switch at the top of a tab that holds two or more pages (Moves, Trades, More) */
 .seg{display:flex;gap:3px;margin-top:20px;padding:3px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
 .seg button{flex:1;padding:9px 4px;border:0;border-radius:9px;background:none;color:var(--muted);font:600 13px Geist,system-ui,sans-serif;cursor:pointer}
