@@ -405,7 +405,7 @@ console.log('ok');
   assert.equal(abbr('J.LA to WASH 5, LAST'), 'J.LA to WASH 5, LAST');
   console.log('team codes ok'); }
 // report card: a benched player who outscored a starter is the miss, and the best total counts him
-{ const box = new Function('POS', 'SLOT', 'bestLineup', cut('function boxLineup(side) {', '  return { ps, started, got, best, misses };\n}') + ';return boxLineup;')({ 2: 'RB', 3: 'WR' }, { 2: 'RB', 20: 'Bench', 21: 'IR' },
+{ const box = new Function('POS', 'SLOT', 'bestLineup', cut('function boxLineup(side, wk) {', '  return { ps, started, got, best, misses };\n}') + ';return boxLineup;')({ 2: 'RB', 3: 'WR' }, { 2: 'RB', 20: 'Bench', 21: 'IR' },
     (ps, v) => ({ lineup: [...ps].sort((a, b) => v(b) - v(a)).slice(0, 1).map(player => ({ player })) }));
   const e = (id, pts, slot) => ({ playerId: id, lineupSlotId: slot, playerPoolEntry: { appliedStatTotal: pts, player: { fullName: 'P' + id, defaultPositionId: 2 } } });
   const r = box({ rosterForMatchupPeriod: { entries: [e(1, 5, 2), e(2, 20, 20), e(3, 40, 21)] } });

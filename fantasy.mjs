@@ -1352,8 +1352,9 @@ const adviceIssues = adviceCheck({
 for (const [where, text] of adviceIssues) alerts.push([`check:${week}:${text}`, `Advice check: ${where}`, `${text} Treat that advice with care.`, false]);
 const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new Intl.PluralRules('en-US', { type: 'ordinal' }).select(k)];
 // One team's week from a box score: what it started, the best lineup it could have set (hindsight), and each [should have started, instead of]
-function boxLineup(side) {
-  const ps = side.rosterForMatchupPeriod.entries.map(e => ({ id: e.playerId, name: e.playerPoolEntry.player.fullName, pos: POS[e.playerPoolEntry.player.defaultPositionId], pts: e.playerPoolEntry.appliedStatTotal ?? 0, slot: SLOT[e.lineupSlotId] }));
+// rosterForMatchupPeriod holds only the starters; the bench is in rosterForCurrentScoringPeriod
+function boxLineup(side, wk) {
+  const ps = (side.rosterForCurrentScoringPeriod ?? side.rosterForMatchupPeriod).entries.map(e => { const pl = e.playerPoolEntry.player; return { id: e.playerId, name: pl.fullName, pos: POS[pl.defaultPositionId], pts: pl.stats?.find(s => s.scoringPeriodId === wk && s.statSourceId === 0)?.appliedTotal ?? e.playerPoolEntry.appliedStatTotal ?? 0, slot: SLOT[e.lineupSlotId] }; });
   const started = ps.filter(p => p.slot !== 'Bench' && p.slot !== 'IR'), got = started.reduce((t, p) => t + p.pts, 0);
   // +100 so players who scored 0 or less still fill a spot (bestLineup skips values <= 0); the total uses real points
   const bestL = bestLineup(ps.filter(p => p.slot !== 'IR'), p => p.pts + 100), best = bestL.lineup.reduce((t, x) => t + x.player.pts, 0);
@@ -1372,7 +1373,7 @@ if (week > 1) try {
   const drafted = new Set((draft.draftDetail?.picks ?? []).map(x => x.teamId + ':' + x.playerId));
   for (const t of teams) report.set(t.id, { t, pf: 0, max: 0, add: 0, wins: 0, allPlay: 0, weeks: 0, miss: [] });
   boxes.forEach((bx, i) => {
-    const games = bx.schedule.filter(g => g.matchupPeriodId === i + 1 && g.home?.rosterForMatchupPeriod && g.away?.rosterForMatchupPeriod), sides = games.flatMap(g => [g.home, g.away].map(s => [s, s === g.home ? g.away : g.home, boxLineup(s)]));
+    const games = bx.schedule.filter(g => g.matchupPeriodId === i + 1 && g.home?.rosterForCurrentScoringPeriod && g.away?.rosterForCurrentScoringPeriod), sides = games.flatMap(g => [g.home, g.away].map(s => [s, s === g.home ? g.away : g.home, boxLineup(s, i + 1)]));
     for (const [s, opp, l] of sides) {
       const r = report.get(s.teamId);
       if (!r) continue;
@@ -1399,12 +1400,12 @@ if (week > 1) try {
   const bx = await get(`${LEAGUE}?view=mBoxscore&view=mMatchupScore&scoringPeriodId=${week - 1}`);
   const g = bx.schedule.find(x => x.matchupPeriodId === week - 1 && (x.home?.teamId === me.id || x.away?.teamId === me.id));
   const [mine, theirs] = g.home.teamId === me.id ? [g.home, g.away] : [g.away, g.home];
-  const { ps, started, got, best: bestTotal, misses } = boxLineup(mine);
+  const { ps, started, got, best: bestTotal, misses } = boxLineup(mine, week - 1);
   const advised = memo.advice?.[week - 1];
   recap = { wk: week - 1, got, opp: theirs?.totalPoints ?? null, oppName: teamName[theirs?.teamId] ?? '', best: bestTotal, misses: misses.slice(0, 2),
     site: advised ? ps.filter(p => advised.includes(p.id)).reduce((t, p) => t + p.pts, 0) : null };
   // for "why you won or lost" (worked out further down, once whyWeek's data is ready): each starter's ESPN player entry
-  recap.started = started.map(p => ({ ...p, pl: mine.rosterForMatchupPeriod.entries.find(e => e.playerId === p.id).playerPoolEntry.player }));
+  recap.started = started.map(p => ({ ...p, pl: (mine.rosterForCurrentScoringPeriod ?? mine.rosterForMatchupPeriod).entries.find(e => e.playerId === p.id).playerPoolEntry.player }));
 } catch (err) { console.warn('Recap skipped:', err.message); }
 memo.advice = { ...Object.fromEntries(Object.entries(memo.advice ?? {}).filter(([wk]) => +wk >= week - 2)), [week]: [...bestIds] };
 // the site's expected points for my players this week, so next week's recap can say who beat or missed it
