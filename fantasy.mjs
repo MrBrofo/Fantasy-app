@@ -1350,6 +1350,48 @@ const adviceIssues = adviceCheck({
   slotPos: Object.fromEntries(Object.entries(SLOT).filter(([id]) => SLOT_POS[id]).map(([id, name]) => [name, SLOT_POS[id]])),
 });
 for (const [where, text] of adviceIssues) alerts.push([`check:${week}:${text}`, `Advice check: ${where}`, `${text} Treat that advice with care.`, false]);
+const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new Intl.PluralRules('en-US', { type: 'ordinal' }).select(k)];
+// One team's week from a box score: what it started, the best lineup it could have set (hindsight), and each [should have started, instead of]
+function boxLineup(side) {
+  const ps = side.rosterForMatchupPeriod.entries.map(e => ({ id: e.playerId, name: e.playerPoolEntry.player.fullName, pos: POS[e.playerPoolEntry.player.defaultPositionId], pts: e.playerPoolEntry.appliedStatTotal ?? 0, slot: SLOT[e.lineupSlotId] }));
+  const started = ps.filter(p => p.slot !== 'Bench' && p.slot !== 'IR'), got = started.reduce((t, p) => t + p.pts, 0);
+  // +100 so players who scored 0 or less still fill a spot (bestLineup skips values <= 0); the total uses real points
+  const bestL = bestLineup(ps.filter(p => p.slot !== 'IR'), p => p.pts + 100), best = bestL.lineup.reduce((t, x) => t + x.player.pts, 0);
+  const shouldIn = bestL.lineup.map(x => x.player).filter(p => !started.includes(p)).sort((a, b) => b.pts - a.pts);
+  const shouldOut = started.filter(p => !bestL.lineup.some(x => x.player === p)).sort((a, b) => a.pts - b.pts);
+  const misses = shouldIn.map(p => {
+    const flex = ['RB', 'WR', 'TE'], k = shouldOut.findIndex(o => o.pos === p.pos), j = k >= 0 ? k : shouldOut.findIndex(o => flex.includes(o.pos) && flex.includes(p.pos));
+    return j >= 0 ? [p, shouldOut.splice(j, 1)[0]] : null;
+  }).filter(Boolean);
+  return { ps, started, got, best, misses };
+}
+// --- Report card: every manager's finished weeks. Left off the page if ESPN fails; nothing else needs it.
+const report = new Map();
+if (week > 1) try {
+  const [draft, ...boxes] = await Promise.all([get(`${LEAGUE}?view=mDraftDetail`), ...Array.from({ length: week - 1 }, (_, i) => get(`${LEAGUE}?view=mBoxscore&view=mMatchupScore&scoringPeriodId=${i + 1}`))]);
+  const drafted = new Set((draft.draftDetail?.picks ?? []).map(x => x.teamId + ':' + x.playerId));
+  for (const t of teams) report.set(t.id, { t, pf: 0, max: 0, add: 0, wins: 0, allPlay: 0, weeks: 0, miss: [] });
+  boxes.forEach((bx, i) => {
+    const games = bx.schedule.filter(g => g.matchupPeriodId === i + 1 && g.home?.rosterForMatchupPeriod && g.away?.rosterForMatchupPeriod), sides = games.flatMap(g => [g.home, g.away].map(s => [s, s === g.home ? g.away : g.home, boxLineup(s)]));
+    for (const [s, opp, l] of sides) {
+      const r = report.get(s.teamId);
+      if (!r) continue;
+      r.pf += l.got; r.max += l.best; r.weeks++;
+      r.add += l.started.filter(p => !drafted.has(s.teamId + ':' + p.id)).reduce((x, p) => x + p.pts, 0);
+      r.wins += s.totalPoints > opp.totalPoints ? 1 : 0;
+      r.allPlay += sides.filter(([o]) => o !== s && o.totalPoints < s.totalPoints).length / (sides.length - 1);
+      r.miss.push(...l.misses.map(([p, o]) => [i + 1, p.name, p.pts, o.name, o.pts]));
+    }
+  });
+  const list = [...report.values()].filter(r => r.weeks);
+  const place = (key, dir) => [...list].sort((a, b) => dir * (a[key] - b[key])).forEach((r, i) => { r[key + 'Rank'] = i + 1; });
+  for (const r of list) { r.eff = r.max ? r.pf / r.max * 100 : 0; r.bench = (r.max - r.pf) / r.weeks; r.luck = r.wins - r.allPlay; r.miss = r.miss.sort((a, b) => (b[2] - b[4]) - (a[2] - a[4])).slice(0, 3); }
+  place('eff', -1); place('bench', -1); place('add', -1); place('pf', -1);
+  for (const r of list) {
+    const half = list.length / 2, short = depth(r.t).short;
+    r.better = [r.benchRank <= half ? `Left ${n(r.bench)} a week on the bench, ${ordinal(r.benchRank)} most.` : '', r.addRank > half ? `${n(r.add)} points started from pickups and trades, ${ordinal(r.addRank)} in the league.` : '', short.length ? `Thin at ${short.join(', ')}.` : ''].filter(Boolean);
+  }
+} catch (err) { console.warn('Report card skipped:', err.message); report.clear(); }
 // --- Last week's recap from ESPN's box score: what my lineup scored vs the best lineup I could have set (hindsight),
 // and, once there's a saved one, what the site's suggested lineup would have scored
 let recap = null;
@@ -1357,18 +1399,9 @@ if (week > 1) try {
   const bx = await get(`${LEAGUE}?view=mBoxscore&view=mMatchupScore&scoringPeriodId=${week - 1}`);
   const g = bx.schedule.find(x => x.matchupPeriodId === week - 1 && (x.home?.teamId === me.id || x.away?.teamId === me.id));
   const [mine, theirs] = g.home.teamId === me.id ? [g.home, g.away] : [g.away, g.home];
-  const ps = mine.rosterForMatchupPeriod.entries.map(e => ({ id: e.playerId, name: e.playerPoolEntry.player.fullName, pos: POS[e.playerPoolEntry.player.defaultPositionId], pts: e.playerPoolEntry.appliedStatTotal ?? 0, slot: SLOT[e.lineupSlotId] }));
-  const started = ps.filter(p => p.slot !== 'Bench' && p.slot !== 'IR'), got = started.reduce((t, p) => t + p.pts, 0);
-  // +100 so players who scored 0 or less still fill a spot (bestLineup skips values <= 0); the total uses real points
-  const bestL = bestLineup(ps.filter(p => p.slot !== 'IR'), p => p.pts + 100);
-  bestL.total = bestL.lineup.reduce((t, x) => t + x.player.pts, 0);
-  const shouldIn = bestL.lineup.map(x => x.player).filter(p => !started.includes(p)).sort((a, b) => b.pts - a.pts);
-  const shouldOut = started.filter(p => !bestL.lineup.some(x => x.player === p)).sort((a, b) => a.pts - b.pts);
+  const { ps, started, got, best: bestTotal, misses } = boxLineup(mine);
   const advised = memo.advice?.[week - 1];
-  recap = { wk: week - 1, got, opp: theirs?.totalPoints ?? null, oppName: teamName[theirs?.teamId] ?? '', best: bestL.total, misses: shouldIn.slice(0, 2).map(p => {
-    const flex = ['RB', 'WR', 'TE'], k = shouldOut.findIndex(o => o.pos === p.pos), j = k >= 0 ? k : shouldOut.findIndex(o => flex.includes(o.pos) && flex.includes(p.pos));
-    return j >= 0 ? [p, shouldOut.splice(j, 1)[0]] : null;
-  }).filter(Boolean),
+  recap = { wk: week - 1, got, opp: theirs?.totalPoints ?? null, oppName: teamName[theirs?.teamId] ?? '', best: bestTotal, misses: misses.slice(0, 2),
     site: advised ? ps.filter(p => advised.includes(p.id)).reduce((t, p) => t + p.pts, 0) : null };
   // for "why you won or lost" (worked out further down, once whyWeek's data is ready): each starter's ESPN player entry
   recap.started = started.map(p => ({ ...p, pl: mine.rosterForMatchupPeriod.entries.find(e => e.playerId === p.id).playerPoolEntry.player }));
@@ -1501,7 +1534,6 @@ function chip(p) {
   if (p.split && !out.length) out.push(`<span class="chip warn">Experts disagree: ${srcText(p)}</span>`);
   return out.join(' ');
 }
-const ordinal = k => k + { one: 'st', two: 'nd', few: 'rd', other: 'th' }[new Intl.PluralRules('en-US', { type: 'ordinal' }).select(k)];
 
 // --- Why a player's numbers are what they are: injured teammates, depth chart, matchups. These explain the
 // experts' projections (which already include all of this); they don't change any number, so nothing counts twice.
@@ -2474,6 +2506,9 @@ ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDa
 ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>${esc(teamName[m.team] ?? '')}</td><td>${m.type === 'ADD' ? '<b style="color:var(--good)">added</b>' : m.type === 'DROP' ? '<span style="color:var(--bad)">dropped</span>' : `traded with ${esc(teamName[m.from])}`} ${esc(names[m.playerId] ?? '')}</td></tr>`).join('')}</table></details></div>
 </section>
 
+${report.size ? `<section id="report"><h2>Report card</h2>
+<div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">Lineups</td><td class="num">Bench</td><td class="num">Luck</td></tr>
+${[...report.values()].filter(r => r.weeks).sort((a, b) => a.effRank - b.effRank).map(r => `<tr data-team="${r.t.id}" class="${r.t === me ? 'me' : ''}"><td class="num" style="text-align:left">${r.effRank}</td><td>${esc(r.t.name)}</td><td class="num">${r.eff.toFixed(1)}%</td><td class="num">${n(r.bench)}</td><td class="num">${r.luck >= 0 ? '+' : ''}${r.luck.toFixed(1)}</td></tr>`).join('')}</table></div></section>` : ''}
 <section id="help"><h2>How it works</h2>
 <div class="card"><dl>
 <dt>How you win</dt><dd>Every week you play one other team. Your starters score points from what they do in real NFL games. Higher total wins. Bench players don't count.</dd>
@@ -2698,7 +2733,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'settings', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'settings', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', report: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
@@ -2712,7 +2747,7 @@ html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MO
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null, oddsOf(p)];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
-  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
+  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better } : null)(report.get(t.id)), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     start: teamRows.get(t).filter(r => r[0]).map(r => r[1]), bench: teamRows.get(t).filter(r => !r[0]).map(r => r[1]) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));

@@ -404,6 +404,13 @@ console.log('ok');
   assert.equal(abbr('INTERCEPTED by A.Mukuba at WAS 30. PENALTY on BLT-J.Smith, ball to LA 20'), 'INTERCEPTED by A.Mukuba at WSH 30. PENALTY on BAL-J.Smith, ball to LAR 20');
   assert.equal(abbr('J.LA to WASH 5, LAST'), 'J.LA to WASH 5, LAST');
   console.log('team codes ok'); }
+// report card: a benched player who outscored a starter is the miss, and the best total counts him
+{ const box = new Function('POS', 'SLOT', 'bestLineup', cut('function boxLineup(side) {', '  return { ps, started, got, best, misses };\n}') + ';return boxLineup;')({ 2: 'RB', 3: 'WR' }, { 2: 'RB', 20: 'Bench', 21: 'IR' },
+    (ps, v) => ({ lineup: [...ps].sort((a, b) => v(b) - v(a)).slice(0, 1).map(player => ({ player })) }));
+  const e = (id, pts, slot) => ({ playerId: id, lineupSlotId: slot, playerPoolEntry: { appliedStatTotal: pts, player: { fullName: 'P' + id, defaultPositionId: 2 } } });
+  const r = box({ rosterForMatchupPeriod: { entries: [e(1, 5, 2), e(2, 20, 20), e(3, 40, 21)] } });
+  assert.deepEqual([r.got, r.best, r.misses[0][0].name, r.misses[0][1].name], [5, 20, 'P2', 'P1']);
+  console.log('report card ok'); }
 // stoppages aren't plays; real plays stay
 { const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + ';return gcStop;')();
   for (const t of ['Official Timeout', 'Timeout', 'Two-minute warning', 'End Period', 'End of Half', 'End of Game']) assert.equal(stop(t), true, t);

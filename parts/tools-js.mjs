@@ -14,8 +14,18 @@ function teamPage(tid) {
   const { start, bench } = t; // rows built on the server, same as My team
   return '<div class="sh-top"><div><div class="sh-name">' + e(t.id === R.me ? 'You' : t.name) + '</div><div class="tag">' + t.rec + ' record</div></div></div>' +
     '<div class="stat"><div><b data-teamnow="' + t.id + '">' + (t.now == null ? '0.0' : t.now.toFixed(1)) + '</b><small>points so far this week</small></div><div><b>' + (t.proj == null ? '-' : t.proj.toFixed(1)) + '</b><small>expected final score</small></div></div>' +
+    reportCard(t.rep) +
     '<div class="group">Starting</div><div class="list">' + start.join('') + '</div>' +
     (bench.length ? '<details class="fold" style="margin-top:12px"><summary class="group">Bench (' + bench.length + ')</summary><div class="list">' + bench.join('') + '</div></details>' : '');
+}
+function reportCard(r) {
+  if (!r) return '';
+  const nth = n => n + (['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th');
+  return '<div class="group">Report card</div><div class="stat"><div><b>' + r.eff.toFixed(1) + '%</b><small>lineups, ' + nth(r.effRank) + '</small></div><div><b>' + r.pf.toFixed(1) + ' / ' + r.max.toFixed(1) + '</b><small>points / best possible, ' + nth(r.pfRank) + ' in points</small></div>' +
+    '<div><b>' + r.bench.toFixed(1) + '</b><small>left on bench a week</small></div><div><b>' + r.add.toFixed(1) + '</b><small>points from pickups and trades, ' + nth(r.addRank) + '</small></div>' +
+    '<div><b>' + (r.luck >= 0 ? '+' : '') + r.luck.toFixed(1) + '</b><small>wins from luck</small></div></div>' +
+    (r.better.length ? '<div class="group">Could do better</div>' + r.better.map(x => '<p class="why" style="margin:0 0 4px">' + e(x) + '</p>').join('') : '') +
+    (r.miss.length ? '<div class="group">Biggest lineup misses</div>' + r.miss.map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + ':</b> ' + e(m[3]) + ' (' + m[4].toFixed(1) + ') over ' + e(m[1]) + ' (' + m[2].toFixed(1) + ')</p>').join('') : '');
 }
 function openTeam(tid) {
   const html = teamPage(tid);
