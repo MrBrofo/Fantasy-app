@@ -2397,6 +2397,11 @@ ${buyLow.length ? `<div class="group">Buy low: theirs, scoring below his role</d
 
 
 
+<section id="byes"><h2>Bye trouble</h2>
+${byeTrouble.length ? `<div class="list">${byeTrouble.map(x => `<div class="card"><div class="vhead"><b>${esc(x.t.name)}</b><span class="verdict-good">Wk ${x.w}: -${Math.round(x.lost)}</span></div>
+  <p class="why" style="margin:0">${esc(situation(x.t))}. Off: ${x.off.map(lnk).join(', ')}. Offer ${lnk(x.offer.p)}: +${n(x.offer.gain)} that week.</p></div>`).join('')}</div>` : '<div class="card"><p class="why" style="margin:0">Nobody right now.</p></div>'}
+</section>
+
 <section id="partners"><h2>Trade partners</h2>
 <div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
 <p class="why" style="margin:0">Short on: <b>${myDepth.short.map(p => POS_NAME[p].toLowerCase()).join(', ') || 'nothing'}</b>. Extra: <b>${myDepth.extra.map(([pos, ps]) => `${POS_NAME[pos].toLowerCase()} (${ps.map(p => esc(p.name)).join(', ')})`).join('; ') || 'nothing'}</b>.</p>
@@ -2447,11 +2452,6 @@ ${recap ? `<div class="card"><div class="group" style="margin:0 0 10px">Last wee
 ${ahead.length ? `<div class="card"><div class="vhead"><span class="group" style="margin:0">Your schedule ahead</span>${schedEase(me) ? `<span class="verdict-meh">${ordinal(schedEase(me))} easiest of ${teams.length}</span>` : ''}</div><table>
 ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><td>${esc(g.t.name)} <span class="tag">${g.t.w}-${g.t.l}</span></td><td class="num">proj ~${Math.round(g.proj)}${g.off.length ? `<br><small>no ${esc(g.off.map(p => p.name.split(' ').pop()).join(', '))}</small>` : ''}</td><td style="text-align:right"><span class="lv ${g.level}">${g.level}</span></td></tr>`).join('')}</table>
 </div>` : ''}
-</section>
-
-<section id="byes"><h2>Bye trouble</h2>
-${byeTrouble.length ? `<div class="list">${byeTrouble.map(x => `<div class="card"><div class="vhead"><b>${esc(x.t.name)}</b><span class="verdict-good">Wk ${x.w}: -${Math.round(x.lost)}</span></div>
-  <p class="why" style="margin:0">${esc(situation(x.t))}. Off: ${x.off.map(lnk).join(', ')}. Offer ${lnk(x.offer.p)}: +${n(x.offer.gain)} that week.</p></div>`).join('')}</div>` : '<div class="card"><p class="why" style="margin:0">Nobody right now.</p></div>'}
 </section>
 
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
@@ -2698,7 +2698,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'settings', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'season', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'settings', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');

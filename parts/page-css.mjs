@@ -413,7 +413,7 @@ body.home #todo{grid-column:1;margin-top:0}
 html.glass #bench .list .card,html.glass #news .list .card,html.glass #buysell .list .card,html.glass #pickups details .list .card{border-radius:26px}
 html.term #bench .list .card,html.term #news .list .card,html.term #buysell .list .card,html.term #pickups details .list .card{border-radius:0}
 /* Trades and Compare */
-#compare,#check{grid-column:auto}
+#compare,#check,#byes,#partners{grid-column:auto}
 /* long pages read in two columns */
 #season,#pickups{columns:2;column-gap:28px}
 #season>*,#pickups>*{break-inside:avoid}
