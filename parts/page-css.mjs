@@ -347,23 +347,88 @@ html.glass .wp b,html.glass .big b[class^=t-],html.glass .tw,html.glass .stat b[
 html.glass .bar i{box-shadow:0 0 10px currentColor}html.glass .chip{box-shadow:0 0 14px -4px currentColor}
 html.glass .btn{box-shadow:0 0 22px rgba(10,132,255,.45)}html.glass .worder span.me{box-shadow:0 0 14px rgba(10,132,255,.5)}
 @media (prefers-reduced-transparency:reduce){html.glass :is(nav,.sheet-card){background:#1c1c1e;-webkit-backdrop-filter:none;backdrop-filter:none}}
+/* parts of the page only PC arranges: on a phone they don't exist as boxes */
+nav a.sub{display:none}.m1,.m2,.m3,#hs{display:contents}
 /* PC layout. The width is also in tools-js.mjs (sidebar). */
 @media (min-width:1000px){
-body{padding-left:200px}
-.wrap{max-width:1160px;padding-left:28px;padding-right:28px}
-nav,html.term nav,html.glass nav{left:0;top:0;bottom:0;width:200px;transform:none;flex-direction:column;gap:4px;padding:calc(env(safe-area-inset-top) + 20px) 12px 20px;border-radius:0;border-width:0 1px 0 0;box-shadow:none}
-nav a,html.term nav a{flex:none;flex-direction:row;gap:12px;padding:11px 14px;font-size:14px}
+body{padding-left:216px;font-size:14px}
+.wrap{max-width:1400px;padding:0 32px 40px}
+/* one-line header */
+header,body:not(.home) header{padding:20px 0 16px;background:none}
+header .wrap{display:grid;grid-template-columns:1fr auto auto;column-gap:16px;align-items:center}
+.top{display:contents}
+h1{grid-area:1/1;margin:0;font-size:24px}
+.record{grid-area:2/1}
+.league{grid-area:1/2/3/3}
+#refresh{grid-area:1/3/3/4}
+/* sidebar with every page in it */
+nav,html.term nav,html.glass nav{left:0;top:0;bottom:0;width:216px;transform:none;flex-direction:column;gap:2px;padding:calc(env(safe-area-inset-top) + 18px) 12px 68px;overflow-y:auto;border-radius:0;border-width:0 1px 0 0;box-shadow:none}
+nav::before{content:'Gameday';padding:0 12px 14px;color:var(--fg);font-size:18px;font-weight:700;letter-spacing:-.02em}
+nav svg{display:none}
+nav a,html.term nav a{flex:none;flex-direction:row;gap:12px;padding:8px 12px;font-size:14px;line-height:20px}
 html.term nav a{font-size:12px}
-nav .dot{left:26px;top:3px}
-header,body:not(.home) header{padding-bottom:16px}
-.match{margin-top:0}
-[role=main]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:28px;align-items:start}
+nav a.sub{display:flex}
+nav a.grp,html.term nav a.grp{pointer-events:none;margin-top:14px;padding:4px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+nav .dot{position:static;margin:2px 0 0 auto}
+#seg{display:none}
+/* the ESPN button sits in the sidebar instead of floating over the page */
+#fab{left:12px!important;right:auto!important;top:auto!important;bottom:16px!important;width:192px;height:38px;display:flex;align-items:center;gap:10px;padding:0 8px;border-radius:10px;background:var(--chip);color:var(--fg);box-shadow:none;text-decoration:none;font-size:13px;font-weight:600;opacity:1!important;transform:none!important}
+#fab img{flex:none;width:24px;height:24px;border-radius:6px}
+#fab::after{content:'Open ESPN'}
+html.term #fab,html.term #fab img{border-radius:0}
+/* buttons sized for a mouse, not a thumb */
+.btn{width:auto;min-height:0;padding:9px 18px;font-size:14px}
+.tools2 .btn{width:100%}
+/* page grid */
+[role=main]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px;align-items:start}
 [role=main]>*{grid-column:1/-1}
-body.home [role=main]>*{grid-column:1}
-body.home #todo{grid-column:2;grid-row:1/span 9;margin-top:0}
-body.home #todo>h2:first-child{margin-top:0}
-#lineup,#bench,#compare,#check,#fleece,#buysell,#byes,#partners{grid-column:auto}
-#help,#look,#account{max-width:760px}
+/* Home: matchup across the top, to-do on the left, the rest on the right */
+.match{display:grid;grid-template-columns:auto minmax(0,1.2fr) minmax(0,1fr);gap:8px 36px;align-items:center;margin:0 0 24px;padding:20px 24px}
+.match>h2,.match>.board{grid-column:1/-1}
+.m1,.m2,.m3{display:block;min-width:0}.m1{min-width:210px}
+.wp{flex-direction:column;gap:4px;margin:0}.wp b{font-size:56px}
+.verdict{margin-top:0}
+body.home #todo{grid-column:1;margin-top:0}
+#hs{display:block;grid-column:2}body:not(.home) #hs{display:none}
+#hs>section{margin:0 0 24px}
+/* Team: starters and bench side by side, each player one line */
+#lineup{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto auto auto 1fr;column-gap:28px}
+#lineup>h2{grid-column:1/-1}
+#lineup>.group{grid-area:2/1}
+#lineup>.list{grid-area:3/1/5/2}
+#lineup>details{grid-column:2;grid-row:2/4;margin:0 0 10px}
+#lineup>details+details{grid-row:4}
+.card.row{padding:10px 14px}
+.card.row .slot{position:static;flex:none;width:44px;text-align:center}
+.card.row .slot:not(:empty)+.player{padding-top:0}
+.big{max-width:none;display:flex;flex-direction:row-reverse;align-items:center;gap:12px}
+.big b{min-width:48px}
+.big small{white-space:nowrap}
+.big small:not(.tw){display:none}.big small.up{display:block}
+/* lists that become grids of cards */
+.pool-list,#bench .list,#news .list,#buysell .list,#pickups details .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px;align-items:start}
+.pool-list .card{margin:0}.pool-empty{grid-column:1/-1}
+#bench .list .card,#news .list .card,#buysell .list .card,#pickups details .list .card{border-radius:16px;border:1px solid var(--line)}
+html.glass #bench .list .card,html.glass #news .list .card,html.glass #buysell .list .card,html.glass #pickups details .list .card{border-radius:26px}
+html.term #bench .list .card,html.term #news .list .card,html.term #buysell .list .card,html.term #pickups details .list .card{border-radius:0}
+/* Trades and Compare */
+#compare,#check,#byes,#partners{grid-column:auto}
+/* long pages read in two columns */
+#season,#pickups{columns:2;column-gap:28px}
+#season>*,#pickups>*{break-inside:avoid}
+#season>h2,#pickups>h2,#pickups>h2+.sub{column-span:all}
+#help dl{columns:2;column-gap:28px}
+#help dd{break-before:avoid}
+#look,#account{max-width:760px}
+/* something answers when the mouse is on it */
+@media (hover:hover){
+nav a:hover:not(.on){background:rgba(255,255,255,.07);color:var(--fg)}
+.card.row:hover,tr[data-team]:hover td{background:rgba(255,255,255,.04)}
+.player:hover .name{color:var(--accent)}
+details>summary:hover{color:var(--accent)}
+.btn:hover,#refresh:hover,#fab:hover{filter:brightness(1.15)}
+.seg button:hover:not(.on){color:var(--fg)}
+}
 .sheet-card,html.term .sheet-card,html.glass .sheet-card{left:auto;right:0;top:0;bottom:0;width:560px;max-width:100%;max-height:none;margin:0;border-radius:0;box-shadow:-10px 0 40px rgba(0,0,0,.3)}
 html.term .sheet-card{border-top:0;border-left:1px solid #ffffff59}
 html.glass .sheet-card{right:12px;top:12px;bottom:12px;border-radius:28px}

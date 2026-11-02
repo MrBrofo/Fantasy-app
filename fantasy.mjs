@@ -2227,19 +2227,19 @@ ${opp ? (() => {
   const done = live && Object.values(gameNow).length && Object.values(gameNow).every(g => g.state === 'post');
   // lv-*: the parts the page updates with live scores from the Worker
   return `<div class="match"><h2>This week vs ${esc(opp.name)}<span class="live" id="lv-badge"${live ? '' : ' hidden'}>LIVE</span></h2>
-  <div class="wp"><b id="lv-wp" style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag" id="lv-wpsrc">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
+  <div class="m1"><div class="wp"><b id="lv-wp" style="color:${wp >= 60 ? 'var(--good)' : wp < 40 ? 'var(--bad)' : 'var(--warn)'}">${wp}%</b><span>chance you win <span class="tag" id="lv-wpsrc">(${liveWin ? 'ESPN live estimate' : 'from the averaged projections'})</span></span></div>
   <div class="tag" id="lv-score" style="margin-bottom:8px"${live ? '' : ' hidden'}>${done ? 'Final score' : 'Score right now'}: <b>${n(mySide.totalPointsLive ?? 0)}</b> to <b>${n(oppSide.totalPointsLive ?? 0)}</b>.${done ? '' : ' Final guess below.'}</div>
   ${live && pre ? `<div class="tag" style="margin:-4px 0 8px">Guess before games started: <b>${n(pre[0])}</b> to <b>${n(pre[1])}</b>.</div>` : ''}
-  <div class="vs">
+  </div><div class="m2"><div class="vs">
   <div class="t" data-tm="${me.id}">You</div><div class="p" id="lv-a" data-tm="${me.id}" data-base="${n(a)}">${n(a)}</div><div class="bar" data-tm="${me.id}"><i id="lv-abar" style="width:${Math.min(100, a / Math.max(a, b, 1) * 100)}%;background:var(--accent)"></i></div>
   <div class="t" data-tm="${opp.id}">${esc(opp.name)}</div><div class="p" id="lv-b" data-tm="${opp.id}">${n(b)}</div><div class="bar" data-tm="${opp.id}"><i id="lv-bbar" style="width:${Math.min(100, b / Math.max(a, b, 1) * 100)}%;background:var(--muted)"></i></div>
-</div><div class="verdict" id="lv-verdict" aria-live="polite">${(() => {
+</div></div><div class="m3"><div class="verdict" id="lv-verdict" aria-live="polite">${(() => {
   // 0% or 100% from ESPN: decided, just not official yet
   const [x, y] = done ? [mySide.totalPointsLive ?? 0, oppSide.totalPointsLive ?? 0] : [a, b], by = n(Math.abs(Math.round(x * 10) - Math.round(y * 10)) / 10);
   return verdictText(x >= y, by, done ? 'final' : live && (wp <= 0 || wp >= 100) ? 'decided' : live ? 'guess' : '');
 })()}
 ${!live && planProj > myProj + 0.5 ? ` ${claims.length ? (plan.length ? 'Your pending claims plus the to-do list get' : 'Your pending claims get') : 'Doing the to-do list below gets'} you to about <b>${n(planProj)}</b>.` : ''}</div>
-<div class="tag" style="margin-top:6px">${esc(playoffLine)}</div>
+<div class="tag" style="margin-top:6px">${esc(playoffLine)}</div></div>
 <details class="board" style="margin-top:10px"><summary><b>Whole league this week:</b> you're ${ordinal(myBoardRank)} of ${board.length}, ${below.length} team${below.length === 1 ? '' : 's'} below you. <b style="color:${lowestPct >= 15 ? 'var(--bad)' : lowestPct >= 5 ? 'var(--warn)' : 'var(--good)'}">${lowestPct < 1 ? 'Under 1' : lowestPct}% chance</b> you're the lowest score.</summary>
 <table class="cmp" style="margin-top:8px"><tr class="bh"><td></td><td></td>${isLive ? '<td class="num">Now</td>' : ''}<td class="num">Expected</td></tr>${board.map((r, i) => `<tr data-team="${r.t.id}"${r.t === me ? ' style="font-weight:700"' : ''}><td class="num" style="text-align:left">${i + 1}</td><td>${esc(r.t === me ? 'You' : r.t.name)}</td>${isLive ? `<td class="num" data-now>${n(r.now)}</td>` : ''}<td class="num" data-proj>${n(r.proj)}</td></tr>`).reverse().join('')}</table>
 <p class="tag" style="margin:6px 0 0">${below.length ? `Below you: ${esc(below.map(r => r.t.name).join(', '))}.` : 'Nobody is projected below you.'}</p></details></div>`;
@@ -2249,7 +2249,11 @@ ${down.length ? `<div class="card" style="background:var(--warnbg);border-color:
 <div class="tag">${down.includes('Vegas lines') && down.length === 1 ? 'Player notes won\'t say how many points the betting odds expect his team to score.' : '"Expected" points use only the sources that worked, so they\'re a bit less reliable.'} It usually fixes itself on a later update. If this stays for a day, ask Claude to check it.</div></div>` : ''}
 
 <a id="fab" href="https://fantasy.espn.com/football/league?leagueId=${LEAGUE_ID}&amp;seasonId=${SEASON}" aria-label="Open the ESPN Fantasy app"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1c/b2/68/1cb2683b-9dce-d70c-8905-2562c0482eda/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/120x120bb.jpg" alt=""></a>
-<nav aria-label="Main">${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => `<a href="#${h}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>`).join('')}</nav>
+<nav aria-label="Main">${[['home', 'Home', '<path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/>'], ['team', 'Team', '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/>'], ['moves', 'Moves', '<path d="M12 5v14M5 12h14"/>'], ['trades', 'Trades', '<path d="M4 8h13l-3-3M20 16H7l3 3"/>'], ['more', 'More', '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>']].map(([h, label, icon]) => {
+  // PC sidebar lists every page; the phone bar hides these and uses the switch at the top of the tab
+  const sub = { moves: [['pickups', 'Pickups'], ['pending', 'Pending']], trades: [['trades', 'Trade ideas'], ['compare', 'Compare']], more: [['season', 'Season'], ['league', 'League'], ['news', 'News'], ['help', 'How it works'], ['settings', 'Settings']] }[h];
+  return `<a href="#${h}"${sub ? ' class="grp"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}${h === 'home' ? '<span class="dot" hidden></span>' : ''}</a>${(sub ?? []).map(([p, name]) => `<a href="#${p}" class="sub">${name}</a>`).join('')}`;
+}).join('')}</nav>
 <div id="seg" class="seg" hidden></div>
 
 <section id="todo"><h2>Do this now <span class="dot" hidden></span></h2>
@@ -2259,7 +2263,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <button type="button" id="todo-back" class="todo-back" hidden></button>
 </section>
 
-<section id="changes" hidden><h2>What changed</h2>
+<div id="hs"><section id="changes" hidden><h2>What changed</h2>
 <div class="card"><div id="changelist"></div><button type="button" id="seen" class="btn">Got it</button></div></section>
 
 <section id="ask"><div class="card ask"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>Ask Coach about your team</b><button type="button" id="askbal" class="linkbtn" style="font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums">Set credits</button></div>
@@ -2275,7 +2279,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <button type="button" id="alertbtn" class="btn">Turn on alerts</button>
 <div id="alertcode" hidden><p class="tag">Last step: copy this code, then in GitHub open your Fantasy-app repo &rsaquo; Settings &rsaquo; Secrets and variables &rsaquo; Actions &rsaquo; New repository secret. Name it <b>PUSH_SUB</b> and paste the code. You'll get an "Alerts are on" notification within a few minutes.</p>
 <textarea id="alerttext" aria-label="Alert setup code" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
-<button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
+<button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section></div>
 
 
 <section id="news"><h2>News</h2>

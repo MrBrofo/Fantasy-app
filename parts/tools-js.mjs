@@ -334,7 +334,9 @@ function setTab(tab, jump) {
   // (Trades > Trade ideas is 'trades' too: its sections showed under Compare)
   document.querySelectorAll('section[data-tab]').forEach(s => s.classList.toggle('off', s.dataset.tab !== tab && (s.dataset.tab !== g || GROUPS[g].includes(g))));
   document.body.classList.toggle('home', tab === 'home');
-  navLinks.forEach(a => { a.classList.toggle('on', a.hash === '#' + g); if (a.hash === '#' + g) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  // Trades is both a tab and a page: the phone lights the tab, the sidebar lights the page
+  const navOn = sidebar.matches ? 'a[href="#' + tab + '"]:not(.grp)' : 'a[href="#' + g + '"]:not(.sub)';
+  navLinks.forEach(a => { const on = a.matches(navOn); a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   const seg = document.getElementById('seg');
   seg.hidden = GROUPS[g].length < 2;
   if (seg.dataset.g === g) seg.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('on', b.dataset.page === tab));
@@ -357,6 +359,10 @@ tabBar.addEventListener('pointercancel', () => press(null));
 navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); if (!ev.detail) showTab(a.hash.slice(1), true); }));
 document.getElementById('seg').addEventListener('click', ev => { const b = ev.target.closest('[data-page]'); if (b) showTab(b.dataset.page, true); });
 showTab(location.hash.slice(1), false);
+// PC has the room: fold-up sections start open (not the long word lists in How it works)
+const pcFolds = () => { if (sidebar.matches) document.querySelectorAll('section:not(#help) details.fold').forEach(d => { d.open = true; }); };
+pcFolds();
+sidebar.addEventListener('change', () => { pcFolds(); showTab(location.hash.slice(1), false); });
 // Glass look: each bar (tab bar, switches) gets one bubble that slides to its picked button, or the tab under your finger.
 // Re-placed whenever a class changes anywhere (picked button, look, held tab, page merges) or the screen resizes.
 // bars being dragged right now (kept here, not on the element, so a live page update can't drop it mid-drag)
