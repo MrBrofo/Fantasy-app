@@ -1396,6 +1396,8 @@ if (week > 1) try {
   try {
   // every finished trade this season, once: ESPN files a deal under its proposal and its acceptance, in more than one week's list
   const txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
+  globalThis.txDiag = { n: txs.length, kinds: {}, sample: txs.filter(tx => tx.type?.startsWith('TRADE')).slice(0, 4).map(tx => ({ type: tx.type, status: tx.status, wk: tx.scoringPeriodId, items: (tx.items ?? []).map(i => i.type) })) };
+  for (const tx of txs) { const k = tx.type + '/' + tx.status + '/' + [...new Set((tx.items ?? []).map(i => i.type))].join('+'); globalThis.txDiag.kinds[k] = (globalThis.txDiag.kinds[k] ?? 0) + 1; }
   const dealKey = tx => (tx.items ?? []).filter(i => i.type === 'TRADE').map(i => i.playerId + '>' + i.toTeamId).sort().join();
   const deals = [...new Map(txs.filter(tx => tx.type?.startsWith('TRADE') && tx.status === 'EXECUTED' && dealKey(tx)).sort((a, b) => b.scoringPeriodId - a.scoringPeriodId).map(tx => [dealKey(tx), tx])).values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
@@ -1407,7 +1409,7 @@ if (week > 1) try {
     const got = s.got.map(id => dealt(id, tx.scoringPeriodId)), gave = s.gave.map(id => dealt(id, tx.scoringPeriodId)), sum = l => l.reduce((x, p) => x + p[1], 0);
     report.get(s.team)?.trades?.push({ wk: tx.scoringPeriodId, vs: s.others.map(id => teamName[id] ?? '').join(', '), got, gave, res: tradeResult(sum(got), sum(gave)) });
   }
-  } catch (err) { console.warn('Trades skipped:', err.message); }
+  } catch (err) { console.warn('Trades skipped:', err.message); (globalThis.txDiag ??= {}).err = err.message; }
   const place = (key, dir) => [...list].sort((a, b) => dir * (a[key] - b[key])).forEach((r, i) => { r[key + 'Rank'] = i + 1; });
   for (const r of list) { r.eff = r.max ? r.pf / r.max * 100 : 0; r.bench = (r.max - r.pf) / r.weeks; r.luck = r.wins - r.allPlay; r.miss = r.miss.sort((a, b) => (b[2] - b[4]) - (a[2] - a[4])).slice(0, 3); }
   place('eff', -1); place('bench', -1); place('add', -1); place('pf', -1);
@@ -2770,7 +2772,7 @@ html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', best
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null, oddsOf(p)];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
-const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
+const rdata = { txDiag: globalThis.txDiag, week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better, trades: r.trades ?? [] } : null)(report.get(t.id)), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     start: teamRows.get(t).filter(r => r[0]).map(r => r[1]), bench: teamRows.get(t).filter(r => !r[0]).map(r => r[1]) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
