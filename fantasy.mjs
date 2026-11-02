@@ -2225,6 +2225,15 @@ for (const t of teams) for (let w = week + 1; w <= lastWeek; w++) {
   futLine.set(`${t.id}|${w}`, { mean: ps.reduce((s, p) => s + v(p), 0), sd: Math.sqrt(vari(ps, v)) || 15 });
 }
 const nowMean = new Map(teams.map(t => [t.id, lineupProj(t)])), nowSd = new Map(teams.map(t => [t.id, Math.sqrt(spread(t)) || 15]));
+// Every matchup this week: win chance and final guess for each team. ESPN's live numbers once either side has points, like your own matchup.
+const matchOdds = new Map();
+for (const g of (league.schedule ?? []).filter(x => x.matchupPeriodId === week && x.away)) {
+  const live = g.home.totalPointsLive > 0 || g.away.totalPointsLive > 0, exp = s => live && s.totalProjectedPointsLive > 0 ? s.totalProjectedPointsLive : nowMean.get(s.teamId);
+  const pre = 50 * (1 + erf((exp(g.home) - exp(g.away)) / Math.sqrt(2 * (nowSd.get(g.home.teamId) ** 2 + nowSd.get(g.away.teamId) ** 2 || 1))));
+  const home = live && g.home.winProbability != null ? g.home.winProbability * 100 : pre;
+  matchOdds.set(g.home.teamId, { win: Math.round(home), exp: +exp(g.home).toFixed(1) });
+  matchOdds.set(g.away.teamId, { win: 100 - Math.round(home), exp: +exp(g.away).toFixed(1) });
+}
 const byId_ = new Map(teams.map(t => [t.id, t]));
 const left = (league.schedule ?? []).filter(g => g.away && g.matchupPeriodId >= week && g.matchupPeriodId <= lastWeek);
 // Every team's expected score in each game left, and one set of random swings reused by every run below, so a move's
@@ -2585,8 +2594,9 @@ ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><
 </section>
 
 ${(league.schedule ?? []).some(g => g.matchupPeriodId === week && g.away) ? `<section id="matchups"><h2>Matchups</h2><div class="list">${(league.schedule ?? []).filter(g => g.matchupPeriodId === week && g.away).map(g => {
-  const side = id => { const b = board.find(r => r.t.id === id); return `<span class="t">${esc(id === me.id ? 'You' : teamName[id] ?? '')}</span><span class="p" data-teamnow="${id}">${(b?.now ?? 0).toFixed(1)}</span>`; };
-  return `<div class="card" data-match="${g.home.teamId},${g.away.teamId}" style="cursor:pointer"><div class="vs">${side(g.home.teamId)}${side(g.away.teamId)}</div></div>`;
+  const side = id => { const b = board.find(r => r.t.id === id), o = matchOdds.get(id); return `<span class="t">${esc(id === me.id ? 'You' : teamName[id] ?? '')} <small data-win="${id}" style="color:var(--${o.win >= 50 ? 'good' : 'bad'})">${o.win}%</small></span><span class="p" data-teamnow="${id}">${(b?.now ?? 0).toFixed(1)}</span><div class="bar"><i data-winbar="${id}" style="width:${o.win}%;background:var(--${o.win >= 50 ? 'accent' : 'muted'})"></i></div>`; };
+  const line = (a, b) => { const x = matchOdds.get(a), y = matchOdds.get(b), fav = x.exp >= y.exp ? a : b; return `<div class="tag" data-line="${a},${b}">Expected ${x.exp.toFixed(1)} to ${y.exp.toFixed(1)}. ${esc(fav === me.id ? 'You' : teamName[fav] ?? '')} by ${Math.abs(x.exp - y.exp).toFixed(1)}</div>`; };
+  return `<div class="card" data-match="${g.home.teamId},${g.away.teamId}" style="cursor:pointer"><div class="vs">${side(g.home.teamId)}${side(g.away.teamId)}</div>${line(g.home.teamId, g.away.teamId)}</div>`;
 }).join('')}</div></section>` : ''}
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
@@ -2910,7 +2920,7 @@ const vsData = t => {
     sd: sc.length ? +Math.sqrt(sc.reduce((a, x) => a + (x[1] - avg) ** 2, 0) / sc.length).toFixed(1) : null, hi: hi ?? null, lo: lo ?? null, ap: r?.weeks ? [r.apW, r.apL] : null, start: l.map(x => [x.slot, x.player.id]) };
 };
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
-  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better, trades: r.trades ?? [], draft: r.draft ?? null, wire: r.wire ?? null, ap: [r.apW, r.apL], hi: [...r.scores].sort((a, b) => b[1] - a[1])[0], lo: [...r.scores].sort((a, b) => a[1] - b[1])[0] } : null)(report.get(t.id)), vs: vsData(t), moves: teamMoves.get(t.id), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
+  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better, trades: r.trades ?? [], draft: r.draft ?? null, wire: r.wire ?? null, ap: [r.apW, r.apL], hi: [...r.scores].sort((a, b) => b[1] - a[1])[0], lo: [...r.scores].sort((a, b) => a[1] - b[1])[0] } : null)(report.get(t.id)), odds: matchOdds.get(t.id) ?? null, vs: vsData(t), moves: teamMoves.get(t.id), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     start: teamRows.get(t).filter(r => r[0]).map(r => r[1]), bench: teamRows.get(t).filter(r => !r[0]).map(r => r[1]) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));

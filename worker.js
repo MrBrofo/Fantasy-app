@@ -73,8 +73,8 @@ async function live(req, env) {
       if (s === mine) lineup[e.playerId] = e.lineupSlotId;
       if (s === mine || s === theirs) match.push(e.playerId);
     }
-    // board[teamId] = [points so far, ESPN's live final guess]
-    for (const x of games) for (const s of [x.home, x.away]) if (s) board[s.teamId] = [s.totalPointsLive ?? s.totalPoints ?? 0, s.totalProjectedPointsLive ?? null];
+    // board[teamId] = [points so far, ESPN's live final guess, ESPN's live win chance]
+    for (const x of games) for (const s of [x.home, x.away]) if (s) board[s.teamId] = [s.totalPointsLive ?? s.totalPoints ?? 0, s.totalProjectedPointsLive ?? null, s.winProbability ?? null];
     // clocks[NFL team id] = [pre/in/post, clock text, 1 = has the ball, 2 = has it inside the other team's 20 (red zone),
     // 3 = the other team has it (its defense is on the field), ESPN game id]
     // field[game id] = the Watch view of a game that's on: teams [id, abbreviation, score, color] away then home, down,

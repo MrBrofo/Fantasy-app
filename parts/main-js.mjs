@@ -114,6 +114,10 @@ let liveOn = false, liveNote = '', liveAt = 0, LD = null; // LD: the last live a
 // share of his game left from the clock text (same as the build's gameLeft)
 const gameLeft = t => !t ? null : /final/i.test(t) ? 0 : /half/i.test(t) ? 0.5 : /OT/.test(t) ? 0
   : (q => q ? Math.max(0, (4 - q) * 15 + +((t.match(/([0-9]+):[0-9]+/) || [])[1] || 0)) / 60 : null)(+((t.match(/([1-4])(st|nd|rd|th)/) || [])[1] || 0));
+function oddsShow(id, w) {
+  for (const el of document.querySelectorAll('[data-win="' + id + '"]')) { el.textContent = w + '%'; el.style.color = 'var(--' + (w >= 50 ? 'good' : 'bad') + ')'; }
+  for (const el of document.querySelectorAll('[data-winbar="' + id + '"]')) { el.style.width = w + '%'; el.style.background = 'var(--' + (w >= 50 ? 'accent' : 'muted') + ')'; }
+}
 async function liveTick() {
   if (!LIVE || document.hidden) return;
   try {
@@ -253,6 +257,13 @@ function liveExtras(d, f) {
   }
   // a team's page that's open: its total so far
   for (const el of document.querySelectorAll('[data-teamnow]')) { const x = d.board?.[el.dataset.teamnow]; if (x) el.textContent = f(x[0]); }
+  // every matchup: win chance, its bar and the line, once there are live numbers
+  if (d.board) for (const el of document.querySelectorAll('[data-line]')) {
+    const [a, b] = el.dataset.line.split(','), x = d.board[a], y = d.board[b];
+    if (!x || !y || !(x[0] > 0 || y[0] > 0)) continue;
+    if (x[2] != null) { const w = Math.round(x[2] * 100); oddsShow(a, w); oddsShow(b, 100 - w); }
+    if (x[1] > 0 && y[1] > 0) { const fav = x[1] >= y[1] ? a : b; el.textContent = 'Expected ' + f(x[1]) + ' to ' + f(y[1]) + '. ' + (+fav === R.me ? 'You' : R.teams.find(t => t.id === +fav)?.name) + ' by ' + f(Math.abs(x[1] - y[1])); }
+  }
   // whole league this week
   if (d.board && Object.values(d.board).some(x => x[0] > 0)) for (const tr of document.querySelectorAll('tr[data-team]')) {
     const x = d.board[tr.dataset.team], now = tr.querySelector('[data-now]'), proj = tr.querySelector('[data-proj]');

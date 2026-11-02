@@ -152,10 +152,11 @@ function openTeam(tid) {
 function matchPage(a, b) {
   const x = R.teams.find(t => t.id === +a), y = R.teams.find(t => t.id === +b);
   if (!x || !y) return '';
-  const side = t => '<div><b data-teamnow="' + t.id + '">' + (t.now == null ? '0.0' : t.now.toFixed(1)) + '</b><small>' + e(t.id === R.me ? 'You' : t.name) + (t.proj == null ? '' : ', expected ' + t.proj.toFixed(1)) + '</small></div>';
+  const side = t => { const o = t.odds; return '<div><b data-teamnow="' + t.id + '">' + (t.now == null ? '0.0' : t.now.toFixed(1)) + '</b><small>' + e(t.id === R.me ? 'You' : t.name) + '</small>' + (o ? '<small data-win="' + t.id + '" style="color:var(--' + (o.win >= 50 ? 'good' : 'bad') + ')">' + o.win + '%</small><div class="bar" style="margin:6px 0 0"><i data-winbar="' + t.id + '" style="width:' + o.win + '%;background:var(--' + (o.win >= 50 ? 'accent' : 'muted') + ')"></i></div>' : '') + '</div>'; };
+  const line = x.odds && y.odds ? (fav => '<p class="tag" data-line="' + x.id + ',' + y.id + '" style="margin:8px 0 0">Expected ' + x.odds.exp.toFixed(1) + ' to ' + y.odds.exp.toFixed(1) + '. ' + e(fav.id === R.me ? 'You' : fav.name) + ' by ' + Math.abs(x.odds.exp - y.odds.exp).toFixed(1) + '</p>')(x.odds.exp >= y.odds.exp ? x : y) : '';
   const list = t => '<div class="group" data-openteam="' + t.id + '" style="cursor:pointer;text-decoration:underline dotted">' + e(t.id === R.me ? 'You' : t.name) + '</div><div class="list">' + t.start.join('') + '</div>' +
     (t.bench.length ? '<details class="fold" style="margin-top:12px"><summary class="group">Bench (' + t.bench.length + ')</summary><div class="list">' + t.bench.join('') + '</div></details>' : '');
-  return '<div class="sh-top"><div><div class="sh-name">Week ' + R.week + ' matchup</div><div class="tag">' + x.rec + ' vs ' + y.rec + '</div></div></div><div class="stat">' + side(x) + side(y) + '</div>' + list(x) + list(y);
+  return '<div class="sh-top"><div><div class="sh-name">Week ' + R.week + ' matchup</div><div class="tag">' + x.rec + ' vs ' + y.rec + '</div></div></div><div class="stat">' + side(x) + side(y) + '</div>' + line + list(x) + list(y);
 }
 function openMatch(a, b) {
   const html = matchPage(a, b);
