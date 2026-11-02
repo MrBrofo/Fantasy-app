@@ -69,6 +69,7 @@ async function swap(html) {
   if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) { body.innerHTML = render(P[sheet.dataset.pid]); drawGc(); }
   else if (!sheet.hidden && sheet.dataset.team && typeof teamPage === 'function') body.innerHTML = teamPage(sheet.dataset.team);
+  else if (!sheet.hidden && sheet.dataset.match && typeof matchPage === 'function') body.innerHTML = matchPage(...sheet.dataset.match.split(','));
   gloss(document.body);
   liveTick();
   return true;
@@ -815,11 +816,25 @@ document.addEventListener('click', ev => {
 });
 let closeTimer;
 let sheetFrom = null;
+const sheetStack = [];
+// opening a page over a team or matchup page remembers it and where you'd scrolled to; X goes back to it
+function sheetPush() { if (sheet.hidden) sheetStack.length = 0; else if (sheet.dataset.team || sheet.dataset.match) sheetStack.push({ team: sheet.dataset.team, match: sheet.dataset.match, html: body.innerHTML, top: body.scrollTop }); }
+function sheetPop() {
+  const v = sheetStack.pop(), card = sheet.querySelector('.sheet-card');
+  card.style.transform = card.style.transition = '';
+  sheet.dataset.pid = ''; delete sheet.dataset.team; delete sheet.dataset.match;
+  if (v.team) sheet.dataset.team = v.team;
+  if (v.match) sheet.dataset.match = v.match;
+  body.innerHTML = v.html; body.scrollTop = v.top;
+  if (typeof liveTick === 'function') liveTick();
+}
+function leaveSheet() { sheetStack.length = 0; closeSheet(); }
 function sheetShow() { if (sheet.hidden) sheetFrom = document.activeElement; sheet.hidden = false; sheet.querySelector('.sheet-x').focus({ preventScroll: true }); }
-function openSheet(id) { const p = P[id]; if (!p) return; gcOpen = false; lgWk = null; pwOpen = false; sheet.dataset.pid = id; delete sheet.dataset.team; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheetShow(); body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
+function openSheet(id) { const p = P[id]; if (!p) return; sheetPush(); gcOpen = false; lgWk = null; pwOpen = false; sheet.dataset.pid = id; delete sheet.dataset.team; delete sheet.dataset.match; clearTimeout(closeTimer); closeTimer = null; sheet.querySelector('.sheet-card').classList.remove('closing'); body.innerHTML = render(p); sheetShow(); body.scrollTop = 0; document.body.style.overflow = 'hidden'; }
 __TOOLSJS__
 function closeSheet() {
   if (sheet.hidden || closeTimer) return;
+  if (sheetStack.length) return sheetPop();
   const card = sheet.querySelector('.sheet-card');
   const done = () => { sheet.hidden = true; sheetFrom?.focus?.({ preventScroll: true }); closeTimer = null; document.body.style.overflow = ''; card.style.transform = card.style.transition = ''; };
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
@@ -1097,7 +1112,7 @@ document.addEventListener('click', ev => {
   // a name or bar in this week's matchup: that team's page (yours opens the Team tab)
   const tm = ev.target.closest('[data-tm]');
   if (tm) return +tm.dataset.tm === R.me ? (showTab('team', true), scrollTo(0, 0)) : openTeam(tm.dataset.tm); // yours: the Team tab
-  const el = (!ev.target.closest('.sheet-body') || sheet.dataset.team) && ev.target.closest('[data-pid]');
+  const el = (!ev.target.closest('.sheet-body') || sheet.dataset.team || sheet.dataset.match) && ev.target.closest('[data-pid]');
   if (el) openSheet(el.dataset.pid);
 });
 // Sign out: forget the site password on this phone and go back to the lock screen. The trade password stays,

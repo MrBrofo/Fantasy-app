@@ -1379,6 +1379,22 @@ function rosterTrades(owners, adds) {
   }
   return [...deals.values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
 }
+// A player traded and dropped right away never shows up on his new team, so take him from the offer the deal came from, if everything else
+// in that offer checks out: each other player in it had left the team giving him by then. Also gives the deal its date.
+function fillFromOffers(deals, offers, owners) {
+  for (const d of deals) {
+    const next = d.scoringPeriodId, f = d.items[0], pair = [f.fromTeamId, f.toTeamId].sort().join();
+    for (const o of offers) {
+      const items = (o.items ?? []).filter(i => i.type === 'TRADE');
+      if (Math.abs(o.scoringPeriodId - next) > 1 || !items.length || !items.every(i => [i.fromTeamId, i.toTeamId].sort().join() === pair)) continue;
+      const known = new Set(d.items.map(i => i.playerId)), extra = items.filter(i => !known.has(i.playerId));
+      if (extra.length === items.length || !extra.every(i => owners[i.playerId]?.[next - 1] === i.fromTeamId && owners[i.playerId]?.[next] !== i.fromTeamId)) continue;
+      for (const i of extra) d.items.push({ type: 'TRADE', playerId: i.playerId, fromTeamId: i.fromTeamId, toTeamId: i.toTeamId });
+      d.date = o.proposedDate;
+    }
+  }
+  return deals;
+}
 // One team's side of each team in a finished trade: who it got and who it gave up. Won on rest-of-season points a game; under 1 apart is even.
 function tradeSides(tx) {
   const items = tx.items.filter(i => i.type === 'TRADE'), ids = [...new Set(items.map(i => i.toTeamId))];
@@ -1427,7 +1443,9 @@ if (week > 1) try {
   for (const x of teams) for (const p of x.roster) (wkOwner[p.id] ??= {})[week] = x.id;
   for (const x of draft.draftDetail?.picks ?? []) (wkOwner[x.playerId] ??= {})[0] = x.teamId; // week 0: draft day, for trades before week 1
   const adds = new Set(txs.filter(tx => tx.status === 'EXECUTED' && ['WAIVER', 'FREEAGENT'].includes(tx.type)).flatMap(tx => (tx.items ?? []).filter(i => i.type === 'ADD').map(i => i.playerId + ':' + i.toTeamId + ':' + tx.scoringPeriodId)));
-  const deals = rosterTrades(wkOwner, adds);
+  const deals = fillFromOffers(rosterTrades(wkOwner, adds), txs.filter(tx => tx.type === 'TRADE_PROPOSAL' && tx.status !== 'CANCELED'), wkOwner);
+  for (const d of deals) if (d.date && d.scoringPeriodId >= week - 2) for (const i of d.items) moves.push({ date: d.date, type: 'TRADE', playerId: i.playerId, team: i.toTeamId, from: i.fromTeamId });
+  moves.sort((a, b) => b.date - a.date);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
   if (unknown.length) for (const x of (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: unknown } } })).players) { names[x.player.id] = x.player.fullName; byId.set(x.player.id, { ...row(x.player, x.ratings), slot: 'FA' }); }
   // [name, rest-of-season points a game, points since the trade]
@@ -2241,7 +2259,8 @@ const noise = Float32Array.from({ length: SIMS * left.length * 2 }, gauss);
 // myAdd[i] = points added to my lineup in week (this week + i). Returns the chance, the seasons by my final wins, and
 // for each of my games left how often I got in after winning vs losing it.
 function simSeasons(myAdd = [], runs = SIMS) {
-  const byRecord = {}, swing = {}, byTeam = new Map(teams.map(t => [t.id, [0, 0]]));
+  const byRecord = {}, swing = {}, byTeam = new Map(teams.map(t => [t.id, [0, 0, 0]]));
+  const byes = playoffTeams > 1 ? 2 ** Math.ceil(Math.log2(playoffTeams)) - playoffTeams : 0;
   let made = 0, z = 0;
   for (let k = 0; k < runs; k++) {
     const w = new Map(teams.map(t => [t.id, t.w + t.ties / 2])), pf = new Map(teams.map(t => [t.id, t.pf])), mine = [];
@@ -2255,6 +2274,7 @@ function simSeasons(myAdd = [], runs = SIMS) {
     const order = seedOrder(w, pf).order, inP = order.indexOf(me) < playoffTeams;
     order.slice(0, playoffTeams).forEach(t => { byTeam.get(t.id)[0]++; });
     for (const [id, x] of w) byTeam.get(id)[1] += x;
+    order.slice(0, byes).forEach(t => { byTeam.get(t.id)[2]++; });
     made += inP;
     const r = (byRecord[w.get(me.id)] ??= [0, 0]); r[0] += inP; r[1]++;
     for (const [wk, won] of mine) { const x = (swing[wk] ??= [0, 0, 0, 0]); x[won ? 0 : 2] += inP; x[won ? 1 : 3]++; }
@@ -2586,6 +2606,10 @@ ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><
 </div>` : ''}
 </section>
 
+${(league.schedule ?? []).some(g => g.matchupPeriodId === week && g.away) ? `<section id="matchups"><h2>Matchups</h2><div class="list">${(league.schedule ?? []).filter(g => g.matchupPeriodId === week && g.away).map(g => {
+  const side = id => { const b = board.find(r => r.t.id === id); return `<span class="t">${esc(id === me.id ? 'You' : teamName[id] ?? '')}</span><span class="p" data-teamnow="${id}">${(b?.now ?? 0).toFixed(1)}</span>`; };
+  return `<div class="card" data-match="${g.home.teamId},${g.away.teamId}" style="cursor:pointer"><div class="vs">${side(g.home.teamId)}${side(g.away.teamId)}</div></div>`;
+}).join('')}</div></section>` : ''}
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
 ${standings.map((t, i) => `<tr data-team="${t.id}" class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
@@ -2607,8 +2631,10 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 </section>
 
 ${report.size ? `<section id="report"><h2>Report card</h2>
-<div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">Lineups</td><td class="num">Bench</td><td class="num">Luck</td></tr>
-${[...report.values()].filter(r => r.weeks).sort((a, b) => a.effRank - b.effRank).map(r => `<tr data-team="${r.t.id}" class="${r.t === me ? 'me' : ''}"><td class="num" style="text-align:left">${r.effRank}</td><td>${esc(r.t.name)}</td><td class="num">${r.eff.toFixed(1)}%</td><td class="num">${n(r.bench)}</td><td class="num">${r.luck >= 0 ? '+' : ''}${r.luck.toFixed(1)}</td></tr>`).join('')}</table></div></section>` : ''}
+<div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">Lineups</td><td class="num">Bench</td><td class="num">Luck</td><td class="num">Trades</td></tr>
+${[...report.values()].filter(r => r.weeks).sort((a, b) => a.effRank - b.effRank).map(r => `<tr data-team="${r.t.id}" class="${r.t === me ? 'me' : ''}"><td class="num" style="text-align:left">${r.effRank}</td><td>${esc(r.t.name)}</td><td class="num">${r.eff.toFixed(1)}%</td><td class="num">${n(r.bench)}</td><td class="num">${r.luck >= 0 ? '+' : ''}${r.luck.toFixed(1)}</td><td class="num">${(l => l.length ? `${l.filter(x => x.res === 'won').length}-${l.filter(x => x.res === 'lost').length}` : '-')(r.trades ?? [])}</td></tr>`).join('')}</table></div></section>` : ''}
+<section id="allmoves"><h2>Waiver moves</h2><div class="card"><div style="display:flex;gap:8px;margin-bottom:10px"><input id="wm-q" class="sel" style="flex:2;min-width:0" type="search" placeholder="Search team or player" aria-label="Search waiver moves"><select id="wm-kind" class="sel" style="flex:1;min-width:0" aria-label="Kind of move"><option value="">All</option><option value="add">Adds</option><option value="drop">Drops</option></select></div><div id="wm-out"></div></div></section>
+
 <section id="versus"><h2>Team vs team</h2><div class="card"><div style="display:flex;gap:8px;margin-bottom:10px"><select id="vs-a" class="sel" style="flex:1;min-width:0" aria-label="First team"></select><select id="vs-b" class="sel" style="flex:1;min-width:0" aria-label="Second team"></select></div><div id="vs-out"></div></div></section>
 
 <section id="help"><h2>How it works</h2>
@@ -2835,7 +2861,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'settings', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', report: 'league', versus: 'league', news: 'news', help: 'help' };
+const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'settings', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', matchups: 'league', report: 'league', versus: 'league', allmoves: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');
@@ -2848,20 +2874,54 @@ html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', best
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null, oddsOf(p)];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
+// Swaps of one player each that make both lineups better, for two teams: [a's player, b's player, a's gain, b's gain], best first
+function mutualSwaps(ra, rb, value, score, min = 0.5) {
+  const pick = r => r.filter(p => !['K', 'D/ST'].includes(p.pos) && value(p) > 0).sort((p, q) => value(q) - value(p)).slice(0, 10);
+  const baseA = score(ra), baseB = score(rb), out = [];
+  for (const x of pick(ra)) for (const y of pick(rb)) {
+    const ga = score(ra.map(p => p === x ? y : p)) - baseA, gb = score(rb.map(p => p === y ? x : p)) - baseB;
+    if (ga >= min && gb >= min) out.push([x, y, ga, gb]);
+  }
+  return out.sort((a, b) => Math.min(b[2], b[3]) - Math.min(a[2], a[3]));
+}
+const teamMoves = new Map(teams.map(t => [t.id, { start: [], add: [], trade: [] }]));
+try {
+  const seasonScore = r => score(r, seasonValue);
+  for (const t of teams) {
+    const m = teamMoves.get(t.id), line = bestLineup(t.roster, seasonValue).lineup.map(x => x.player);
+    // this week: the best lineup against who's in
+    const wk = bestLineup(t.roster, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0)).lineup.map(x => x.player);
+    const inn = wk.filter(p => !isStarter(p)).sort((a, b) => weekValue(b) - weekValue(a)), out = t.roster.filter(p => isStarter(p) && !wk.includes(p)).sort((a, b) => weekValue(a) - weekValue(b));
+    m.start = inn.map((p, i) => out[i] && weekValue(p) - weekValue(out[i]) >= 0.5 ? [p.id, out[i].id, +(weekValue(p) - weekValue(out[i])).toFixed(1)] : null).filter(Boolean);
+    // waivers: the free player who adds most, for whoever's least useful on the bench
+    const spare = t.roster.filter(p => !line.includes(p) && p.slot !== 'IR').sort((a, b) => seasonValue(a) - seasonValue(b))[0];
+    if (spare) {
+      const base = seasonScore(t.roster);
+      m.add = faList.filter(c => playable(c)).map(c => [c, seasonScore(t.roster.map(p => p === spare ? c : p)) - base]).filter(x => x[1] >= 0.3).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c, g]) => [c.id, spare.id, +g.toFixed(1), c.wa ? 1 : 0]);
+    }
+  }
+  if (tradesOpen) for (let i = 0; i < teams.length; i++) for (let j = i + 1; j < teams.length; j++) {
+    const best = mutualSwaps(teams[i].roster, teams[j].roster, seasonValue, seasonScore)[0];
+    if (!best) continue;
+    teamMoves.get(teams[i].id).trade.push([best[0].id, best[1].id, teams[j].name, +best[2].toFixed(1), +best[3].toFixed(1)]);
+    teamMoves.get(teams[j].id).trade.push([best[1].id, best[0].id, teams[i].name, +best[3].toFixed(1), +best[2].toFixed(1)]);
+  }
+  for (const m of teamMoves.values()) m.trade = m.trade.sort((a, b) => Math.min(b[3], b[4]) - Math.min(a[3], a[4])).slice(0, 3);
+} catch (err) { console.warn('Team moves skipped:', err.message); }
 // Team vs team: rest-of-season numbers from the same simulated seasons as the playoff chance
 const oppLeft = new Map(teams.map(t => [t.id, []]));
 left.forEach((g, gi) => { oppLeft.get(g.home.teamId)?.push(sideMean[gi][1][0]); oppLeft.get(g.away.teamId)?.push(sideMean[gi][0][0]); });
 const oppAvg = id => { const l = oppLeft.get(id); return l.length ? l.reduce((a, b) => a + b, 0) / l.length : 0; };
 const sosRank = new Map([...teams].sort((a, b) => oppAvg(a.id) - oppAvg(b.id)).map((t, i) => [t.id, i + 1]));
 const vsData = t => {
-  const r = report.get(t.id), [made, wins] = simBase.byTeam.get(t.id), l = lineups.get(t), sc = r?.scores ?? [], left_ = oppLeft.get(t.id).length;
+  const r = report.get(t.id), [made, wins, byes] = simBase.byTeam.get(t.id), l = lineups.get(t), sc = r?.scores ?? [], left_ = oppLeft.get(t.id).length;
   const avg = sc.reduce((a, x) => a + x[1], 0) / (sc.length || 1), hi = [...sc].sort((a, b) => b[1] - a[1])[0], lo = [...sc].sort((a, b) => a[1] - b[1])[0];
   const w = wins / SIMS;
-  return { pct: Math.round(made / SIMS * 100), w: +w.toFixed(1), l: +(t.w + t.l + t.ties + left_ - w).toFixed(1), left: +(w - t.w - t.ties / 2).toFixed(1), sos: sosRank.get(t.id), ppg: +l.reduce((s, x) => s + rate(x.player), 0).toFixed(1),
+  return { pct: Math.round(made / SIMS * 100), bye: playoffTeams > 1 && 2 ** Math.ceil(Math.log2(playoffTeams)) > playoffTeams ? Math.round(byes / SIMS * 100) : null, w: +w.toFixed(1), l: +(t.w + t.l + t.ties + left_ - w).toFixed(1), left: +(w - t.w - t.ties / 2).toFixed(1), sos: sosRank.get(t.id), ppg: +l.reduce((s, x) => s + rate(x.player), 0).toFixed(1),
     sd: sc.length ? +Math.sqrt(sc.reduce((a, x) => a + (x[1] - avg) ** 2, 0) / sc.length).toFixed(1) : null, hi: hi ?? null, lo: lo ?? null, ap: r?.weeks ? [r.apW, r.apL] : null, start: l.map(x => [x.slot, x.player.id]) };
 };
 const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
-  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better, trades: r.trades ?? [], draft: r.draft ?? null, wire: r.wire ?? null, ap: [r.apW, r.apL], hi: [...r.scores].sort((a, b) => b[1] - a[1])[0], lo: [...r.scores].sort((a, b) => a[1] - b[1])[0] } : null)(report.get(t.id)), vs: vsData(t), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
+  teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better, trades: r.trades ?? [], draft: r.draft ?? null, wire: r.wire ?? null, ap: [r.apW, r.apL], hi: [...r.scores].sort((a, b) => b[1] - a[1])[0], lo: [...r.scores].sort((a, b) => a[1] - b[1])[0] } : null)(report.get(t.id)), vs: vsData(t), moves: teamMoves.get(t.id), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     start: teamRows.get(t).filter(r => r[0]).map(r => r[1]), bench: teamRows.get(t).filter(r => !r[0]).map(r => r[1]) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
 html = html.replace('__RDATA__', () => JSON.stringify(rdata).replace(/</g, '\\u003c'));

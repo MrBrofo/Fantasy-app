@@ -431,6 +431,20 @@ console.log('ok');
   const r = review([pk(3, 2, 8), pk(1, 1, 7), pk(2, 3, 8), pk(40, 4, 9), pk(5, 99, 9)], info, 16);
   assert.deepEqual(r.map(x => [x.name, x.as, x.now, x.diff, x.passed]), [['A', 1, 3, -2, 'B'], ['C', 1, 1, 0, null], ['B', 2, 1, 1, null], ['D', 3, 2, 1, null]]);
   console.log('draft review ok'); }
+// a player traded then dropped comes from the offer; an offer with someone who never left doesn't count
+{ const fill = new Function(cut('function fillFromOffers(', '\n}') + ';return fillFromOffers;')();
+  const tr = (p, a, b) => ({ type: 'TRADE', playerId: p, fromTeamId: a, toTeamId: b });
+  const d = fill([{ scoringPeriodId: 8, items: [tr(1, 3, 4), tr(2, 4, 3)] }], [{ scoringPeriodId: 8, proposedDate: 5, items: [tr(1, 3, 4), tr(2, 4, 3), tr(9, 3, 4)] }, { scoringPeriodId: 8, proposedDate: 6, items: [tr(1, 3, 4), tr(7, 3, 4)] }, { scoringPeriodId: 2, proposedDate: 7, items: [tr(1, 3, 4), tr(8, 3, 4)] }], { 9: { 7: 3 }, 7: { 7: 3, 8: 3 }, 8: { 7: 3 } });
+  assert.deepEqual([d[0].items.map(i => i.playerId), d[0].date], [[1, 2, 9], 5]);
+  console.log('trade offers ok'); }
+// swaps only count when both lineups get better
+{ const swaps = new Function(cut('function mutualSwaps(', '\n}') + ';return mutualSwaps;')();
+  const P = (pos, v) => ({ pos, v }), val = p => p.v, score = r => ['RB', 'WR'].reduce((s, pos) => s + Math.max(...r.filter(p => p.pos === pos).map(val)), 0);
+  const a = [P('RB', 20), P('RB', 15), P('WR', 5)], b = [P('WR', 18), P('WR', 12), P('RB', 6)];
+  const r = swaps(a, b, val, score);
+  assert.deepEqual([r[0][0].v, r[0][1].v, r[0][2], r[0][3]], [20, 18, 8, 8]);
+  assert.equal(swaps([P('RB', 20), P('WR', 18)], [P('RB', 5), P('WR', 4)], val, score).length, 0);
+  console.log('team moves ok'); }
 // stoppages aren't plays; real plays stay
 { const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + ';return gcStop;')();
   for (const t of ['Official Timeout', 'Timeout', 'Two-minute warning', 'End Period', 'End of Half', 'End of Game']) assert.equal(stop(t), true, t);
