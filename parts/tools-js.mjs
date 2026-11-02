@@ -45,7 +45,7 @@ function wireCard(w) {
     const list = () => R.teams.flatMap(t => (t.rep?.wire?.moves ?? []).flatMap(m => [...m[1].map(a => [m[0], t.name, t.mgr, 'add', a[0]]), ...m[2].map(d => [m[0], t.name, t.mgr, 'drop', d[0]])])).sort((a, b) => b[0] - a[0]);
     const draw = () => {
       const s = q.value.trim().toLowerCase(), hits = list().filter(m => (!kind.value || m[3] === kind.value) && (!s || (m[1] + ' ' + m[2] + ' ' + m[4]).toLowerCase().includes(s)));
-      out.innerHTML = '<p class="why" style="margin:0 0 6px">' + hits.length + ' moves</p>' + hits.slice(0, 50).map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + '</b> ' + e(m[1]) + ' ' + (m[3] === 'add' ? '<span style="color:var(--good)">added</span> ' : '<span style="color:var(--bad)">dropped</span> ') + e(m[4]) + '</p>').join('');
+      out.innerHTML = '<p class="why" style="margin:0 0 6px">' + hits.length + (hits.length === 1 ? ' move' : ' moves') + '</p>' + hits.slice(0, 50).map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + '</b> ' + e(m[1]) + ' ' + (m[3] === 'add' ? '<span style="color:var(--good)">added</span> ' : '<span style="color:var(--bad)">dropped</span> ') + e(m[4]) + '</p>').join('');
     };
     q.oninput = draw; kind.onchange = draw; draw();
     (window.leagueDraw ??= []).push(draw);
@@ -112,7 +112,7 @@ const REPORT_WORDS = [
 ];
 function movesCard(m) {
   if (!m || !(m.start.length + m.add.length + m.trade.length)) return '';
-  const nm = id => { const a = R.pl[id]; return '<b data-pid="' + id + '" style="cursor:pointer">' + e(a ? a[0] : 'Unknown') + '</b>'; };
+  const nm = id => { const a = R.pl[id]; return P[id] ? '<b data-pid="' + id + '" style="cursor:pointer;text-decoration:underline dotted">' + e(a ? a[0] : 'Unknown') + '</b>' : '<b>' + e(a ? a[0] : 'Unknown') + '</b>'; };
   const row = s => '<p class="why" style="margin:0 0 6px">' + s + '</p>';
   return '<details class="fold" style="margin-top:12px"><summary class="group">Moves to make</summary>' +
     (m.start.length ? '<div class="group">This week</div>' + m.start.map(x => row('Start ' + nm(x[0]) + ' over ' + nm(x[1]) + ': +' + x[2].toFixed(1))).join('') : '') +
