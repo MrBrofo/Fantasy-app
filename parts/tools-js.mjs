@@ -549,7 +549,7 @@ addEventListener('resize', placeBlobs); placeBlobs();
 document.addEventListener('pointerdown', ev => {
   const bar = ev.target.closest('nav,.seg'), blob = bar?.querySelector(':scope > .blob');
   if (!blob || blob.hidden || !document.documentElement.classList.contains('glass') || (bar === tabBar && sidebar.matches)) return;
-  const btns = [...bar.children].filter(x => x !== blob && x.matches('a,button'));
+  const btns = [...bar.children].filter(x => x !== blob && x.matches('a,button') && x.offsetWidth); // the tab bar also holds hidden links
   if (!btns.length) return;
   const x0 = ev.clientX, left = bar.getBoundingClientRect().left, w = (bar.querySelector(':scope > .on') ?? btns[0]).offsetWidth, y = btns[0].offsetTop; // the tab's width: the bubble's own may be mid-animation
   const lo = btns[0].offsetLeft, hi = btns.at(-1).offsetLeft + btns.at(-1).offsetWidth - w;
