@@ -411,6 +411,13 @@ console.log('ok');
   const r = box({ rosterForMatchupPeriod: { entries: [e(1, 5, 2), e(2, 20, 20), e(3, 40, 21)] } });
   assert.deepEqual([r.got, r.best, r.misses[0][0].name, r.misses[0][1].name], [5, 20, 'P2', 'P1']);
   console.log('report card ok'); }
+// trades: each team gets its own side; under 1 point a game apart is even
+{ const sides = new Function(cut('function tradeSides(tx) {', '\n}') + ';return tradeSides;')();
+  const res = new Function(cut('const tradeResult = ', "'lost';") + ';return tradeResult;')();
+  const [a, b] = sides({ items: [{ type: 'TRADE', playerId: 1, fromTeamId: 7, toTeamId: 8 }, { type: 'TRADE', playerId: 2, fromTeamId: 8, toTeamId: 7 }, { type: 'DROP', playerId: 3, fromTeamId: 7 }] });
+  assert.deepEqual([a.team, a.got, a.gave, a.others, b.team, b.got, b.gave], [8, [1], [2], [7], 7, [2], [1]]);
+  assert.deepEqual([res(12, 5), res(5, 12), res(5, 5.5)], ['won', 'lost', 'even']);
+  console.log('trades ok'); }
 // stoppages aren't plays; real plays stay
 { const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + ';return gcStop;')();
   for (const t of ['Official Timeout', 'Timeout', 'Two-minute warning', 'End Period', 'End of Half', 'End of Game']) assert.equal(stop(t), true, t);

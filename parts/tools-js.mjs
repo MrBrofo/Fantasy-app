@@ -21,11 +21,14 @@ function teamPage(tid) {
 function reportCard(r) {
   if (!r) return '';
   const nth = n => n + (['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th');
+  const count = res => r.trades.filter(x => x.res === res).length;
+  const dealtList = l => l.map(p => e(p[0]) + ' (' + p[1].toFixed(1) + ' a game, ' + p[2].toFixed(1) + ' since)').join(', ') || 'Nobody';
   return '<div class="group">Report card</div><div class="stat"><div><b>' + r.eff.toFixed(1) + '%</b><small>lineups, ' + nth(r.effRank) + '</small></div><div><b>' + r.pf.toFixed(1) + ' / ' + r.max.toFixed(1) + '</b><small>points / best possible, ' + nth(r.pfRank) + ' in points</small></div>' +
     '<div><b>' + r.bench.toFixed(1) + '</b><small>left on bench a week</small></div><div><b>' + r.add.toFixed(1) + '</b><small>points from pickups and trades, ' + nth(r.addRank) + '</small></div>' +
     '<div><b>' + (r.luck >= 0 ? '+' : '') + r.luck.toFixed(1) + '</b><small>wins from luck</small></div></div>' +
     (r.better.length ? '<div class="group">Could do better</div>' + r.better.map(x => '<p class="why" style="margin:0 0 4px">' + e(x) + '</p>').join('') : '') +
-    (r.miss.length ? '<div class="group">Biggest lineup misses</div>' + r.miss.map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + ':</b> ' + e(m[3]) + ' (' + m[4].toFixed(1) + ') over ' + e(m[1]) + ' (' + m[2].toFixed(1) + ')</p>').join('') : '');
+    (r.miss.length ? '<div class="group">Biggest lineup misses</div>' + r.miss.map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + ':</b> ' + e(m[3]) + ' (' + m[4].toFixed(1) + ') over ' + e(m[1]) + ' (' + m[2].toFixed(1) + ')</p>').join('') : '') +
+    (r.trades.length ? '<div class="group">Trades (' + count('won') + '-' + count('lost') + (count('even') ? '-' + count('even') : '') + ')</div>' + r.trades.map(x => '<div class="card"><div class="vhead"><b>Wk ' + x.wk + ' with ' + e(x.vs) + '</b><span class="verdict-' + ({ won: 'good', lost: 'bad', even: 'meh' })[x.res] + '">' + ({ won: 'Won', lost: 'Lost', even: 'Even' })[x.res] + '</span></div><p class="why" style="margin:0 0 4px"><b>Got:</b> ' + dealtList(x.got) + '</p><p class="why" style="margin:0"><b>Gave:</b> ' + dealtList(x.gave) + '</p></div>').join('') : '');
 }
 function openTeam(tid) {
   const html = teamPage(tid);
