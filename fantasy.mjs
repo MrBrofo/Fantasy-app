@@ -1366,10 +1366,10 @@ function boxLineup(side, wk) {
   }).filter(Boolean);
   return { ps, started, got, best, misses };
 }
-// Finished trades from ESPN's league activity feed, one per topic. The week is ESPN's own: the latest one any transaction had reached by then. Newest first.
+// Finished trades from ESPN's league activity feed, one per topic. The week is ESPN's own: the latest any pickup had reached by then (lineup moves can be set for future weeks). Newest first.
 function feedTrades(topics, txs) {
   const when = tx => tx.processDate ?? tx.proposedDate ?? Infinity;
-  return topics.map(tp => ({ date: tp.date, scoringPeriodId: Math.max(1, ...txs.filter(tx => when(tx) <= tp.date).map(tx => tx.scoringPeriodId ?? 1)),
+  return topics.map(tp => ({ date: tp.date, scoringPeriodId: Math.max(1, ...txs.filter(tx => ['WAIVER', 'FREEAGENT'].includes(tx.type) && when(tx) <= tp.date).map(tx => tx.scoringPeriodId ?? 1)),
     items: (tp.messages ?? []).filter(m => m.messageTypeId === 244).map(m => ({ type: 'TRADE', playerId: m.targetId, fromTeamId: m.from, toTeamId: m.to })) }))
     .filter(d => d.items.length).sort((a, b) => b.date - a.date);
 }
@@ -2602,7 +2602,7 @@ ${[...othersPending.values(), ...[...intel.values()].sort((a, b) => b.proposedDa
   return `<tr><td class="num" style="text-align:left">${date}</td><td><b>${esc(teamName[tx.teamId] ?? '')}</b> offered ${gave} to ${esc(teamName[other] ?? '')} for ${got} ${cmpChip(byId.get(tx.items.find(i => i.fromTeamId === tx.teamId)?.playerId), byId.get(tx.items.find(i => i.toTeamId === tx.teamId)?.playerId))} <span class="tag">(${tx.type === 'TRADE_ACCEPT' && tx.status === 'PENDING' ? `accepted, in league review until ${new Date(tx.processDate).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' })} Pacific; the league can still veto it` : tx.status === 'PENDING' ? 'waiting for an answer' : tx.status.toLowerCase().replace(/_/g, ' ')})</span></td></tr>`;
 }).join('')}</table></details></div>` : ''}
 <div class="card"><details><summary>Recent moves around the league</summary><table>
-${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>${esc(teamName[m.team] ?? '')}</td><td>${m.type === 'ADD' ? '<b style="color:var(--good)">added</b>' : m.type === 'DROP' ? '<span style="color:var(--bad)">dropped</span>' : `traded with ${esc(teamName[m.from])}`} ${esc(names[m.playerId] ?? '')}</td></tr>`).join('')}</table></details></div>
+${moves.slice(0, 60).map(m => `<tr><td class="num" style="text-align:left">${new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>${esc(teamName[m.team] ?? '')}</td><td>${m.type === 'ADD' ? '<b style="color:var(--good)">added</b>' : m.type === 'DROP' ? '<span style="color:var(--bad)">dropped</span>' : `traded with ${esc(teamName[m.from])}`} ${esc(names[m.playerId] ?? '')}</td></tr>`).join('')}</table></details></div>
 </section>
 
 ${report.size ? `<section id="report"><h2>Report card</h2>

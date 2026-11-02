@@ -428,7 +428,7 @@ console.log('ok');
 // trades come whole from the feed, in ESPN's week, newest first; other messages aren't trades
 { const feed = new Function(cut('function feedTrades(', '\n}') + ';return feedTrades;')();
   const m = (p, a, b) => ({ messageTypeId: 244, targetId: p, from: a, to: b });
-  const d = feed([{ date: 50, messages: [m(1, 3, 4)] }, { date: 90, messages: [m(2, 4, 3), m(-16018, 3, 4), { messageTypeId: 178, targetId: 9 }] }, { date: 60, messages: [] }], [{ scoringPeriodId: 7, processDate: 40 }, { scoringPeriodId: 8, proposedDate: 80 }, { scoringPeriodId: 9, processDate: 95 }]);
+  const d = feed([{ date: 50, messages: [m(1, 3, 4)] }, { date: 90, messages: [m(2, 4, 3), m(-16018, 3, 4), { messageTypeId: 178, targetId: 9 }] }, { date: 60, messages: [] }], [{ type: 'WAIVER', scoringPeriodId: 7, processDate: 40 }, { type: 'FREEAGENT', scoringPeriodId: 8, proposedDate: 80 }, { type: 'WAIVER', scoringPeriodId: 9, processDate: 95 }, { type: 'ROSTER', scoringPeriodId: 15, processDate: 10 }]);
   assert.deepEqual(d.map(x => [x.scoringPeriodId, x.items.map(i => i.playerId)]), [[8, [2, -16018]], [7, [1]]]);
   console.log('trade feed ok'); }
 // swaps only count when both lineups get better
