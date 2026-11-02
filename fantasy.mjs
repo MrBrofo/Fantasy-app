@@ -1410,6 +1410,7 @@ if (week > 1) try {
   // every finished trade this season, from the rosters: ESPN's transaction list leaves out accepted proposals, and its acceptances carry no players
   const txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
   for (const x of teams) for (const p of x.roster) (wkOwner[p.id] ??= {})[week] = x.id;
+  for (const x of draft.draftDetail?.picks ?? []) (wkOwner[x.playerId] ??= {})[0] = x.teamId; // week 0: draft day, for trades before week 1
   const adds = new Set(txs.filter(tx => tx.status === 'EXECUTED' && ['WAIVER', 'FREEAGENT'].includes(tx.type)).flatMap(tx => (tx.items ?? []).filter(i => i.type === 'ADD').map(i => i.playerId + ':' + i.toTeamId + ':' + tx.scoringPeriodId)));
   const deals = rosterTrades(wkOwner, adds);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
