@@ -1366,6 +1366,19 @@ function boxLineup(side, wk) {
   }).filter(Boolean);
   return { ps, started, got, best, misses };
 }
+// Trades from who owned whom each week: a player on one team one week and another the next, who wasn't added off waivers or free agency, was
+// traded. Moves between the same two teams in the same week are one deal. Newest first.
+function rosterTrades(owners, adds) {
+  const deals = new Map();
+  for (const [id, byWk] of Object.entries(owners)) for (const [w, from] of Object.entries(byWk)) {
+    const next = +w + 1, to = byWk[next];
+    if (to == null || to === from || adds.has(id + ':' + to + ':' + w) || adds.has(id + ':' + to + ':' + next)) continue;
+    const k = next + ':' + Math.min(from, to) + ':' + Math.max(from, to);
+    if (!deals.has(k)) deals.set(k, { scoringPeriodId: next, items: [] });
+    deals.get(k).items.push({ type: 'TRADE', playerId: +id, fromTeamId: from, toTeamId: to });
+  }
+  return [...deals.values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
+}
 // One team's side of each team in a finished trade: who it got and who it gave up. Won on rest-of-season points a game; under 1 apart is even.
 function tradeSides(tx) {
   const items = tx.items.filter(i => i.type === 'TRADE'), ids = [...new Set(items.map(i => i.toTeamId))];
@@ -1394,27 +1407,21 @@ if (week > 1) try {
   });
   const list = [...report.values()].filter(r => r.weeks);
   try {
-  // every finished trade this season. ESPN's proposals keep a PENDING status for good and its acceptances carry no players, so a proposal
-  // counts as done when every player in it really turned up on his new team. A declined offer inside a bigger deal that went through isn't one.
+  // every finished trade this season, from the rosters: ESPN's transaction list leaves out accepted proposals, and its acceptances carry no players
   const txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
-  const joined = (it, wk) => teams.find(x => x.id === it.toTeamId)?.roster.some(p => p.id === it.playerId) || Object.entries(wkOwner[it.playerId] ?? {}).some(([w, id]) => +w > wk && id === it.toTeamId);
-  const dealKeys = tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId + '>' + i.toTeamId);
-  const done = [...new Map(txs.filter(tx => tx.type === 'TRADE_PROPOSAL' && tx.status !== 'CANCELED' && tx.items?.some(i => i.type === 'TRADE') && tx.items.filter(i => i.type === 'TRADE').every(i => joined(i, tx.scoringPeriodId)))
-    .sort((a, b) => a.scoringPeriodId - b.scoringPeriodId).map(tx => [dealKeys(tx).sort().join(), tx])).values()];
-  const props = txs.filter(tx => tx.type === 'TRADE_PROPOSAL' && tx.status !== 'CANCELED' && tx.items?.some(i => i.type === 'TRADE'));
-  const accepts = txs.filter(tx => tx.type === 'TRADE_ACCEPT');
-  globalThis.txDiag = { props: props.length, done: done.length, join: props.map(tx => tx.items.filter(i => i.type === 'TRADE').filter(i => joined(i, tx.scoringPeriodId)).length + '/' + tx.items.filter(i => i.type === 'TRADE').length).slice(0, 60).join(' '), prop: props.at(-1), accept: accepts.at(-1), teamIds: teams.map(x => x.id).slice(0, 4), rosterId: teams[0].roster[0]?.id, ownerSample: Object.entries(wkOwner).slice(0, 2) };
-  const deals = done.filter(tx => !done.some(o => o !== tx && dealKeys(tx).every(k => dealKeys(o).includes(k)))).sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
+  for (const x of teams) for (const p of x.roster) (wkOwner[p.id] ??= {})[week] = x.id;
+  const adds = new Set(txs.filter(tx => tx.status === 'EXECUTED' && ['WAIVER', 'FREEAGENT'].includes(tx.type)).flatMap(tx => (tx.items ?? []).filter(i => i.type === 'ADD').map(i => i.playerId + ':' + i.toTeamId + ':' + tx.scoringPeriodId)));
+  const deals = rosterTrades(wkOwner, adds);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
   if (unknown.length) for (const x of (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: unknown } } })).players) { names[x.player.id] = x.player.fullName; byId.set(x.player.id, { ...row(x.player, x.ratings), slot: 'FA' }); }
   // [name, rest-of-season points a game, points since the trade]
   const dealt = (id, wk) => { const p = byId.get(id); return [p?.name ?? names[id] ?? 'Unknown', +(p ? rate(p) : 0).toFixed(1), +Object.entries(wkPts[id] ?? {}).filter(([w]) => +w > wk).reduce((s, [, v]) => s + v, 0).toFixed(1)]; };
   for (const r of list) r.trades = [];
   for (const tx of deals) for (const s of tradeSides(tx)) {
-    const got = s.got.map(id => dealt(id, tx.scoringPeriodId)), gave = s.gave.map(id => dealt(id, tx.scoringPeriodId)), sum = l => l.reduce((x, p) => x + p[1], 0);
+    const got = s.got.map(id => dealt(id, tx.scoringPeriodId - 1)), gave = s.gave.map(id => dealt(id, tx.scoringPeriodId - 1)), sum = l => l.reduce((x, p) => x + p[1], 0);
     report.get(s.team)?.trades?.push({ wk: tx.scoringPeriodId, vs: s.others.map(id => teamName[id] ?? '').join(', '), got, gave, res: tradeResult(sum(got), sum(gave)) });
   }
-  } catch (err) { console.warn('Trades skipped:', err.message); (globalThis.txDiag ??= {}).err = err.message + ' | ' + err.stack?.split('\n')[1]; }
+  } catch (err) { console.warn('Trades skipped:', err.message); }
   const place = (key, dir) => [...list].sort((a, b) => dir * (a[key] - b[key])).forEach((r, i) => { r[key + 'Rank'] = i + 1; });
   for (const r of list) { r.eff = r.max ? r.pf / r.max * 100 : 0; r.bench = (r.max - r.pf) / r.weeks; r.luck = r.wins - r.allPlay; r.miss = r.miss.sort((a, b) => (b[2] - b[4]) - (a[2] - a[4])).slice(0, 3); }
   place('eff', -1); place('bench', -1); place('add', -1); place('pf', -1);
@@ -2777,7 +2784,7 @@ html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', best
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null, oddsOf(p)];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
-const rdata = { txDiag: globalThis.txDiag, week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
+const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better, trades: r.trades ?? [] } : null)(report.get(t.id)), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     start: teamRows.get(t).filter(r => r[0]).map(r => r[1]), bench: teamRows.get(t).filter(r => !r[0]).map(r => r[1]) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };

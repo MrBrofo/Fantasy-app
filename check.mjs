@@ -411,6 +411,12 @@ console.log('ok');
   const r = box({ rosterForMatchupPeriod: { entries: [e(1, 5, 2), e(2, 20, 20), e(3, 40, 21)] } });
   assert.deepEqual([r.got, r.best, r.misses[0][0].name, r.misses[0][1].name], [5, 20, 'P2', 'P1']);
   console.log('report card ok'); }
+// trades from rosters: a swap is one deal, a waiver pickup isn't one, and neither is staying put
+{ const find = new Function(cut('function rosterTrades(owners, adds) {', '\n}') + ';return rosterTrades;')();
+  const d = find({ 1: { 7: 3, 8: 4 }, 2: { 7: 4, 8: 3 }, 5: { 7: 3, 8: 6 }, 6: { 7: 3, 8: 3 }, 9: { 5: 3, 8: 4 } }, new Set(['5:6:8']));
+  assert.equal(d.length, 1);
+  assert.deepEqual([d[0].scoringPeriodId, d[0].items.map(i => [i.playerId, i.fromTeamId, i.toTeamId])], [8, [[1, 3, 4], [2, 4, 3]]]);
+  console.log('roster trades ok'); }
 // trades: each team gets its own side; under 1 point a game apart is even
 { const sides = new Function(cut('function tradeSides(tx) {', '\n}') + ';return tradeSides;')();
   const res = new Function(cut('const tradeResult = ', "'lost';") + ';return tradeResult;')();
