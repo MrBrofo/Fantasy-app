@@ -1394,13 +1394,14 @@ if (week > 1) try {
   });
   const list = [...report.values()].filter(r => r.weeks);
   try {
-  // every finished trade this season, once. ESPN's acceptance has no players or status; they're on the proposal it points to, which
-  // stays PENDING for good. Vetoed deals have an acceptance too, so a deal counts once a player really shows up on his new team.
+  // every finished trade this season. ESPN's proposals keep a PENDING status for good and its acceptances carry no players, so a proposal
+  // counts as done when every player in it really turned up on his new team. A declined offer inside a bigger deal that went through isn't one.
   const txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
-  const txById = new Map(txs.map(tx => [tx.id, tx]));
   const joined = (it, wk) => teams.find(x => x.id === it.toTeamId)?.roster.some(p => p.id === it.playerId) || Object.entries(wkOwner[it.playerId] ?? {}).some(([w, id]) => +w > wk && id === it.toTeamId);
-  const deals = [...new Map(txs.filter(tx => tx.type === 'TRADE_ACCEPT').map(tx => [tx.relatedTransactionId, { items: txById.get(tx.relatedTransactionId)?.items ?? [], scoringPeriodId: tx.scoringPeriodId }])).values()]
-    .filter(d => d.items.some(i => i.type === 'TRADE' && joined(i, d.scoringPeriodId))).sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
+  const dealKeys = tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId + '>' + i.toTeamId);
+  const done = [...new Map(txs.filter(tx => tx.type === 'TRADE_PROPOSAL' && tx.status !== 'CANCELED' && tx.items?.some(i => i.type === 'TRADE') && tx.items.filter(i => i.type === 'TRADE').every(i => joined(i, tx.scoringPeriodId)))
+    .sort((a, b) => a.scoringPeriodId - b.scoringPeriodId).map(tx => [dealKeys(tx).sort().join(), tx])).values()];
+  const deals = done.filter(tx => !done.some(o => o !== tx && dealKeys(tx).every(k => dealKeys(o).includes(k)))).sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
   if (unknown.length) for (const x of (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: unknown } } })).players) { names[x.player.id] = x.player.fullName; byId.set(x.player.id, { ...row(x.player, x.ratings), slot: 'FA' }); }
   // [name, rest-of-season points a game, points since the trade]
