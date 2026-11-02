@@ -400,8 +400,7 @@ console.log('ok');
   console.log('game odds ok'); }
 
 // stoppages aren't plays; real plays stay
-{ const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + '
-return gcStop;')();
+{ const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + ';return gcStop;')();
   for (const t of ['Official Timeout', 'Timeout', 'Two-minute warning', 'End Period', 'End of Half', 'End of Game']) assert.equal(stop(t), true, t);
   for (const t of ['Rush', 'Pass Reception', 'Kickoff', 'Penalty', undefined]) assert.equal(stop(t), false, t);
   console.log('stoppages ok'); }
