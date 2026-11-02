@@ -399,6 +399,11 @@ console.log('ok');
   assert.equal(gameOdds(r.slice(0, 10), 10), null); assert.equal(gameOdds(r, 0), null);
   console.log('game odds ok'); }
 
+// play text's team codes become ESPN's, leaving names alone
+{ const abbr = new Function(cut('const GC_CODE = ', 'a + GC_CODE[c]);') + ';return gcAbbr;')();
+  assert.equal(abbr('INTERCEPTED by A.Mukuba at WAS 30. PENALTY on BLT-J.Smith, ball to LA 20'), 'INTERCEPTED by A.Mukuba at WSH 30. PENALTY on BAL-J.Smith, ball to LAR 20');
+  assert.equal(abbr('J.LA to WASH 5, LAST'), 'J.LA to WASH 5, LAST');
+  console.log('team codes ok'); }
 // stoppages aren't plays; real plays stay
 { const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + ';return gcStop;')();
   for (const t of ['Official Timeout', 'Timeout', 'Two-minute warning', 'End Period', 'End of Half', 'End of Game']) assert.equal(stop(t), true, t);

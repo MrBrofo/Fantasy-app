@@ -746,6 +746,8 @@ function gcG(p) {
   return (LASTWK instanceof Promise ? null : LASTWK?.[p.pro]) ?? g;
 }
 // ESPN's feed reports these as the last play, but nothing happened on the field
+// ESPN's play text uses the league's team codes in places, its own everywhere else
+const GC_CODE = { HST: 'HOU', BLT: 'BAL', CLV: 'CLE', WAS: 'WSH', ARZ: 'ARI', LA: 'LAR' }, gcAbbr = s => String(s ?? '').replace(/(^|[^A-Za-z.])(HST|BLT|CLV|WAS|ARZ|LA)(?![A-Za-z])/g, (m, a, c) => a + GC_CODE[c]);
 const gcStop = type => /timeout|two-minute|^end (of|period)|coin toss/i.test(type ?? ''), gcReal = {};
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
@@ -776,6 +778,7 @@ function drawGc() {
     if (gcTd && (gcTd.gid !== gid || gcTd.after !== F.last)) gcTd = null;
     if (gcTd?.F) F = { ...F, ...gcTd.F };
   }
+  F = { ...F, last: gcAbbr(F.last) };
   const [A, H] = F.teams, ids = [A[0], H[0]];
   // yards from the left goal line (the away team's), from "DAL 13" or "50"
   const at = s => { const m = /([A-Z]+)\\s+(\\d+)/.exec(s); return !m ? 50 : m[1] === A[1] ? +m[2] : 100 - +m[2]; };
