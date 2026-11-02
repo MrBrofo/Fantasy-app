@@ -1393,9 +1393,10 @@ if (week > 1) try {
     }
   });
   const list = [...report.values()].filter(r => r.weeks);
-  // every finished trade this season, one per deal however many weeks it shows up in
+  // every finished trade this season, once: ESPN files a deal under its proposal and its acceptance, in more than one week's list
   const txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
-  const deals = [...new Map(txs.filter(tx => tx.type === 'TRADE_ACCEPT' && tx.status === 'EXECUTED').map(tx => [tx.id, tx])).values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
+  const dealKey = tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId + '>' + i.toTeamId).sort().join();
+  const deals = [...new Map(txs.filter(tx => tx.type?.startsWith('TRADE') && tx.status === 'EXECUTED' && dealKey(tx)).sort((a, b) => b.scoringPeriodId - a.scoringPeriodId).map(tx => [dealKey(tx), tx])).values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.map(i => i.playerId)))].filter(id => !byId.has(id));
   if (unknown.length) for (const x of (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: unknown } } })).players) { names[x.player.id] = x.player.fullName; byId.set(x.player.id, { ...row(x.player, x.ratings), slot: 'FA' }); }
   // [name, rest-of-season points a game, points since the trade]
