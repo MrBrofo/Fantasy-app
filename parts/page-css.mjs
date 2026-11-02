@@ -405,6 +405,7 @@ body.home #todo{grid-column:1;margin-top:0}
 .big b{min-width:48px}
 .big small{white-space:nowrap}
 .big small:not(.tw){display:none}.big small.up{display:block}
+@media (max-width:1279px){.big{flex-direction:column;align-items:flex-end;gap:0}.big b{min-width:0}}
 /* lists that become grids of cards */
 .pool-list,#bench .list,#news .list,#buysell .list,#pickups details .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px;align-items:start}
 .pool-list .card{margin:0}.pool-empty{grid-column:1/-1}
