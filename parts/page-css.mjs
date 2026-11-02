@@ -347,4 +347,27 @@ html.glass .wp b,html.glass .big b[class^=t-],html.glass .tw,html.glass .stat b[
 html.glass .bar i{box-shadow:0 0 10px currentColor}html.glass .chip{box-shadow:0 0 14px -4px currentColor}
 html.glass .btn{box-shadow:0 0 22px rgba(10,132,255,.45)}html.glass .worder span.me{box-shadow:0 0 14px rgba(10,132,255,.5)}
 @media (prefers-reduced-transparency:reduce){html.glass :is(nav,.sheet-card){background:#1c1c1e;-webkit-backdrop-filter:none;backdrop-filter:none}}
+/* PC layout. The width is also in tools-js.mjs (sidebar). */
+@media (min-width:1000px){
+body{padding-left:200px}
+.wrap{max-width:1160px;padding-left:28px;padding-right:28px}
+nav,html.term nav,html.glass nav{left:0;top:0;bottom:0;width:200px;transform:none;flex-direction:column;gap:4px;padding:calc(env(safe-area-inset-top) + 20px) 12px 20px;border-radius:0;border-width:0 1px 0 0;box-shadow:none}
+nav a,html.term nav a{flex:none;flex-direction:row;gap:12px;padding:11px 14px;font-size:14px}
+html.term nav a{font-size:12px}
+nav .dot{left:26px;top:3px}
+header,body:not(.home) header{padding-bottom:16px}
+.match{margin-top:0}
+[role=main]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:28px;align-items:start}
+[role=main]>*{grid-column:1/-1}
+body.home [role=main]>*{grid-column:1}
+body.home #todo{grid-column:2;grid-row:1/span 9;margin-top:0}
+body.home #todo>h2:first-child{margin-top:0}
+#lineup,#bench,#compare,#check,#fleece,#buysell,#byes,#partners{grid-column:auto}
+#help,#look,#account{max-width:760px}
+.sheet-card,html.term .sheet-card,html.glass .sheet-card{left:auto;right:0;top:0;bottom:0;width:560px;max-width:100%;max-height:none;margin:0;border-radius:0;box-shadow:-10px 0 40px rgba(0,0,0,.3)}
+html.term .sheet-card{border-top:0;border-left:1px solid #ffffff59}
+html.glass .sheet-card{right:12px;top:12px;bottom:12px;border-radius:28px}
+.sheet-card{animation-name:sideIn}.sheet-card.closing{animation-name:sideOut}
+@keyframes sideIn{from{transform:translateX(100%)}}@keyframes sideOut{to{transform:translateX(100%)}}
+}
 `;

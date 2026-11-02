@@ -346,12 +346,12 @@ function setTab(tab, jump) {
 }
 // Hold the tab bar and slide your finger like on iPhone: the tab under it lights up, letting go opens it.
 // A plain tap works the same way (press and let go on one tab). Keyboard Enter still uses the click.
-const tabBar = document.querySelector('nav');
+const tabBar = document.querySelector('nav'), sidebar = matchMedia('(min-width:1000px)'); // same width as the PC layout in page-css.mjs
 let held = null;
 const press = a => { if (a === held) return; navLinks.forEach(l => l.classList.toggle('press', l === a)); if (held && a) navigator.vibrate?.(8); held = a; };
-const tabAt = x => navLinks.find(l => { const r = l.getBoundingClientRect(); return x >= r.left && x < r.right; });
+const tabAt = (x, y) => navLinks.find(l => { const r = l.getBoundingClientRect(); return sidebar.matches ? y >= r.top && y < r.bottom : x >= r.left && x < r.right; });
 tabBar.addEventListener('pointerdown', ev => { const a = ev.target.closest('nav a'); if (!a) return; tabBar.setPointerCapture(ev.pointerId); press(a); });
-tabBar.addEventListener('pointermove', ev => { if (held) press(tabAt(ev.clientX) || held); });
+tabBar.addEventListener('pointermove', ev => { if (held) press(tabAt(ev.clientX, ev.clientY) || held); });
 tabBar.addEventListener('pointerup', () => { const a = held; press(null); if (a) showTab(a.hash.slice(1), true); });
 tabBar.addEventListener('pointercancel', () => press(null));
 navLinks.forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); if (!ev.detail) showTab(a.hash.slice(1), true); }));
@@ -382,7 +382,7 @@ addEventListener('resize', placeBlobs); placeBlobs();
 // this presses the button. A plain tap is still a tap.
 document.addEventListener('pointerdown', ev => {
   const bar = ev.target.closest('nav,.seg'), blob = bar?.querySelector(':scope > .blob');
-  if (!blob || blob.hidden || !document.documentElement.classList.contains('glass')) return;
+  if (!blob || blob.hidden || !document.documentElement.classList.contains('glass') || (bar === tabBar && sidebar.matches)) return;
   const btns = [...bar.children].filter(x => x !== blob && x.matches('a,button'));
   if (!btns.length) return;
   const x0 = ev.clientX, left = bar.getBoundingClientRect().left, w = (bar.querySelector(':scope > .on') ?? btns[0]).offsetWidth, y = btns[0].offsetTop; // the tab's width: the bubble's own may be mid-animation
@@ -520,7 +520,7 @@ document.addEventListener('pointerdown', ev => {
     return v;
   };
   const bend = () => {
-    for (const el of [document.querySelector('nav'), ...document.querySelectorAll('.seg')]) {
+    for (const el of [...(sidebar.matches ? [] : [document.querySelector('nav')]), ...document.querySelectorAll('.seg')]) {
       const b = el?.getBoundingClientRect();
       if (!b?.width || b.bottom < 0 || b.top > innerHeight) continue;
       const x = Math.round(b.left * dpr), y = Math.round(b.top * dpr), w = Math.round(b.width * dpr), h = Math.round(b.height * dpr);
