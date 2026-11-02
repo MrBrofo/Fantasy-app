@@ -14,9 +14,64 @@ function teamPage(tid) {
   const { start, bench } = t; // rows built on the server, same as My team
   return '<div class="sh-top"><div><div class="sh-name">' + e(t.id === R.me ? 'You' : t.name) + '</div><div class="tag">' + t.rec + ' record</div></div></div>' +
     '<div class="stat"><div><b data-teamnow="' + t.id + '">' + (t.now == null ? '0.0' : t.now.toFixed(1)) + '</b><small>points so far this week</small></div><div><b>' + (t.proj == null ? '-' : t.proj.toFixed(1)) + '</b><small>expected final score</small></div></div>' +
+    (t.id !== R.me ? '<button type="button" class="btn" data-vsteam="' + t.id + '" style="margin-top:10px">Compare with you</button>' : '') +
     reportCard(t.rep) +
     '<div class="group">Starting</div><div class="list">' + start.join('') + '</div>' +
     (bench.length ? '<details class="fold" style="margin-top:12px"><summary class="group">Bench (' + bench.length + ')</summary><div class="list">' + bench.join('') + '</div></details>' : '');
+}
+const signed = x => (x > 0 ? '+' : '') + x;
+const pickLine = x => '<p class="why" style="margin:0 0 4px"><b>' + x[0] + '</b> ' + e(x[1]) + ': drafted ' + e(x[2]) + x[4] + ', now ' + e(x[2]) + x[5] + ' (' + x[3].toFixed(1) + ')' + (x[7] ? '. Passed on ' + e(x[7]) : '') + '</p>';
+function draftCard(d) {
+  if (!d) return '';
+  return '<div class="group">Draft</div><div class="stat"><div><b>' + d.hit + ' of ' + d.n + '</b><small>picks beat their spot' + (d.rank ? ', draft ranks ' + d.rank + ' of ' + R.teams.length : '') + '</small></div>' +
+    (d.adp == null ? '' : '<div><b>' + signed(d.adp) + '</b><small>picks vs ADP</small></div>') + '</div>' +
+    '<p class="why" style="margin:8px 0">' + d.pos.map(p => e(p[0]) + ' ' + signed(p[1])).join(' · ') + '</p>' +
+    (d.best.length ? '<div class="group">Best picks</div>' + d.best.map(pickLine).join('') : '') +
+    (d.worst.length ? '<div class="group">Worst picks</div>' + d.worst.map(pickLine).join('') : '') +
+    '<details class="fold" style="margin-top:8px"><summary class="group">Every pick (' + d.picks.length + ')</summary>' + d.picks.map(pickLine).join('') + '</details>';
+}
+function wireCard(w) {
+  if (!w) return '';
+  const adds = l => l.map(a => '+' + e(a[0]) + ' (' + a[1].toFixed(1) + (a[2] ? ', still here' : '') + ')').join(', ');
+  const drops = l => l.map(d => '-' + e(d[0]) + (d[2] ? ' (now ' + e(d[2]) + ')' : '')).join(', ');
+  return '<div class="group">Waivers</div><div class="stat"><div><b>' + w.adds + ' / ' + w.drops + '</b><small>added / dropped</small></div><div><b>' + w.kept + '</b><small>pickups still here</small></div></div>' +
+    (w.best.length ? '<div class="group">Best pickups</div>' + w.best.map(a => '<p class="why" style="margin:0 0 4px">' + e(a[0]) + ' (' + a[1].toFixed(1) + ')</p>').join('') : '') +
+    (w.regret.length ? '<div class="group">Drops that hurt</div>' + w.regret.map(d => '<p class="why" style="margin:0 0 4px">' + e(d[0]) + ' (' + d[1].toFixed(1) + ' since' + (d[2] ? ', now ' + e(d[2]) : '') + ')</p>').join('') : '') +
+    (w.moves.length ? '<details class="fold" style="margin-top:8px"><summary class="group">Every move (' + w.moves.length + ')</summary>' + w.moves.map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + ':</b> ' + [adds(m[1]), drops(m[2])].filter(Boolean).join(', ') + '</p>').join('') + '</details>' : '');
+}
+// Team vs team: the same numbers side by side, then each starting slot by rest-of-season points a game
+function versus(aId, bId) {
+  const a = R.teams.find(t => t.id === +aId), b = R.teams.find(t => t.id === +bId);
+  if (!a || !b) return '';
+  const x = a.vs, y = b.vs, one = v => v == null ? '-' : v;
+  const line = (label, l, r, lv, rv, more) => '<tr><td class="num" style="text-align:left' + (more != null && lv !== rv && (lv > rv) === more ? ';color:var(--good)' : '') + '">' + l + '</td><td style="text-align:center">' + label + '</td><td class="num"' + (more != null && lv !== rv && (rv > lv) === more ? ' style="color:var(--good)"' : '') + '>' + r + '</td></tr>';
+  const rows = [
+    line('Record', e(a.rec), e(b.rec)),
+    line('Playoff chance', x.pct + '%', y.pct + '%', x.pct, y.pct, true),
+    line('Projected record', x.w + '-' + x.l, y.w + '-' + y.l, x.w, y.w, true),
+    line('Wins left', x.left, y.left, x.left, y.left, true),
+    line('Schedule left', x.sos + ' of ' + R.teams.length, y.sos + ' of ' + R.teams.length, x.sos, y.sos, false),
+    line('Points a week', x.ppg, y.ppg, x.ppg, y.ppg, true),
+    x.ap && y.ap ? line('Against everyone', x.ap.join('-'), y.ap.join('-'), x.ap[0], y.ap[0], true) : '',
+    x.hi && y.hi ? line('Best week', x.hi[1].toFixed(1), y.hi[1].toFixed(1), x.hi[1], y.hi[1], true) : '',
+    x.lo && y.lo ? line('Worst week', x.lo[1].toFixed(1), y.lo[1].toFixed(1), x.lo[1], y.lo[1], true) : '',
+    x.sd != null && y.sd != null ? line('Swing week to week', '±' + x.sd, '±' + y.sd) : ''
+  ].join('');
+  const rest = y.start.slice();
+  const slots = x.start.map(s => { const i = rest.findIndex(o => o[0] === s[0]), o = i >= 0 ? rest.splice(i, 1)[0] : null, p = plOf(s[1]), q = o && plOf(o[1]); return [s[0], p, q]; }).concat(rest.map(o => [o[0], null, plOf(o[1])]));
+  const cell = (p, other, right) => { const win = p && (!other || p.rate > other.rate); return '<td' + (right ? ' style="text-align:right"' : '') + '>' + (p ? (win ? '<b style="color:var(--good)">' : '<b>') + e(p.name) + '</b> ' + p.rate.toFixed(1) : '-') + '</td>'; };
+  return '<table>' + rows + '</table><div class="group">Starters</div><table>' + slots.map(s => '<tr>' + cell(s[1], s[2]) + '<td style="text-align:center">' + e(s[0]) + '</td>' + cell(s[2], s[1], true) + '</tr>').join('') + '</table>';
+}
+{
+  const sa = document.getElementById('vs-a'), sb = document.getElementById('vs-b'), out = document.getElementById('vs-out');
+  if (sa) {
+    const opts = R.teams.map(t => '<option value="' + t.id + '">' + e(t.id === R.me ? 'You' : t.name) + '</option>').join('');
+    sa.innerHTML = opts; sb.innerHTML = opts;
+    const draw = () => { out.innerHTML = versus(sa.value, sb.value); };
+    sa.value = R.me; sb.value = R.teams.find(t => t.id !== R.me).id;
+    sa.onchange = draw; sb.onchange = draw; draw();
+    document.addEventListener('click', ev => { const b = ev.target.closest('[data-vsteam]'); if (!b) return; sa.value = R.me; sb.value = b.dataset.vsteam; draw(); closeSheet(); showTab('league', true); document.getElementById('versus').scrollIntoView(); });
+  }
 }
 function reportCard(r) {
   if (!r) return '';
@@ -25,9 +80,12 @@ function reportCard(r) {
   const dealtList = l => l.map(p => e(p[0]) + ' (' + p[1].toFixed(1) + ' a game, ' + p[2].toFixed(1) + ' since)').join(', ') || 'Nobody';
   return '<div class="group">Report card</div><div class="stat"><div><b>' + r.eff.toFixed(1) + '%</b><small>lineups, ' + nth(r.effRank) + '</small></div><div><b>' + r.pf.toFixed(1) + ' / ' + r.max.toFixed(1) + '</b><small>points / best possible, ' + nth(r.pfRank) + ' in points</small></div>' +
     '<div><b>' + r.bench.toFixed(1) + '</b><small>left on bench a week</small></div><div><b>' + r.add.toFixed(1) + '</b><small>points from pickups and trades, ' + nth(r.addRank) + '</small></div>' +
-    '<div><b>' + (r.luck >= 0 ? '+' : '') + r.luck.toFixed(1) + '</b><small>wins from luck</small></div></div>' +
+    '<div><b>' + (r.luck >= 0 ? '+' : '') + r.luck.toFixed(1) + '</b><small>wins from luck</small></div>' +
+    '<div><b>' + r.ap[0] + '-' + r.ap[1] + '</b><small>against every team, every week</small></div>' +
+    '<div><b>' + r.hi[1].toFixed(1) + ' / ' + r.lo[1].toFixed(1) + '</b><small>best (Wk ' + r.hi[0] + ') / worst (Wk ' + r.lo[0] + ')</small></div></div>' +
     (r.better.length ? '<div class="group">Could do better</div>' + r.better.map(x => '<p class="why" style="margin:0 0 4px">' + e(x) + '</p>').join('') : '') +
     (r.miss.length ? '<div class="group">Biggest lineup misses</div>' + r.miss.map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + ':</b> ' + e(m[3]) + ' (' + m[4].toFixed(1) + ') over ' + e(m[1]) + ' (' + m[2].toFixed(1) + ')</p>').join('') : '') +
+    draftCard(r.draft) + wireCard(r.wire) +
     (r.trades.length ? '<div class="group">Trades (' + count('won') + '-' + count('lost') + (count('even') ? '-' + count('even') : '') + ')</div>' + r.trades.map(x => '<div class="card"><div class="vhead"><b>Wk ' + x.wk + ' with ' + e(x.vs) + '</b><span class="verdict-' + ({ won: 'good', lost: 'bad', even: 'meh' })[x.res] + '">' + ({ won: 'Won', lost: 'Lost', even: 'Even' })[x.res] + '</span></div><p class="why" style="margin:0 0 4px"><b>Got:</b> ' + dealtList(x.got) + '</p><p class="why" style="margin:0"><b>Gave:</b> ' + dealtList(x.gave) + '</p></div>').join('') : '');
 }
 function openTeam(tid) {

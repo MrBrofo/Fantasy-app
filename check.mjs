@@ -424,6 +424,13 @@ console.log('ok');
   assert.deepEqual([a.team, a.got, a.gave, a.others, b.team, b.got, b.gave], [8, [1], [2], [7], 7, [2], [1]]);
   assert.deepEqual([res(12, 5), res(5, 12), res(5, 5.5)], ['won', 'lost', 'even']);
   console.log('trades ok'); }
+// draft review: judged within the position; a miss names who went soon after him
+{ const review = new Function(cut('function draftReview(', '\n}') + ';return draftReview;')();
+  const pk = (o, id, team) => ({ overallPickNumber: o, roundId: 1, roundPickNumber: o, playerId: id, teamId: team });
+  const info = new Map([[1, { name: 'A', pos: 'RB', pts: 10 }], [2, { name: 'B', pos: 'RB', pts: 90 }], [3, { name: 'C', pos: 'WR', pts: 50 }], [4, { name: 'D', pos: 'RB', pts: 50 }]]);
+  const r = review([pk(3, 2, 8), pk(1, 1, 7), pk(2, 3, 8), pk(40, 4, 9), pk(5, 99, 9)], info, 16);
+  assert.deepEqual(r.map(x => [x.name, x.as, x.now, x.diff, x.passed]), [['A', 1, 3, -2, 'B'], ['C', 1, 1, 0, null], ['B', 2, 1, 1, null], ['D', 3, 2, 1, null]]);
+  console.log('draft review ok'); }
 // stoppages aren't plays; real plays stay
 { const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + ';return gcStop;')();
   for (const t of ['Official Timeout', 'Timeout', 'Two-minute warning', 'End Period', 'End of Half', 'End of Game']) assert.equal(stop(t), true, t);
