@@ -1366,10 +1366,11 @@ function boxLineup(side, wk) {
   }).filter(Boolean);
   return { ps, started, got, best, misses };
 }
-// Finished trades from ESPN's league activity feed, one per topic. The week is ESPN's own: the latest any pickup had reached by then (lineup moves can be set for future weeks). Newest first.
-function feedTrades(topics, txs) {
-  const when = tx => tx.processDate ?? tx.proposedDate ?? Infinity;
-  return topics.map(tp => ({ date: tp.date, scoringPeriodId: Math.max(1, ...txs.filter(tx => ['WAIVER', 'FREEAGENT'].includes(tx.type) && when(tx) <= tp.date).map(tx => tx.scoringPeriodId ?? 1)),
+// Finished trades from ESPN's league activity feed, one per topic. Its week is the first whose last game hadn't kicked off yet, so it's the first
+// week the players could score for their new teams. Newest first.
+function feedTrades(topics, weekEnds) {
+  const weeks = Object.keys(weekEnds).map(Number).sort((a, b) => a - b);
+  return topics.map(tp => ({ date: tp.date, scoringPeriodId: weeks.find(w => weekEnds[w] > tp.date) ?? weeks.at(-1) ?? 1,
     items: (tp.messages ?? []).filter(m => m.messageTypeId === 244).map(m => ({ type: 'TRADE', playerId: m.targetId, fromTeamId: m.from, toTeamId: m.to })) }))
     .filter(d => d.items.length).sort((a, b) => b.date - a.date);
 }
@@ -1418,7 +1419,9 @@ if (week > 1) try {
   try {
   txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
   const topics = (await get(`${LEAGUE}/communication/?view=kona_league_communication`, { topics: { filterType: { value: ['ACTIVITY_TRANSACTIONS'] }, limit: 1000, limitPerMessageSet: { value: 25 }, offset: 0, sortMessageDate: { sortPriority: 1, sortAsc: false }, sortFor: { sortPriority: 2, sortAsc: false }, filterIncludeMessageTypeIds: { value: [244] } } })).topics ?? [];
-  const deals = feedTrades(topics, txs);
+  const weekEnds = {};
+  for (const x of pro) for (const [w, gs] of Object.entries(x.proGamesByScoringPeriod ?? {})) for (const g of gs) weekEnds[w] = Math.max(weekEnds[w] ?? 0, g.date);
+  const deals = feedTrades(topics, weekEnds);
   for (const d of deals) if (d.date && d.scoringPeriodId >= week - 2) for (const i of d.items) moves.push({ date: d.date, type: 'TRADE', playerId: i.playerId, team: i.toTeamId, from: i.fromTeamId });
   moves.sort((a, b) => b.date - a.date);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
@@ -1443,14 +1446,14 @@ if (week > 1) try {
     const holder = id => teams.find(x => x.roster.some(p => p.id === id));
     const scored = (id, test) => +Object.entries(wkPts[id] ?? {}).filter(([w]) => test(+w, wkOwner[id]?.[w])).reduce((s, [, v]) => s + v, 0).toFixed(1);
     for (const r of list) r.wire = { moves: [], adds: 0, drops: 0, kept: 0, best: [], regret: [] };
-    for (const tx of wireTx) {
-      const r = report.get(tx.teamId);
+    for (const tx of wireTx) for (const id of new Set(tx.items.flatMap(i => i.type === 'ADD' ? [i.toTeamId] : i.type === 'DROP' ? [i.fromTeamId] : []))) {
+      const r = report.get(id);
       if (!r?.wire) continue;
-      const wk = tx.scoringPeriodId, id = r.t.id;
+      const wk = tx.scoringPeriodId;
       // [name, points for this team, still here]
-      const add = tx.items.filter(i => i.type === 'ADD').map(i => [nameOf(i.playerId), scored(i.playerId, (w, o) => w >= wk && o === id), holder(i.playerId) === r.t ? 1 : 0]);
+      const add = tx.items.filter(i => i.type === 'ADD' && i.toTeamId === id).map(i => [nameOf(i.playerId), scored(i.playerId, (w, o) => w >= wk && o === id), holder(i.playerId) === r.t ? 1 : 0]);
       // [name, points since on other teams, team he's on now]
-      const drop = tx.items.filter(i => i.type === 'DROP').map(i => { const h = holder(i.playerId); return [nameOf(i.playerId), scored(i.playerId, (w, o) => w >= wk && o != null && o !== id), h && h !== r.t ? h.name : '']; });
+      const drop = tx.items.filter(i => i.type === 'DROP' && i.fromTeamId === id).map(i => { const h = holder(i.playerId); return [nameOf(i.playerId), scored(i.playerId, (w, o) => w >= wk && o != null && o !== id), h && h !== r.t ? h.name : '']; });
       r.wire.moves.push([wk, add, drop]);
       r.wire.adds += add.length; r.wire.drops += drop.length; r.wire.kept += add.filter(x => x[2]).length;
       r.wire.best.push(...add); r.wire.regret.push(...drop);
@@ -2849,15 +2852,22 @@ html = html.replace('__TOOLSJS__', () => TOOLS_JS.replace('__BESTLINEUP__', best
 html = html.replace('__MOVEJS__', () => MOVE_URL ? MOVE_JS.replace('__URL__', MOVE_URL) : '');
 const lite = p => [p.name, p.pos, p.teamName ?? '', +(p.proj ?? 0).toFixed(2), +rate(p).toFixed(2), playable(p) ? 1 : 0, locked(p) ? 1 : 0, p.slot, p.rank ?? 0, Math.round(p.ceiling ?? 0), +(p.avg ?? 0).toFixed(1), p.bye ?? 0, statusWords(p), p.team ?? '', nextProj.has(p.id) ? +nextProj.get(p.id).toFixed(2) : null, rosSaved.future.by[p.id] ?? null, oddsOf(p)];
 const faList = allFa.filter(p => rate(p) > 0 || (p.proj ?? 0) > 0).sort((a, b) => rate(b) - rate(a)).slice(0, 120);
-// Swaps of one player each that make both lineups better, for two teams: [a's player, b's player, a's gain, b's gain], best first
+// Trades that make both lineups better, for two teams: one for one, and two for one either way. [a gives, b gives, a's gain, b's gain], best first
 function mutualSwaps(ra, rb, value, score, min = 0.5) {
-  const pick = r => r.filter(p => !['K', 'D/ST'].includes(p.pos) && value(p) > 0).sort((p, q) => value(q) - value(p)).slice(0, 10);
-  const baseA = score(ra), baseB = score(rb), out = [];
-  for (const x of pick(ra)) for (const y of pick(rb)) {
-    const ga = score(ra.map(p => p === x ? y : p)) - baseA, gb = score(rb.map(p => p === y ? x : p)) - baseB;
-    if (ga >= min && gb >= min) out.push([x, y, ga, gb]);
+  const pick = r => r.filter(p => !['K', 'D/ST'].includes(p.pos) && value(p) > 0).sort((p, q) => value(q) - value(p));
+  const a = pick(ra), b = pick(rb), baseA = score(ra), baseB = score(rb), out = [];
+  const pairs = l => l.slice(0, 6).flatMap((x, i) => l.slice(i + 1, 6).map(y => [x, y]));
+  const offers = [...a.slice(0, 10).flatMap(x => b.slice(0, 10).map(y => [[x], [y]])), ...pairs(a).flatMap(g => b.slice(0, 6).map(y => [g, [y]])), ...pairs(b).flatMap(g => a.slice(0, 6).map(x => [[x], g]))];
+  for (const [ga, gb] of offers) {
+    const da = score([...ra.filter(p => !ga.includes(p)), ...gb]) - baseA, db = score([...rb.filter(p => !gb.includes(p)), ...ga]) - baseB;
+    if (da >= min && db >= min) out.push([ga, gb, da, db]);
   }
-  return out.sort((a, b) => Math.min(b[2], b[3]) - Math.min(a[2], a[3]));
+  return out.sort((x, y) => Math.min(y[2], y[3]) - Math.min(x[2], x[3]));
+}
+// This week: bench players in the best lineup against the starters they'd replace, biggest gain first. Pairs lowest starter with highest bench player.
+function startSwaps(roster, bestWeek, week, starter, min = 0.5) {
+  const inn = bestWeek.filter(p => !starter(p)).sort((a, b) => week(b) - week(a)), out = roster.filter(p => starter(p) && !bestWeek.includes(p)).sort((a, b) => week(a) - week(b));
+  return inn.map((p, i) => out[i] && week(p) - week(out[i]) >= min ? [p.id, out[i].id, +(week(p) - week(out[i])).toFixed(1)] : null).filter(Boolean);
 }
 const teamMoves = new Map(teams.map(t => [t.id, { start: [], add: [], trade: [] }]));
 try {
@@ -2866,20 +2876,24 @@ try {
     const m = teamMoves.get(t.id), line = bestLineup(t.roster, seasonValue).lineup.map(x => x.player);
     // this week: the best lineup against who's in
     const wk = bestLineup(t.roster, p => weekValue(p) + (locked(p) && isStarter(p) ? 1e3 : 0)).lineup.map(x => x.player);
-    const inn = wk.filter(p => !isStarter(p)).sort((a, b) => weekValue(b) - weekValue(a)), out = t.roster.filter(p => isStarter(p) && !wk.includes(p)).sort((a, b) => weekValue(a) - weekValue(b));
-    m.start = inn.map((p, i) => out[i] && weekValue(p) - weekValue(out[i]) >= 0.5 ? [p.id, out[i].id, +(weekValue(p) - weekValue(out[i])).toFixed(1)] : null).filter(Boolean);
+    m.start = startSwaps(t.roster, wk, weekValue, isStarter);
     // waivers: the free player who adds most, for whoever's least useful on the bench
     const spare = t.roster.filter(p => !line.includes(p) && p.slot !== 'IR').sort((a, b) => seasonValue(a) - seasonValue(b))[0];
     if (spare) {
       const base = seasonScore(t.roster);
-      m.add = faList.filter(c => playable(c)).map(c => [c, seasonScore(t.roster.map(p => p === spare ? c : p)) - base]).filter(x => x[1] >= 0.3).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c, g]) => [c.id, spare.id, +g.toFixed(1), c.wa ? 1 : 0]);
+      m.add = faList.filter(c => playable(c)).map(c => [c, seasonScore(t.roster.map(p => p === spare ? c : p)) - base]).filter(x => x[1] >= 0.3).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c, g]) => [c.id, spare.id, +g.toFixed(1), c.wa ? 1 : 0, 0]);
+      // room left: a clearly better backup than they have at his position
+      const taken = new Set(m.add.map(x => x[0])), benchBest = pos => Math.max(0, ...t.roster.filter(p => p.pos === pos && !line.includes(p) && p !== spare).map(seasonValue));
+      const backups = faList.filter(c => playable(c) && !taken.has(c.id) && ['QB', 'RB', 'WR', 'TE'].includes(c.pos) && seasonValue(c) - Math.max(benchBest(c.pos), seasonValue(spare)) >= 1).map(c => [c.id, spare.id, +(seasonValue(c) - Math.max(benchBest(c.pos), seasonValue(spare))).toFixed(1), c.wa ? 1 : 0, 1]).sort((a, b) => b[2] - a[2]);
+      const seen = new Set();
+      m.add.push(...backups.filter(x => { const pos = byId.get(x[0])?.pos; if (seen.has(pos)) return false; seen.add(pos); return true; }).slice(0, 3 - m.add.length));
     }
   }
   if (tradesOpen) for (let i = 0; i < teams.length; i++) for (let j = i + 1; j < teams.length; j++) {
     const best = mutualSwaps(teams[i].roster, teams[j].roster, seasonValue, seasonScore)[0];
     if (!best) continue;
-    teamMoves.get(teams[i].id).trade.push([best[0].id, best[1].id, teams[j].name, +best[2].toFixed(1), +best[3].toFixed(1)]);
-    teamMoves.get(teams[j].id).trade.push([best[1].id, best[0].id, teams[i].name, +best[3].toFixed(1), +best[2].toFixed(1)]);
+    teamMoves.get(teams[i].id).trade.push([best[0].map(p => p.id), best[1].map(p => p.id), teams[j].name, +best[2].toFixed(1), +best[3].toFixed(1)]);
+    teamMoves.get(teams[j].id).trade.push([best[1].map(p => p.id), best[0].map(p => p.id), teams[i].name, +best[3].toFixed(1), +best[2].toFixed(1)]);
   }
   for (const m of teamMoves.values()) m.trade = m.trade.sort((a, b) => Math.min(b[3], b[4]) - Math.min(a[3], a[4])).slice(0, 3);
 } catch (err) { console.warn('Team moves skipped:', err.message); }

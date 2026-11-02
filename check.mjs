@@ -425,19 +425,27 @@ console.log('ok');
   const r = review([pk(3, 2, 8), pk(1, 1, 7), pk(2, 3, 8), pk(40, 4, 9), pk(5, 99, 9)], info, 16);
   assert.deepEqual(r.map(x => [x.name, x.as, x.now, x.diff, x.passed]), [['A', 1, 3, -2, 'B'], ['C', 1, 1, 0, null], ['B', 2, 1, 1, null], ['D', 3, 2, 1, null]]);
   console.log('draft review ok'); }
-// trades come whole from the feed, in ESPN's week, newest first; other messages aren't trades
+// trades come whole from the feed, in the week after the last game before them, newest first; other messages aren't trades
 { const feed = new Function(cut('function feedTrades(', '\n}') + ';return feedTrades;')();
   const m = (p, a, b) => ({ messageTypeId: 244, targetId: p, from: a, to: b });
-  const d = feed([{ date: 50, messages: [m(1, 3, 4)] }, { date: 90, messages: [m(2, 4, 3), m(-16018, 3, 4), { messageTypeId: 178, targetId: 9 }] }, { date: 60, messages: [] }], [{ type: 'WAIVER', scoringPeriodId: 7, processDate: 40 }, { type: 'FREEAGENT', scoringPeriodId: 8, proposedDate: 80 }, { type: 'WAIVER', scoringPeriodId: 9, processDate: 95 }, { type: 'ROSTER', scoringPeriodId: 15, processDate: 10 }]);
-  assert.deepEqual(d.map(x => [x.scoringPeriodId, x.items.map(i => i.playerId)]), [[8, [2, -16018]], [7, [1]]]);
+  const d = feed([{ date: 50, messages: [m(1, 3, 4)] }, { date: 90, messages: [m(2, 4, 3), m(-16018, 3, 4), { messageTypeId: 178, targetId: 9 }] }, { date: 60, messages: [] }], { 7: 40, 8: 80, 9: 120 });
+  assert.deepEqual(d.map(x => [x.scoringPeriodId, x.items.map(i => i.playerId)]), [[9, [2, -16018]], [8, [1]]]);
   console.log('trade feed ok'); }
 // swaps only count when both lineups get better
 { const swaps = new Function(cut('function mutualSwaps(', '\n}') + ';return mutualSwaps;')();
-  const P = (pos, v) => ({ pos, v }), val = p => p.v, score = r => ['RB', 'WR'].reduce((s, pos) => s + Math.max(...r.filter(p => p.pos === pos).map(val)), 0);
+  const P = (pos, v) => ({ pos, v }), val = p => p.v, score = r => ['RB', 'WR'].reduce((s, pos) => s + Math.max(0, ...r.filter(p => p.pos === pos).map(val)), 0);
   const a = [P('RB', 20), P('RB', 15), P('WR', 5)], b = [P('WR', 18), P('WR', 12), P('RB', 6)];
   const r = swaps(a, b, val, score);
-  assert.deepEqual([r[0][0].v, r[0][1].v, r[0][2], r[0][3]], [20, 18, 8, 8]);
+  assert.deepEqual([r[0][0].map(val), r[0][1].map(val), r[0][2], r[0][3]], [[20], [18], 8, 8]);
   assert.equal(swaps([P('RB', 20), P('WR', 18)], [P('RB', 5), P('WR', 4)], val, score).length, 0);
+  // two for one, when no one for one helps both
+  const two = swaps([P('RB', 10), P('RB', 9), P('WR', 3)], [P('WR', 20), P('RB', 2)], val, s => ['RB', 'WR'].reduce((t, pos) => t + Math.max(0, ...s.filter(p => p.pos === pos).map(val)), 0));
+  assert(two.some(x => x[0].length === 2 || x[1].length === 2 || x[0].length === 1));
+  // this week: the bench player for the worst starter he'd replace, nothing under the minimum
+  const st = new Function(cut('function startSwaps(', '\n}') + ';return startSwaps;')();
+  const R = [{ id: 1, s: 1, w: 3 }, { id: 2, s: 1, w: 10 }, { id: 3, s: 0, w: 9 }, { id: 4, s: 0, w: 1 }];
+  assert.deepEqual(st(R, [R[1], R[2]], p => p.w, p => !!p.s), [[3, 1, 6]]);
+  assert.deepEqual(st(R, [R[0], R[1]], p => p.w, p => !!p.s), []);
   console.log('team moves ok'); }
 // stoppages aren't plays; real plays stay
 { const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + ';return gcStop;')();

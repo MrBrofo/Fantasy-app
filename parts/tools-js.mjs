@@ -114,8 +114,8 @@ function movesCard(m) {
   const row = s => '<p class="why" style="margin:0 0 6px">' + s + '</p>';
   return '<details class="fold" style="margin-top:12px"><summary class="group">Moves to make</summary>' +
     (m.start.length ? '<div class="group">This week</div>' + m.start.map(x => row('Start ' + nm(x[0]) + ' over ' + nm(x[1]) + ': +' + x[2].toFixed(1))).join('') : '') +
-    (m.add.length ? '<div class="group">Waivers</div>' + m.add.map(x => row('Add ' + nm(x[0]) + (x[3] ? ' (waivers)' : '') + ', drop ' + nm(x[1]) + ': +' + x[2].toFixed(1) + ' a week')).join('') : '') +
-    (m.trade.length ? '<div class="group">Trades</div>' + m.trade.map(x => row('Give ' + nm(x[0]) + ' to ' + e(x[2]) + ' for ' + nm(x[1]) + ': +' + x[3].toFixed(1) + ' a week, them +' + x[4].toFixed(1))).join('') : '') +
+    (m.add.length ? '<div class="group">Waivers</div>' + m.add.map(x => row('Add ' + nm(x[0]) + (x[3] ? ' (waivers)' : '') + ', drop ' + nm(x[1]) + (x[4] ? ': better backup, +' + x[2].toFixed(1) + ' a game' : ': +' + x[2].toFixed(1) + ' a week'))).join('') : '') +
+    (m.trade.length ? '<div class="group">Trades</div>' + m.trade.map(x => row('Give ' + x[0].map(nm).join(' and ') + ' to ' + e(x[2]) + ' for ' + x[1].map(nm).join(' and ') + ': +' + x[3].toFixed(1) + ' a week, them +' + x[4].toFixed(1))).join('') : '') +
     '</details>';
 }
 function reportCard(r) {
