@@ -2274,12 +2274,7 @@ ${todo.length ? (() => { const card = ([lvl, title, why, move, who = []]) => `<d
 <button type="button" id="askhist" class="linkbtn" hidden></button><div id="askhistout" hidden></div>
 <button type="button" id="askopen" class="linkbtn">Or open it in the Claude app</button></div></section>
 
-<section id="alerts" hidden><div class="card"><b>Phone alerts</b>
-
-<button type="button" id="alertbtn" class="btn">Turn on alerts</button>
-<div id="alertcode" hidden><p class="tag">Last step: copy this code, then in GitHub open your Fantasy-app repo &rsaquo; Settings &rsaquo; Secrets and variables &rsaquo; Actions &rsaquo; New repository secret. Name it <b>PUSH_SUB</b> and paste the code. You'll get an "Alerts are on" notification within a few minutes.</p>
-<textarea id="alerttext" aria-label="Alert setup code" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
-<button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section></div>
+</div>
 
 
 <section id="news"><h2>News</h2>
@@ -2400,10 +2395,7 @@ ${buyLow.length ? `<div class="group">Buy low: theirs, scoring below his role</d
   <p class="why">${esc(roleText(x.l))}. That role is worth about <b>${n(x.l.worth)}</b> a game, not ${n(x.l.got)}. Expect the points to come; his manager sees the low number. Pick ${esc(x.t.name)} in Fleece finder for your best offer.</p></div>`).join('')}</div>` : '<div class="card empty">Nobody on other teams is running way below his role right now.</div>'}
 </section>
 
-<section id="byes"><h2>Bye trouble</h2>
-${byeTrouble.length ? `<div class="list">${byeTrouble.map(x => `<div class="card"><div class="vhead"><b>${esc(x.t.name)}</b><span class="verdict-good">Wk ${x.w}: -${Math.round(x.lost)}</span></div>
-  <p class="why" style="margin:0">${esc(situation(x.t))}. Off: ${x.off.map(lnk).join(', ')}. Offer ${lnk(x.offer.p)}: +${n(x.offer.gain)} that week.</p></div>`).join('')}</div>` : '<div class="card"><p class="why" style="margin:0">Nobody right now.</p></div>'}
-</section>
+
 
 <section id="partners"><h2>Trade partners</h2>
 <div class="card"><div class="group" style="margin:0 0 6px">Your team</div>
@@ -2457,6 +2449,11 @@ ${ahead.map(g => `<tr><td class="num" style="text-align:left">Wk ${g.week}</td><
 </div>` : ''}
 </section>
 
+<section id="byes"><h2>Bye trouble</h2>
+${byeTrouble.length ? `<div class="list">${byeTrouble.map(x => `<div class="card"><div class="vhead"><b>${esc(x.t.name)}</b><span class="verdict-good">Wk ${x.w}: -${Math.round(x.lost)}</span></div>
+  <p class="why" style="margin:0">${esc(situation(x.t))}. Off: ${x.off.map(lnk).join(', ')}. Offer ${lnk(x.offer.p)}: +${n(x.offer.gain)} that week.</p></div>`).join('')}</div>` : '<div class="card"><p class="why" style="margin:0">Nobody right now.</p></div>'}
+</section>
+
 <section id="league"><h2>League</h2><p class="sub">Dashed line = playoff cutoff. Waiver # = who gets first pick of new players (1 goes first).</p>
 <div class="card"><table><tr><td class="num" style="text-align:left">#</td><td class="num" style="text-align:left">Team</td><td class="num">W-L</td><td class="num">Points</td><td class="num">Waiver #</td></tr>
 ${standings.map((t, i) => `<tr data-team="${t.id}" class="${t === me ? 'me' : ''} ${i + 1 === playoffTeams ? 'cut' : ''}"><td class="num" style="text-align:left">${i + 1}</td><td>${esc(t.name)}</td><td class="num">${t.w}-${t.l}</td><td class="num">${Math.round(t.pf)}</td><td class="num">${t.waiver}</td></tr>`).join('')}</table></div>
@@ -2504,6 +2501,12 @@ ${moves.slice(0, 30).map(m => `<tr><td class="num" style="text-align:left">${new
 <details class="fold"><summary class="group">More football words (not used on this site)</summary><dl id="dict2" style="padding-bottom:12px"></dl></details></section>
 
 <section id="look"><h2>Settings</h2><div class="card"><div class="group" style="margin:0 0 8px">Look</div><div class="seg" style="margin:0"><button type="button" data-look="term">Terminal</button><button type="button" data-look="classic">Classic</button><button type="button" data-look="glass">Glass</button></div></div></section>
+<section id="alerts" hidden><div class="card"><b>Phone alerts</b>
+
+<button type="button" id="alertbtn" class="btn">Turn on alerts</button>
+<div id="alertcode" hidden><p class="tag">Last step: copy this code, then in GitHub open your Fantasy-app repo &rsaquo; Settings &rsaquo; Secrets and variables &rsaquo; Actions &rsaquo; New repository secret. Name it <b>PUSH_SUB</b> and paste the code. You'll get an "Alerts are on" notification within a few minutes.</p>
+<textarea id="alerttext" aria-label="Alert setup code" readonly rows="4" style="width:100%;font:12px monospace"></textarea>
+<button type="button" id="alertcopy" class="btn">Copy code</button></div></div></section>
 ${process.env.SITE_PASSWORD ? '<section id="account"><button type="button" id="signout" class="btn" style="background:none;border:1px solid #8886;color:inherit;margin:8px 0 16px">Sign out</button></section>' : ''}
 </div>
 <div id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" aria-label="Player details"><button class="sheet-x" type="button" data-close aria-label="Close">&times;</button><div class="sheet-body"></div></div></div>
@@ -2695,7 +2698,7 @@ for (const [id, p] of shown) {
   if (p.pos === 'D/ST') pdata[id].sources = sources.replace(/he's a riskier/, 'they\'re a riskier').replace(/for him \(/, 'for them (');
   if (p.pos === 'D/ST') pdata[id].byeText = pdata[id].byeText.replace(/He plays/, 'They play').replace(/He won't/g, 'They won\'t').replace(/he won't/g, 'they won\'t');
 }
-const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'home', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'trades', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
+const TAB_OF = { look: 'settings', account: 'settings', changes: 'home', ask: 'home', alerts: 'settings', todo: 'home', lineup: 'team', bench: 'team', pickups: 'pickups', pending: 'pending', check: 'compare', fleece: 'trades', byes: 'season', buysell: 'trades', partners: 'trades', trades: 'trades', compare: 'compare', season: 'season', league: 'league', news: 'news', help: 'help' };
 html = html.replace(/<section id="([a-z]+)"/g, (m, id) => TAB_OF[id] ? `${m} data-tab="${TAB_OF[id]}"` : m);
 html = html.replace(/(<h2>[^<]*<\/h2>)<p class="sub">([\s\S]*?)<\/p>/g, (m, h, text) => {
   const cut = text.indexOf('. ');

@@ -413,14 +413,14 @@ body.home #todo{grid-column:1;margin-top:0}
 html.glass #bench .list .card,html.glass #news .list .card,html.glass #buysell .list .card,html.glass #pickups details .list .card{border-radius:26px}
 html.term #bench .list .card,html.term #news .list .card,html.term #buysell .list .card,html.term #pickups details .list .card{border-radius:0}
 /* Trades and Compare */
-#compare,#check,#byes,#partners{grid-column:auto}
+#compare,#check{grid-column:auto}
 /* long pages read in two columns */
 #season,#pickups{columns:2;column-gap:28px}
 #season>*,#pickups>*{break-inside:avoid}
 #season>h2,#pickups>h2,#pickups>h2+.sub{column-span:all}
 #help dl{columns:2;column-gap:28px}
 #help dd{break-before:avoid}
-#look,#account{max-width:760px}
+#look,#alerts,#account{max-width:760px}
 /* something answers when the mouse is on it */
 @media (hover:hover){
 nav a:hover:not(.on){background:rgba(255,255,255,.07);color:var(--fg)}
