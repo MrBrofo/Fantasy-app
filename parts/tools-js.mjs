@@ -42,12 +42,13 @@ function wireCard(w) {
 {
   const q = document.getElementById('wm-q'), kind = document.getElementById('wm-kind'), out = document.getElementById('wm-out');
   if (q) {
-    const all = R.teams.flatMap(t => (t.rep?.wire?.moves ?? []).flatMap(m => [...m[1].map(a => [m[0], t.name, t.mgr, 'add', a[0]]), ...m[2].map(d => [m[0], t.name, t.mgr, 'drop', d[0]])])).sort((a, b) => b[0] - a[0]);
+    const list = () => R.teams.flatMap(t => (t.rep?.wire?.moves ?? []).flatMap(m => [...m[1].map(a => [m[0], t.name, t.mgr, 'add', a[0]]), ...m[2].map(d => [m[0], t.name, t.mgr, 'drop', d[0]])])).sort((a, b) => b[0] - a[0]);
     const draw = () => {
-      const s = q.value.trim().toLowerCase(), hits = all.filter(m => (!kind.value || m[3] === kind.value) && (!s || (m[1] + ' ' + m[2] + ' ' + m[4]).toLowerCase().includes(s)));
+      const s = q.value.trim().toLowerCase(), hits = list().filter(m => (!kind.value || m[3] === kind.value) && (!s || (m[1] + ' ' + m[2] + ' ' + m[4]).toLowerCase().includes(s)));
       out.innerHTML = '<p class="why" style="margin:0 0 6px">' + hits.length + ' moves</p>' + hits.slice(0, 50).map(m => '<p class="why" style="margin:0 0 4px"><b>Wk ' + m[0] + '</b> ' + e(m[1]) + ' ' + (m[3] === 'add' ? '<span style="color:var(--good)">added</span> ' : '<span style="color:var(--bad)">dropped</span> ') + e(m[4]) + '</p>').join('');
     };
     q.oninput = draw; kind.onchange = draw; draw();
+    (window.leagueDraw ??= []).push(draw);
   }
 }
 const benchOf = t => { const on = new Set(t.vs.start.map(s => s[1])); return t.ids.filter(id => !on.has(id)).map(plOf).filter(Boolean).sort((p, q) => q.rate - p.rate); };
@@ -88,6 +89,7 @@ function versus(aId, bId) {
     const draw = () => { out.innerHTML = versus(sa.value, sb.value); };
     sa.value = R.me; sb.value = R.teams.find(t => t.id !== R.me).id;
     sa.onchange = draw; sb.onchange = draw; draw();
+    (window.leagueDraw ??= []).push(draw);
     document.addEventListener('click', ev => { const b = ev.target.closest('[data-vsteam]'); if (!b) return; sa.value = R.me; sb.value = b.dataset.vsteam; draw(); leaveSheet(); showTab('league', true); document.getElementById('versus').scrollIntoView(); });
   }
 }

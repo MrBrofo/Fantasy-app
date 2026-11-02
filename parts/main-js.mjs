@@ -41,7 +41,7 @@ function load() {
 }
 const verdictText = ${verdictText.toString()};
 const KEEP = /^(askbal|askslow|sheet|gloss|fab|changes|lv-tx|tc-|cmp-|tp-|seg|dict|bg-)/;
-const keep = n => n.nodeType === 1 && (KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || n.classList?.contains('blob') || changedIn.has(n));
+const keep = n => n.nodeType === 1 && (/^(vs-a|vs-b|vs-out|wm-q|wm-kind|wm-out)$/.test(n.id) || KEEP.test(n.id) || n.tagName === 'NAV' || (n.tagName === 'SCRIPT' && !n.type) || n.classList?.contains('blob') || changedIn.has(n));
 async function swap(html) {
   let page = html;
   const m = html.match(/salt: '([^']+)', iv: '([^']+)', data: '([^']+)'/);
@@ -65,11 +65,16 @@ async function swap(html) {
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
   if (typeof hideGone === 'function') hideGone();
   window.poolDraw?.();
+  window.leagueDraw?.forEach(f => f());
   if (typeof showTab === 'function') showTab(location.hash.slice(1), false);
   if (typeof showLook === 'function') showLook();
   if (!sheet.hidden && P[sheet.dataset.pid]) { body.innerHTML = render(P[sheet.dataset.pid]); drawGc(); }
-  else if (!sheet.hidden && sheet.dataset.team && typeof teamPage === 'function') body.innerHTML = teamPage(sheet.dataset.team);
-  else if (!sheet.hidden && sheet.dataset.match && typeof matchPage === 'function') body.innerHTML = matchPage(...sheet.dataset.match.split(','));
+  else if (!sheet.hidden && (sheet.dataset.team || sheet.dataset.match) && typeof teamPage === 'function') {
+    const top = body.scrollTop, open = [...body.querySelectorAll('details')].map(d => d.open);
+    body.innerHTML = sheet.dataset.team ? teamPage(sheet.dataset.team) : matchPage(...sheet.dataset.match.split(','));
+    body.querySelectorAll('details').forEach((d, i) => { d.open = !!open[i]; });
+    body.scrollTop = top;
+  }
   gloss(document.body);
   liveTick();
   return true;
