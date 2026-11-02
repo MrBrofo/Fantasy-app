@@ -1393,11 +1393,12 @@ if (week > 1) try {
     }
   });
   const list = [...report.values()].filter(r => r.weeks);
+  try {
   // every finished trade this season, once: ESPN files a deal under its proposal and its acceptance, in more than one week's list
   const txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
-  const dealKey = tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId + '>' + i.toTeamId).sort().join();
+  const dealKey = tx => (tx.items ?? []).filter(i => i.type === 'TRADE').map(i => i.playerId + '>' + i.toTeamId).sort().join();
   const deals = [...new Map(txs.filter(tx => tx.type?.startsWith('TRADE') && tx.status === 'EXECUTED' && dealKey(tx)).sort((a, b) => b.scoringPeriodId - a.scoringPeriodId).map(tx => [dealKey(tx), tx])).values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
-  const unknown = [...new Set(deals.flatMap(tx => tx.items.map(i => i.playerId)))].filter(id => !byId.has(id));
+  const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
   if (unknown.length) for (const x of (await get(`${LEAGUE}?view=kona_player_info&scoringPeriodId=${week}`, { players: { filterIds: { value: unknown } } })).players) { names[x.player.id] = x.player.fullName; byId.set(x.player.id, { ...row(x.player, x.ratings), slot: 'FA' }); }
   // [name, rest-of-season points a game, points since the trade]
   const dealt = (id, wk) => { const p = byId.get(id); return [p?.name ?? names[id] ?? 'Unknown', +(p ? rate(p) : 0).toFixed(1), +Object.entries(wkPts[id] ?? {}).filter(([w]) => +w > wk).reduce((s, [, v]) => s + v, 0).toFixed(1)]; };
@@ -1406,6 +1407,7 @@ if (week > 1) try {
     const got = s.got.map(id => dealt(id, tx.scoringPeriodId)), gave = s.gave.map(id => dealt(id, tx.scoringPeriodId)), sum = l => l.reduce((x, p) => x + p[1], 0);
     report.get(s.team)?.trades?.push({ wk: tx.scoringPeriodId, vs: s.others.map(id => teamName[id] ?? '').join(', '), got, gave, res: tradeResult(sum(got), sum(gave)) });
   }
+  } catch (err) { console.warn('Trades skipped:', err.message); }
   const place = (key, dir) => [...list].sort((a, b) => dir * (a[key] - b[key])).forEach((r, i) => { r[key + 'Rank'] = i + 1; });
   for (const r of list) { r.eff = r.max ? r.pf / r.max * 100 : 0; r.bench = (r.max - r.pf) / r.weeks; r.luck = r.wins - r.allPlay; r.miss = r.miss.sort((a, b) => (b[2] - b[4]) - (a[2] - a[4])).slice(0, 3); }
   place('eff', -1); place('bench', -1); place('add', -1); place('pf', -1);
