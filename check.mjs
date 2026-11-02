@@ -411,12 +411,6 @@ console.log('ok');
   const r = box({ rosterForMatchupPeriod: { entries: [e(1, 5, 2), e(2, 20, 20), e(3, 40, 21)] } });
   assert.deepEqual([r.got, r.best, r.misses[0][0].name, r.misses[0][1].name], [5, 20, 'P2', 'P1']);
   console.log('report card ok'); }
-// trades from rosters: a swap is one deal, a waiver pickup isn't one, and neither is staying put
-{ const find = new Function(cut('function rosterTrades(owners, adds) {', '\n}') + ';return rosterTrades;')();
-  const d = find({ 1: { 7: 3, 8: 4 }, 2: { 7: 4, 8: 3 }, 5: { 7: 3, 8: 6 }, 6: { 7: 3, 8: 3 }, 9: { 5: 3, 8: 4 } }, new Set(['5:6:8']));
-  assert.equal(d.length, 1);
-  assert.deepEqual([d[0].scoringPeriodId, d[0].items.map(i => [i.playerId, i.fromTeamId, i.toTeamId])], [8, [[1, 3, 4], [2, 4, 3]]]);
-  console.log('roster trades ok'); }
 // trades: each team gets its own side; under 1 point a game apart is even
 { const sides = new Function(cut('function tradeSides(tx) {', '\n}') + ';return tradeSides;')();
   const res = new Function(cut('const tradeResult = ', "'lost';") + ';return tradeResult;')();
@@ -431,12 +425,12 @@ console.log('ok');
   const r = review([pk(3, 2, 8), pk(1, 1, 7), pk(2, 3, 8), pk(40, 4, 9), pk(5, 99, 9)], info, 16);
   assert.deepEqual(r.map(x => [x.name, x.as, x.now, x.diff, x.passed]), [['A', 1, 3, -2, 'B'], ['C', 1, 1, 0, null], ['B', 2, 1, 1, null], ['D', 3, 2, 1, null]]);
   console.log('draft review ok'); }
-// a player traded then dropped comes from the offer; an offer with someone who never left doesn't count
-{ const fill = new Function(cut('function fillFromOffers(', '\n}') + ';return fillFromOffers;')();
-  const tr = (p, a, b) => ({ type: 'TRADE', playerId: p, fromTeamId: a, toTeamId: b });
-  const d = fill([{ scoringPeriodId: 8, items: [tr(1, 3, 4), tr(2, 4, 3)] }], [{ scoringPeriodId: 8, proposedDate: 5, items: [tr(1, 3, 4), tr(2, 4, 3), tr(9, 3, 4)] }, { scoringPeriodId: 8, proposedDate: 6, items: [tr(1, 3, 4), tr(7, 3, 4)] }, { scoringPeriodId: 2, proposedDate: 7, items: [tr(1, 3, 4), tr(8, 3, 4)] }], { 9: { 7: 3 }, 7: { 7: 3, 8: 3 }, 8: { 7: 3 } });
-  assert.deepEqual([d[0].items.map(i => i.playerId), d[0].date], [[1, 2, 9], 5]);
-  console.log('trade offers ok'); }
+// trades come whole from the feed, in ESPN's week, newest first; other messages aren't trades
+{ const feed = new Function(cut('function feedTrades(', '\n}') + ';return feedTrades;')();
+  const m = (p, a, b) => ({ messageTypeId: 244, targetId: p, from: a, to: b });
+  const d = feed([{ date: 50, messages: [m(1, 3, 4)] }, { date: 90, messages: [m(2, 4, 3), m(-16018, 3, 4), { messageTypeId: 178, targetId: 9 }] }, { date: 60, messages: [] }], [{ scoringPeriodId: 7, processDate: 40 }, { scoringPeriodId: 8, proposedDate: 80 }, { scoringPeriodId: 9, processDate: 95 }]);
+  assert.deepEqual(d.map(x => [x.scoringPeriodId, x.items.map(i => i.playerId)]), [[8, [2, -16018]], [7, [1]]]);
+  console.log('trade feed ok'); }
 // swaps only count when both lineups get better
 { const swaps = new Function(cut('function mutualSwaps(', '\n}') + ';return mutualSwaps;')();
   const P = (pos, v) => ({ pos, v }), val = p => p.v, score = r => ['RB', 'WR'].reduce((s, pos) => s + Math.max(...r.filter(p => p.pos === pos).map(val)), 0);

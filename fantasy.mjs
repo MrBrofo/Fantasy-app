@@ -1366,37 +1366,12 @@ function boxLineup(side, wk) {
   }).filter(Boolean);
   return { ps, started, got, best, misses };
 }
-// Trades from who owned whom each week: a player on one team one week and another the next, who wasn't added off waivers or free agency, was
-// traded. Moves between the same two teams in the same week are one deal. Newest first.
-function rosterTrades(owners, adds) {
-  const deals = new Map();
-  for (const [id, byWk] of Object.entries(owners)) for (const [w, from] of Object.entries(byWk)) {
-    const next = +w + 1, to = byWk[next];
-    if (to == null || to === from || adds.has(id + ':' + to + ':' + w) || adds.has(id + ':' + to + ':' + next)) continue;
-    const k = next + ':' + Math.min(from, to) + ':' + Math.max(from, to);
-    if (!deals.has(k)) deals.set(k, { scoringPeriodId: next, items: [] });
-    deals.get(k).items.push({ type: 'TRADE', playerId: +id, fromTeamId: from, toTeamId: to });
-  }
-  return [...deals.values()].sort((a, b) => b.scoringPeriodId - a.scoringPeriodId);
-}
-// A player traded and dropped right away never shows up on his new team, so take him from the offer the deal came from, if everything else
-// in that offer checks out: each other player in it had left the team giving him by then. He may have been picked up that same week, so he
-// needn't be on last week's roster. Any offer sharing a player gives the deal its date.
-function fillFromOffers(deals, offers, owners) {
-  for (const d of deals) {
-    const next = d.scoringPeriodId, f = d.items[0], pair = [f.fromTeamId, f.toTeamId].sort().join();
-    for (const o of offers) {
-      const items = (o.items ?? []).filter(i => i.type === 'TRADE');
-      if (Math.abs(o.scoringPeriodId - next) > 1 || !items.length || !items.every(i => [i.fromTeamId, i.toTeamId].sort().join() === pair)) continue;
-      const known = new Set(d.items.map(i => i.playerId)), extra = items.filter(i => !known.has(i.playerId));
-      if (extra.length === items.length) continue;
-      d.date ??= o.proposedDate;
-      if (!extra.every(i => owners[i.playerId]?.[next] !== i.fromTeamId)) continue;
-      for (const i of extra) d.items.push({ type: 'TRADE', playerId: i.playerId, fromTeamId: i.fromTeamId, toTeamId: i.toTeamId });
-      d.date = o.proposedDate;
-    }
-  }
-  return deals;
+// Finished trades from ESPN's league activity feed, one per topic. The week is ESPN's own: the latest one any transaction had reached by then. Newest first.
+function feedTrades(topics, txs) {
+  const when = tx => tx.processDate ?? tx.proposedDate ?? Infinity;
+  return topics.map(tp => ({ date: tp.date, scoringPeriodId: Math.max(1, ...txs.filter(tx => when(tx) <= tp.date).map(tx => tx.scoringPeriodId ?? 1)),
+    items: (tp.messages ?? []).filter(m => m.messageTypeId === 244).map(m => ({ type: 'TRADE', playerId: m.targetId, fromTeamId: m.from, toTeamId: m.to })) }))
+    .filter(d => d.items.length).sort((a, b) => b.date - a.date);
 }
 // One team's side of each team in a finished trade: who it got and who it gave up. Won on rest-of-season points a game; under 1 apart is even.
 function tradeSides(tx) {
@@ -1441,12 +1416,9 @@ if (week > 1) try {
   const list = [...report.values()].filter(r => r.weeks);
   let txs = [];
   try {
-  // every finished trade this season, from the rosters: ESPN's transaction list leaves out accepted proposals, and its acceptances carry no players
   txs = (await Promise.all(Array.from({ length: week }, (_, i) => get(`${LEAGUE}?view=mTransactions2&scoringPeriodId=${i + 1}`)))).flatMap(d => d.transactions ?? []);
-  for (const x of teams) for (const p of x.roster) (wkOwner[p.id] ??= {})[week] = x.id;
-  for (const x of draft.draftDetail?.picks ?? []) (wkOwner[x.playerId] ??= {})[0] = x.teamId; // week 0: draft day, for trades before week 1
-  const adds = new Set(txs.filter(tx => tx.status === 'EXECUTED' && ['WAIVER', 'FREEAGENT'].includes(tx.type)).flatMap(tx => (tx.items ?? []).filter(i => i.type === 'ADD').map(i => i.playerId + ':' + i.toTeamId + ':' + tx.scoringPeriodId)));
-  const deals = fillFromOffers(rosterTrades(wkOwner, adds), txs.filter(tx => tx.type === 'TRADE_PROPOSAL' && tx.status !== 'CANCELED'), wkOwner);
+  const topics = (await get(`${LEAGUE}/communication/?view=kona_league_communication`, { topics: { filterType: { value: ['ACTIVITY_TRANSACTIONS'] }, limit: 1000, limitPerMessageSet: { value: 25 }, offset: 0, sortMessageDate: { sortPriority: 1, sortAsc: false }, sortFor: { sortPriority: 2, sortAsc: false }, filterIncludeMessageTypeIds: { value: [244] } } })).topics ?? [];
+  const deals = feedTrades(topics, txs);
   for (const d of deals) if (d.date && d.scoringPeriodId >= week - 2) for (const i of d.items) moves.push({ date: d.date, type: 'TRADE', playerId: i.playerId, team: i.toTeamId, from: i.fromTeamId });
   moves.sort((a, b) => b.date - a.date);
   const unknown = [...new Set(deals.flatMap(tx => tx.items.filter(i => i.type === 'TRADE').map(i => i.playerId)))].filter(id => !byId.has(id));
@@ -2923,10 +2895,7 @@ const vsData = t => {
   return { pct: Math.round(made / SIMS * 100), bye: playoffTeams > 1 && 2 ** Math.ceil(Math.log2(playoffTeams)) > playoffTeams ? Math.round(byes / SIMS * 100) : null, w: +w.toFixed(1), l: +(t.w + t.l + t.ties + left_ - w).toFixed(1), left: +(w - t.w - t.ties / 2).toFixed(1), sos: sosRank.get(t.id), ppg: +l.reduce((s, x) => s + rate(x.player), 0).toFixed(1),
     sd: sc.length ? +Math.sqrt(sc.reduce((a, x) => a + (x[1] - avg) ** 2, 0) / sc.length).toFixed(1) : null, hi: hi ?? null, lo: lo ?? null, ap: r?.weeks ? [r.apW, r.apL] : null, start: l.map(x => [x.slot, x.player.id]) };
 };
-let tradeDiag;
-try { const d = await get(`${LEAGUE}/communication/?view=kona_league_communication`, { topics: { filterType: { value: ['ACTIVITY_TRANSACTIONS'] }, limit: 1000, limitPerMessageSet: { value: 25 }, offset: 0, sortMessageDate: { sortPriority: 1, sortAsc: false }, sortFor: { sortPriority: 2, sortAsc: false }, filterIncludeMessageTypeIds: { value: [244] } } });
-  tradeDiag = { n: d.topics?.length, sample: d.topics?.slice(0, 3) }; } catch (err) { tradeDiag = { err: err.message }; }
-const rdata = { tradeDiag, week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
+const rdata = { week: league.scoringPeriodId, fw: week + 1, lastWeek, me: me.id, moves: !!MOVE_URL, tradesOpen, voice: VOICE, slotCounts, slotPos: SLOT_POS, slotName: SLOT, repl,
   teams: teams.map(t => { const b = board.find(r => r.t === t); return { id: t.id, name: t.name, mgr: mgrName(t), ids: t.roster.map(p => p.id), short: depth(t).short, rep: (r => r?.weeks ? { eff: +r.eff.toFixed(1), effRank: r.effRank, pf: +r.pf.toFixed(1), max: +r.max.toFixed(1), bench: +r.bench.toFixed(1), add: +r.add.toFixed(1), addRank: r.addRank, pfRank: r.pfRank, luck: +r.luck.toFixed(1), miss: r.miss, better: r.better, trades: r.trades ?? [], draft: r.draft ?? null, wire: r.wire ?? null, ap: [r.apW, r.apL], hi: [...r.scores].sort((a, b) => b[1] - a[1])[0], lo: [...r.scores].sort((a, b) => a[1] - b[1])[0] } : null)(report.get(t.id)), vs: vsData(t), moves: teamMoves.get(t.id), rec: `${t.w}-${t.l}`, now: b?.now ?? null, proj: b ? +b.proj.toFixed(1) : null,
     start: teamRows.get(t).filter(r => r[0]).map(r => r[1]), bench: teamRows.get(t).filter(r => !r[0]).map(r => r[1]) }; }), fa: faList.map(p => p.id),
   pl: Object.fromEntries([...exShown.values(), ...teams.flatMap(t => t.roster), ...faList].map(p => [p.id, lite(p)])) };
