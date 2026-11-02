@@ -399,6 +399,12 @@ console.log('ok');
   assert.equal(gameOdds(r.slice(0, 10), 10), null); assert.equal(gameOdds(r, 0), null);
   console.log('game odds ok'); }
 
+// stoppages aren't plays; real plays stay
+{ const stop = new Function(cut('const gcStop = ', ".test(type ?? '')") + '
+return gcStop;')();
+  for (const t of ['Official Timeout', 'Timeout', 'Two-minute warning', 'End Period', 'End of Half', 'End of Game']) assert.equal(stop(t), true, t);
+  for (const t of ['Rush', 'Pass Reception', 'Kickoff', 'Penalty', undefined]) assert.equal(stop(t), false, t);
+  console.log('stoppages ok'); }
 // lateral plays: every spot in the text, in order, from the offense's side; a plain play isn't one
 { const chain = new Function(cut('function gcChain(', '\n}') + '\nreturn gcChain;')();
   const c = chain('(Shotgun) B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards (J.Bullard). FUMBLES (J.Bullard), RECOVERED by GB-B.Cox at CAR 25. B.Cox to CAR 22 for 3 yards (B.Young).', 'CAR');

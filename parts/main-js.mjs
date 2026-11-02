@@ -745,6 +745,8 @@ function gcG(p) {
     .catch(() => (LASTWK = {}));
   return (LASTWK instanceof Promise ? null : LASTWK?.[p.pro]) ?? g;
 }
+// ESPN's feed reports these as the last play, but nothing happened on the field
+const gcStop = type => /timeout|two-minute|^end (of|period)|coin toss/i.test(type ?? ''), gcReal = {};
 function drawGc() {
   const box = document.getElementById('gc'), p = P[sheet.dataset.pid];
   if (!box || box.hidden || !p) return;
@@ -764,6 +766,11 @@ function drawGc() {
   // until the next play comes in
   const gid = g[3], pts = F.teams[0][2] + F.teams[1][2];
   if (!past) {
+    // a stoppage: stay on the last real play. A penalty is real, but no ball moved.
+    if (gcStop(F.play?.[3])) F = { ...F, ...(gcReal[gid] ?? { play: null, stop: true }) };
+    else { if (/^penalty$/i.test(F.play?.[3] ?? '')) F = { ...F, play: null }; gcReal[gid] = { last: F.last, play: F.play }; }
+    // right after a kick ESPN names no team with the ball: it's the team that didn't kick
+    if (!F.poss && F.play) F = { ...F, poss: /punt|kickoff/i.test(F.play[3]) ? F.teams.find(t => t[0] !== F.play[2])?.[0] : F.play[2] };
     if (gcPts[gid] != null && pts - gcPts[gid] >= 6 && !F.play?.[4]) gcMissedTd(gid, F.last);
     gcPts[gid] = pts;
     if (gcTd && (gcTd.gid !== gid || gcTd.after !== F.last)) gcTd = null;
@@ -781,7 +788,7 @@ function drawGc() {
     '<div class="gc-wrap">' + gcField(F, A, H, ball, from, first, x => 10 + Math.max(-10, Math.min(110, x))) +
       (F.play ? '<button type="button" class="gc-replay" data-replay>&#8635; Replay</button>' : '') +
       (past ? '<div class="gc-replay gc-pager"><button type="button" data-gcstep="-1" aria-label="Earlier play"' + (past[0] ? '' : ' disabled') + '>&lsaquo;</button><span>' + (past[0] + 1) + ' / ' + past[1] + '</span><button type="button" data-gcstep="1" aria-label="Later play"' + (past[0] < past[1] - 1 ? '' : ' disabled') + '>&rsaquo;</button></div>' : '') + '</div>' +
-    (F.last ? '<p class="why" style="margin:10px 0 0"><b>' + (past ? e(F.when) : 'Last play') + ':</b> ' + e(F.last) + '</p>' : '') +
+    (F.last ? '<p class="why" style="margin:10px 0 0"><b>' + (past ? e(F.when) : F.stop ? 'Now' : 'Last play') + ':</b> ' + e(F.last) + '</p>' : '') +
     '<div class="group">Your players in this game</div>' + who('me') +
     '<div class="group">Your opponent&rsquo;s players in this game</div>' + who('opp') +
     (F.leaders.length ? '<div class="group">Game leaders</div>' + F.leaders.map(l => '<div class="gc-p"><span>' + e(l[0]) + ': ' + e(l[1]) + '</span><small>' + e(l[2]) + '</small></div>').join('') : '');
