@@ -467,6 +467,16 @@ const PAGE_NAME = { pickups: 'Pickups', pending: 'Pending', trades: 'Trade ideas
 const lastPage = {};
 // Switching pages crossfades: the old page fades out while the new one fades in (the browser's view transition,
 // iOS 18+; older phones just switch). The tab bar, the switch and the background aren't part of it, so they stay live.
+// a to-do about a pending move: tap the card (not a player, button or info) to open that move under Pending
+document.addEventListener('click', ev => {
+  const c = ev.target.closest('#todo .card.todo[data-go]');
+  if (!c || ev.target.closest('[data-pid],button,a,.info,summary')) return;
+  const t = document.getElementById(c.dataset.go);
+  if (!t) return;
+  showTab('pending', true);
+  setTimeout(() => { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.classList.remove('hit'); void t.offsetWidth; t.classList.add('hit'); }, 60);
+});
+document.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches?.('#todo .card.todo[data-go]')) ev.target.click(); });
 function showTab(tab, jump) {
   if (jump && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(() => setTab(tab, jump));
   else setTab(tab, jump);

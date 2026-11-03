@@ -50,7 +50,7 @@ section{margin-top:26px}h2{font-size:22px;font-weight:700;margin:0 0 4px;letter-
 .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
 .card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px;border:1px solid var(--line)}
 .todo{display:flex;gap:12px;align-items:flex-start;touch-action:pan-y}
-#todo,#todo details{position:relative}.card.todo{position:relative;z-index:1}
+.card.hit{animation:hit 1.6s ease-out}@keyframes hit{0%,40%{box-shadow:0 0 0 2px var(--accent)}}#todo,#todo details{position:relative}.card.todo{position:relative;z-index:1}
 .todo-back{background:none;border:0;padding:4px 0;color:var(--muted);font:inherit;font-size:14px;text-decoration:underline;cursor:pointer}
 .card.todo{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .todo-del{position:absolute;box-sizing:border-box;background:var(--bad);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;opacity:.75;transition:opacity .15s}
