@@ -2111,13 +2111,13 @@ const gameShort = p => {
   let g = at(week), pre = '';
   if (g && (gameNow[TEAM(p.team)]?.state === 'post' || g.date + 5 * 3600e3 < Date.now())) { g = at(week + 1); pre = 'Next: '; }
   if (!g) return '';
-  const home = g.homeProTeamId === p.proTeamId, when = g.date > Date.now() ? ' ' + new Date(g.date).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }).replace(',', '') : '';
+  const home = g.homeProTeamId === p.proTeamId, when = g.date > Date.now() ? ' ' + new Date(g.date).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }).replace(',', '').replace(':00', '') : '';
   return pre + (home ? 'vs ' : '@ ') + (proAbbr[home ? g.awayProTeamId : g.homeProTeamId] ?? '') + when;
 };
 const shown = new Map();
 const player = (p, extra = '') => { shown.set(p.id, p); return `<div class="player" data-pid="${p.id}" role="button" tabindex="0">${pic(p)}<div class="who">
   <div class="name">${esc(p.name)} <span class="more">&rsaquo;</span></div>
-  <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(proAbbr[p.proTeamId] ?? p.teamName)}${p.rank ? ` &middot; #${p.rank}` : ''}${p.bye === week ? ' &middot; bye this week' : p.bye === week + 1 ? ' &middot; bye next week' : ''}${gameShort(p) ? ' &middot; ' + esc(gameShort(p)) : ''}</div><span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
+  <div class="meta"><span class="pos pos-${p.pos.replace('/', '')}">${p.pos}</span> ${esc(proAbbr[p.proTeamId] ?? p.teamName)}${p.rank ? ` &middot; #${p.rank}` : ''}${p.bye === week ? ' &middot; bye this week' : p.bye === week + 1 ? ' &middot; bye next week' : ''}${gameShort(p) ? ' &middot; <span style="white-space:nowrap">' + esc(gameShort(p)) + '</span>' : ''}</div><span data-chip="${p.id}" data-st="${p.status || 'ACTIVE'}">${chip(p)}</span>${extra}</div></div>`; };
 // points he has this week once his game starts: "7.0 pts final" / "4.2 pts so far, Q3 4:12"
 // (data-live / data-pro: the page swaps in live points from the Worker every 30s, so it's there, empty, before kickoff too)
 const nowPts = p => { const g = gameNow[TEAM(p.team)]; return p.bye === week || !g ? '' : `<div class="nowpts" data-live="${p.id}" data-pro="${p.proTeamId}"${g.state === 'pre' && !p.now ? ' hidden>'
