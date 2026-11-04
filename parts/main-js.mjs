@@ -227,7 +227,7 @@ function startShift(d) {
 function txText(t, name, team) {
   const got = t.items.filter(i => i[3] === LIVE.me).map(i => name(i[0])), gave = t.items.filter(i => i[2] === LIVE.me).map(i => name(i[0])), list = a => a.join(', ');
   const swap = got.length || gave.length ? ': you get ' + list(got) + ' for ' + list(gave) : '';
-  if (t.type === 'TRADE_PROPOSAL' && t.status === 'PENDING' && t.team !== LIVE.me) return 'New trade offer from ' + team(t.team) + swap + '. See the Trades tab.';
+  if (t.type === 'TRADE_PROPOSAL' && t.status === 'PENDING' && t.team !== LIVE.me) return 'New trade offer from ' + team(t.team) + swap + '.';
   if (t.type === 'TRADE_PROPOSAL' && /CANCEL|DECLIN|VETO|REJECT/.test(t.status || '')) return (t.team === LIVE.me ? 'Your trade offer' : 'The trade offer from ' + team(t.team)) + ' is off (turned down or canceled).';
   if (t.type === 'TRADE_ACCEPT' || (t.type === 'TRADE_PROPOSAL' && t.status === 'EXECUTED')) return 'Trade done' + (swap ? swap.replace('you get', 'you got') : '') + '.';
   if (t.type === 'WAIVER' && t.status === 'EXECUTED') return 'Your claim went through: added ' + list(got) + (gave.length ? ', dropped ' + list(gave) : '') + '.';
@@ -277,7 +277,9 @@ function liveExtras(d, f) {
     const key = 'tx' + t.id + t.status, text = t.date > built && !seenLive.has(key) && txText(t, name, team);
     if (!text) continue;
     seenLive.add(key);
-    box?.insertAdjacentHTML('afterbegin', '<div class="card" style="margin-bottom:10px"><span class="chip warn" style="margin:0 6px 0 0">Just now</span>' + e(text) + '</div>');
+    // tap it: a pending one opens its card under Pending, a done one opens My team
+    const go = t.status === 'PENDING' ? 'pending' : t.status === 'EXECUTED' || t.type === 'TRADE_ACCEPT' ? 'team' : '';
+    box?.insertAdjacentHTML('afterbegin', '<div class="card"' + (go ? ' data-go="pm-' + t.id + '" data-tab="' + go + '" role="link" tabindex="0" style="cursor:pointer;margin-bottom:10px">' : ' style="margin-bottom:10px">') + '<span class="chip warn" style="margin:0 6px 0 0">Just now</span>' + e(text) + '</div>');
   }
   // news on players in my matchup since this build
   const list = document.querySelector('#news .list');
