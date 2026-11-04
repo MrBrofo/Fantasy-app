@@ -805,26 +805,31 @@ const pending = [...pendingTx.values()].map(tx => {
   const take = tx.items.filter(i => i.toTeamId === me.id).map(i => them.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
   return { kind: 'trade', id: tx.id, mineOffer: tx.teamId === me.id, them, give, take, ...judge(give, take, them) };
 });
-// A counter to an offer made to me: their offer reshaped (give fewer of the players they asked for or swap one for another
-// of mine at his spot; ask for one more of theirs, one fewer, or swap one at the same spot). Worth 1+ a week to me and
-// 1+ more than their offer, costing them at most 1 a week so they might say yes. Most for me wins.
+// A counter to an offer made to me: their offer reshaped (give any group of the players they asked for, one of them
+// maybe swapped for another of mine at his spot; get any group of the players they offered, plus one more of theirs or
+// one swapped at the same spot). Worth 1+ a week to me and 1+ more than their offer, costing them at most 1 a week so
+// they might say yes. Most for me wins.
 // ponytail: getting more players than I give can put my roster over the limit; ESPN asks for a drop then.
 function counter(m) {
   if (!tradesOpen || !m.them) return null;
   const mine = me.roster.filter(tradeable), theirs = m.them.roster.filter(tradeable);
   const swaps = (set, pool) => set.flatMap(x => pool.filter(o => o.pos === x.pos && !set.includes(o)).map(o => set.map(y => (y === x ? o : y))));
-  const fewer = set => set.length > 1 ? set.map(x => set.filter(y => y !== x)) : [];
-  const gives = [m.give, ...fewer(m.give), ...swaps(m.give, mine)];
-  const takes = [m.take, ...fewer(m.take), ...swaps(m.take, theirs), ...theirs.filter(t => !m.take.includes(t)).map(t => [...m.take, t])];
+  const groups = set => set.reduce((all, x) => [...all, ...all.map(g => [...g, x])], [[]]).filter(g => g.length);
+  const gives = groups(m.give).flatMap(g => [g, ...swaps(g, mine)]);
+  const takes = groups(m.take).flatMap(g => [g, ...swaps(g, theirs), ...theirs.filter(t => !g.includes(t)).map(t => [...g, t])]);
+  const same = (a, b) => a.length === b.length && a.every(x => b.includes(x));
   let best = null;
   for (const give of gives) for (const take of takes) {
-    if (give === m.give && take === m.take) continue;
+    if (same(give, m.give) && same(take, m.take)) continue;
     const j = judge(give, take, m.them);
     if (j.mine >= Math.max(1, m.mine + 1) && j.theirs >= -1 && (!best || j.mine > best.mine)) best = { give, take, ...j };
   }
   return best;
 }
-for (const m of pending) if (m.kind === 'trade' && !m.mineOffer) m.counter = counter(m);
+for (const m of pending) if (m.kind === 'trade' && !m.mineOffer) {
+  m.counter = counter(m);
+  console.log(`Counter to ${m.them?.name}: ${m.counter ? `give ${m.counter.give.map(p => p.name).join(' + ')}, get ${m.counter.take.map(p => p.name).join(' + ')} (${m.counter.mine.toFixed(1)} for me, ${m.counter.theirs.toFixed(1)} for them)` : 'none'}`);
+}
 
 // Start from the roster as it will be once my pending waiver claims go through, so the plan doesn't
 // suggest a second pickup for the same hole, or a player I've already claimed.

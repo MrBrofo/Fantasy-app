@@ -482,4 +482,7 @@ console.log('ok');
   const k = counter({ them: { roster: [x, y] }, give: [a, b], take: [x], mine: -9 });
   assert.deepEqual([k.give.map(q => q.id), k.take.map(q => q.id)], [[2], [11]]);
   assert.equal(counter({ them: { roster: [y] }, give: [a], take: [y], mine: -5 }), null); // nothing fair works
+  // two changes at once: they offer x + y for a + b (-4 for me); drop a and drop y, b for x
+  const k2 = counter({ them: { roster: [x, y] }, give: [a, b], take: [x, y], mine: -4 });
+  assert.deepEqual([k2.give.map(q => q.id), k2.take.map(q => q.id)], [[2], [11]]);
   console.log('counter ok'); }
