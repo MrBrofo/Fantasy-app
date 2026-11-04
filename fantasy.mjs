@@ -805,6 +805,26 @@ const pending = [...pendingTx.values()].map(tx => {
   const take = tx.items.filter(i => i.toTeamId === me.id).map(i => them.roster.find(r => r.id === i.playerId) ?? p(i.playerId));
   return { kind: 'trade', id: tx.id, mineOffer: tx.teamId === me.id, them, give, take, ...judge(give, take, them) };
 });
+// A counter to an offer made to me: their offer reshaped (give fewer of the players they asked for or swap one for another
+// of mine at his spot; ask for one more of theirs, one fewer, or swap one at the same spot). Worth 1+ a week to me and
+// 1+ more than their offer, costing them at most 1 a week so they might say yes. Most for me wins.
+// ponytail: getting more players than I give can put my roster over the limit; ESPN asks for a drop then.
+function counter(m) {
+  if (!tradesOpen || !m.them) return null;
+  const mine = me.roster.filter(tradeable), theirs = m.them.roster.filter(tradeable);
+  const swaps = (set, pool) => set.flatMap(x => pool.filter(o => o.pos === x.pos && !set.includes(o)).map(o => set.map(y => (y === x ? o : y))));
+  const fewer = set => set.length > 1 ? set.map(x => set.filter(y => y !== x)) : [];
+  const gives = [m.give, ...fewer(m.give), ...swaps(m.give, mine)];
+  const takes = [m.take, ...fewer(m.take), ...swaps(m.take, theirs), ...theirs.filter(t => !m.take.includes(t)).map(t => [...m.take, t])];
+  let best = null;
+  for (const give of gives) for (const take of takes) {
+    if (give === m.give && take === m.take) continue;
+    const j = judge(give, take, m.them);
+    if (j.mine >= Math.max(1, m.mine + 1) && j.theirs >= -1 && (!best || j.mine > best.mine)) best = { give, take, ...j };
+  }
+  return best;
+}
+for (const m of pending) if (m.kind === 'trade' && !m.mineOffer) m.counter = counter(m);
 
 // Start from the roster as it will be once my pending waiver claims go through, so the plan doesn't
 // suggest a second pickup for the same hole, or a player I've already claimed.
@@ -2510,7 +2530,12 @@ ${pending.length ? pending.map(m => {
   ${lost.length ? `<br>After the trade, ${lost.join('; ')}.` : ''}
   ${m.vorTake < m.vorGive * 0.7 ? '<br>You\'re giving up more real value than you get back.' : m.vorTake > m.vorGive * 1.3 ? '<br>You get more real value than you give.' : ''}</p>
   ${exBtns(m.give, m.take, true)}
-  ${MOVE_URL && !m.mineOffer ? `<div class="tools2"><button type="button" class="btn do" style="background:var(--good);color:var(--onaccent)" data-move="${esc(JSON.stringify({ label: 'Accept this trade on ESPN (it can\'t be undone)', type: 'TRADE_ACCEPT', related: m.id, items: [], week: league.scoringPeriodId }))}">Accept</button><button type="button" class="btn do" style="background:var(--bad);color:#fff" data-move="${esc(JSON.stringify({ label: 'Decline this trade on ESPN', type: 'TRADE_DECLINE', related: m.id, items: [], week: league.scoringPeriodId }))}">Decline</button></div>` : ''}</div>`;
+  ${MOVE_URL && !m.mineOffer ? `<div class="tools2"><button type="button" class="btn do" style="background:var(--good);color:var(--onaccent)" data-move="${esc(JSON.stringify({ label: 'Accept this trade on ESPN (it can\'t be undone)', type: 'TRADE_ACCEPT', related: m.id, items: [], week: league.scoringPeriodId }))}">Accept</button><button type="button" class="btn do" style="background:var(--bad);color:#fff" data-move="${esc(JSON.stringify({ label: 'Decline this trade on ESPN', type: 'TRADE_DECLINE', related: m.id, items: [], week: league.scoringPeriodId }))}">Decline</button></div>` : ''}
+  ${m.counter ? `<div class="vhead" style="margin-top:12px"><span class="tag">Counter offer</span><span class="verdict-good">Good for you</span></div>
+  <div class="swap"><div class="arrow">you give</div>${m.counter.give.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}
+  <div class="arrow">you get</div>${m.counter.take.map(p => `<div class="row">${player(p)}${big(rate(p), 'per game, rest of season', null, p, 'season')}</div>`).join('')}</div>
+  <p class="why"><b style="color:var(--good)">For you: ${gainText(m.counter.mineWeek, m.counter.mineLater)}.</b> They'd ${Math.abs(m.counter.theirs) < 1 ? 'come out about even' : `${m.counter.theirs > 0 ? 'gain' : 'lose'} about ${Math.round(Math.abs(m.counter.theirs))} a week`}.</p>
+  ${MOVE_URL ? `<button type="button" class="btn do" data-move="${esc(JSON.stringify({ label: `Counter: ${m.counter.give.map(p => p.name).join(' + ')} for ${m.counter.take.map(p => p.name).join(' + ')} on ESPN`, type: 'TRADE_PROPOSAL', other: m.them.id, items: [...m.counter.give.map(p => ({ type: 'GIVE', playerId: p.id })), ...m.counter.take.map(p => ({ type: 'GET', playerId: p.id }))], week: league.scoringPeriodId }))}">Send counter on ESPN</button>` : ''}` : ''}</div>`;
 }).join('') : '<div class="card empty">Nothing pending right now.</div>'}
 </section>
 

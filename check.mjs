@@ -470,3 +470,16 @@ console.log('ok');
   const raw = name => { const i = src.indexOf('const ' + name + ' = String.raw`') + name.length + 20; return src.slice(i, i + src.slice(i).search(/\r?\n`;/)); };
   new Function(page.replace('__TOOLSJS__', () => raw('TOOLS_JS').replace('__BESTLINEUP__', 'function bestLineup() {}')).replace('__MOVEJS__', () => raw('MOVE_JS'))); // throws on a syntax error
   console.log('page script ok'); }
+
+// counter offer: their offer reshaped until it's 1+ a week better for me and costs them at most 1
+{ const fn = cut('function counter(m) {', '  return best;\n}');
+  const p = (id, pos, val) => ({ id, pos, val });
+  const a = p(1, 'RB', 10), b = p(2, 'WR', 8), c = p(3, 'RB', 6), x = p(11, 'RB', 9), y = p(12, 'WR', 5);
+  const sum = s => s.reduce((t, q) => t + q.val, 0);
+  const judge = (give, take) => ({ mine: sum(take) - sum(give), theirs: (sum(give) - sum(take)) / 2 });
+  const counter = new Function('tradesOpen', 'me', 'tradeable', 'judge', fn + '\nreturn counter;')(true, { roster: [a, b, c] }, () => true, judge);
+  // they offer x (9) for a (10) + b (8): -9 for me. best counter they would take: b (8) for x (9); c for x costs them 1.5
+  const k = counter({ them: { roster: [x, y] }, give: [a, b], take: [x], mine: -9 });
+  assert.deepEqual([k.give.map(q => q.id), k.take.map(q => q.id)], [[2], [11]]);
+  assert.equal(counter({ them: { roster: [y] }, give: [a], take: [y], mine: -5 }), null); // nothing fair works
+  console.log('counter ok'); }
