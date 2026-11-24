@@ -61,7 +61,16 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
-      - uses: actions/deploy-pages@v4
+      # GitHub's deploy sometimes can't find the artifact it was just given (about 1 run in 5, 2026-11-24). Try once more,
+      # then let it go: the next run (a few minutes later) publishes anyway, and a red run here only meant a failure email.
+      - id: deploy
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - if: steps.deploy.outcome == 'failure'
+        run: sleep 20
+      - if: steps.deploy.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
 
       # Deploys can report success while Pages keeps showing an old build (2026-10-31: 18+ minutes, under 2 hours after
       # a commit). A new commit unsticks it. 12 minutes because GitHub's cache alone can add up to 10.
