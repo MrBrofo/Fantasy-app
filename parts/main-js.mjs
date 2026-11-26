@@ -59,7 +59,10 @@ async function swap(html) {
   // (the body's HTML, not the body element: given an element, idiomorph nests a second <body> inside this one)
   Idiomorph.morph(document.body, doc.body.innerHTML, { morphStyle: 'innerHTML', callbacks: { beforeNodeMorphed: o => !keep(o), beforeNodeRemoved: o => !keep(o), beforeAttributeUpdated: a => a !== 'open' } }); // a section you opened stays open
   built = +doc.querySelector('meta[name=built]').content;
-  const np = JSON.parse(document.getElementById('pdata').textContent);
+  // live scores follow the new build's week (else a page left open since last week keeps showing last week's finals)
+  const nl = LIVE && JSON.parse(document.getElementById('live')?.textContent || 'null');
+  if (nl) { if (nl.week !== LIVE.week) LASTWK = null; Object.assign(LIVE, nl); }
+  const np =JSON.parse(document.getElementById('pdata').textContent);
   for (const k in P) delete P[k];
   Object.assign(P, np);
   if (typeof R === 'object' && document.getElementById('rdata')) { const nr = JSON.parse(document.getElementById('rdata').textContent); for (const k in R) delete R[k]; Object.assign(R, nr); }
